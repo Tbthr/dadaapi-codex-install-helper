@@ -25,7 +25,7 @@
 - [x] ChatGPT/OpenAI 多目标稳定性选优
 - [x] 已选节点与两个备用节点的脱敏元数据缓存
 - [x] `recovery.json` 原子持久化与失败保留
-- [x] Tauri 启动阶段自动恢复遗留网络状态
+- [x] Tauri 启动阶段检测遗留网络状态并提供手动恢复
 - [x] Windows/macOS 系统代理保存、应用和恢复实现
 - [x] 纯 Rust 本地代理生命周期接口、就绪检查与失败清理
 - [x] 本地 Rust HTTP CONNECT 监听与双向转发

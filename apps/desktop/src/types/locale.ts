@@ -32,6 +32,11 @@ export interface LocaleActivationResult {
   restarted: boolean;
 }
 
+export interface NetworkRecoveryStatus {
+  pending: boolean;
+  localProxyActive: boolean;
+}
+
 export interface LocaleRestoreResult {
   app: DesktopApp | null;
   locale: LocaleStatus;

@@ -64,6 +64,13 @@ pub struct LocaleActivationResult {
     pub restarted: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkRecoveryStatus {
+    pub pending: bool,
+    pub local_proxy_active: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocaleRestoreResult {

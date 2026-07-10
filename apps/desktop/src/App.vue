@@ -6,6 +6,8 @@ import {
   Languages,
   LoaderCircle,
   RefreshCw,
+  RotateCcw,
+  ShieldAlert,
 } from "lucide-vue-next";
 import { storeToRefs } from "pinia";
 import { onMounted, ref } from "vue";
@@ -24,6 +26,9 @@ const {
   message: activationMessage,
   error: activationError,
   result: activationResult,
+  networkStatus,
+  recoveryRunning,
+  recoveryError,
 } = storeToRefs(activation);
 
 function getErrorMessage(error: unknown): string {
@@ -50,6 +55,10 @@ async function activateApp(executablePath: string): Promise<void> {
   if (succeeded) {
     await refresh();
   }
+}
+
+async function restoreOriginalNetwork(): Promise<void> {
+  await activation.restoreOriginalNetwork();
 }
 
 function activationButtonLabel(executablePath: string): string {
@@ -95,6 +104,28 @@ onMounted(() => {
           <p class="eyebrow">桌面应用检测</p>
           <h1>ChatGPT / Codex</h1>
         </div>
+      </div>
+
+      <div v-if="networkStatus.pending" class="network-recovery" role="alert">
+        <ShieldAlert :size="22" />
+        <div>
+          <strong>{{ networkStatus.localProxyActive ? "代理仍在使用" : "检测到遗留代理设置" }}</strong>
+          <p v-if="networkStatus.localProxyActive">
+            ChatGPT 当前继续通过已选节点联网；使用结束后，请手动恢复原网络。
+          </p>
+          <p v-else>本地代理已经停止，请立即恢复原网络后再进行其他操作。</p>
+          <p v-if="recoveryError" class="recovery-error">{{ recoveryError }}</p>
+        </div>
+        <button
+          class="secondary-button recovery-button"
+          type="button"
+          :disabled="recoveryRunning || activationRunning"
+          @click="restoreOriginalNetwork"
+        >
+          <LoaderCircle v-if="recoveryRunning" class="spinning" :size="17" />
+          <RotateCcw v-else :size="17" />
+          {{ recoveryRunning ? "正在恢复…" : "恢复原网络" }}
+        </button>
       </div>
 
       <div v-if="loading" class="state-panel">
@@ -146,7 +177,7 @@ onMounted(() => {
             <button
               class="primary-button"
               type="button"
-              :disabled="activationRunning"
+              :disabled="activationRunning || networkStatus.pending"
               @click="activateApp(app.executablePath)"
             >
               <LoaderCircle
@@ -168,7 +199,7 @@ onMounted(() => {
             <CheckCircle2 v-else-if="activationResult" :size="20" />
             <span v-if="activationRunning">{{ activationMessage }}</span>
             <span v-else-if="activationError">{{ activationError }}</span>
-            <span v-else-if="activationResult">中文已生效，原网络设置已恢复。</span>
+            <span v-else-if="activationResult">中文已生效，代理仍在使用，请按需手动恢复网络。</span>
           </div>
         </article>
       </section>
@@ -365,6 +396,48 @@ h1 {
   color: #ff9b91;
   border-color: #61352f;
   background: #211310;
+}
+
+.network-recovery {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  border: 1px solid #72552b;
+  border-radius: 14px;
+  color: #e6b66f;
+  background: #211a10;
+}
+
+.network-recovery > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.network-recovery strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #f1c47f;
+}
+
+.network-recovery p {
+  margin-bottom: 0;
+  color: #ba9b6b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.network-recovery .recovery-error {
+  margin-top: 5px;
+  color: #ff9b91;
+}
+
+.recovery-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
 }
 
 .app-selector {

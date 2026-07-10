@@ -64,8 +64,14 @@ fn sort_apps(apps: &mut [DesktopApp]) {
         };
         left_order
             .cmp(&right_order)
+            .then_with(|| right.running.cmp(&left.running))
             .then_with(|| left.install_path.cmp(&right.install_path))
     });
+}
+
+fn retain_preferred_app(apps: &mut Vec<DesktopApp>) {
+    sort_apps(apps);
+    apps.truncate(1);
 }
 
 #[cfg(target_os = "macos")]
@@ -89,7 +95,7 @@ fn detect_macos_apps() -> Result<Vec<DesktopApp>, DiscoveryError> {
         }
     }
 
-    sort_apps(&mut apps);
+    retain_preferred_app(&mut apps);
     Ok(apps)
 }
 
@@ -325,15 +331,16 @@ foreach ($root in $roots) {
 }
 "#;
 
-    let output = Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ])
+    let mut command = hidden_windows_command("powershell.exe");
+    command.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
+    ]);
+    let output = command
         .output()
         .map_err(|error| DiscoveryError::Platform(error.to_string()))?;
     if !output.status.success() {
@@ -380,20 +387,20 @@ foreach ($root in $roots) {
             running: running_names.contains(&executable_name.to_ascii_lowercase()),
         });
     }
-    sort_apps(&mut apps);
+    retain_preferred_app(&mut apps);
     Ok(apps)
 }
 
 #[cfg(target_os = "windows")]
 fn windows_running_processes() -> HashSet<String> {
-    let output = Command::new("powershell.exe")
-        .args([
+    let mut command = hidden_windows_command("powershell.exe");
+    command.args([
             "-NoProfile",
             "-NonInteractive",
             "-Command",
             "Get-Process -Name Codex,ChatGPT -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path",
-        ])
-        .output();
+        ]);
+    let output = command.output();
     let Ok(output) = output else {
         return HashSet::new();
     };
@@ -406,6 +413,16 @@ fn windows_running_processes() -> HashSet<String> {
                 .map(|value| value.to_ascii_lowercase())
         })
         .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn hidden_windows_command(program: &str) -> Command {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut command = Command::new(program);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
 }
 
 #[must_use]
@@ -481,6 +498,37 @@ mod tests {
             infer_windows_app_id(codex).as_deref(),
             Some("OpenAI.Codex_8wekyb3d8bbwe!App")
         );
+    }
+
+    #[test]
+    fn keeps_only_the_preferred_desktop_application() {
+        let install_path = r"C:\Program Files\WindowsApps\OpenAI.Codex\app";
+        let mut apps = vec![
+            DesktopApp {
+                product: DesktopProduct::Codex,
+                display_name: "Codex".to_owned(),
+                install_path: install_path.to_owned(),
+                executable_path: format!(r"{install_path}\Codex.exe"),
+                bundle_identifier: Some("OpenAI.Codex_test!App".to_owned()),
+                version: Some("1.0".to_owned()),
+                running: true,
+            },
+            DesktopApp {
+                product: DesktopProduct::ChatGpt,
+                display_name: "ChatGPT".to_owned(),
+                install_path: install_path.to_owned(),
+                executable_path: format!(r"{install_path}\ChatGPT.exe"),
+                bundle_identifier: Some("OpenAI.Codex_test!App".to_owned()),
+                version: Some("1.0".to_owned()),
+                running: true,
+            },
+        ];
+
+        retain_preferred_app(&mut apps);
+
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].product, DesktopProduct::ChatGpt);
+        assert_eq!(apps[0].display_name, "ChatGPT");
     }
 
     #[cfg(target_os = "macos")]

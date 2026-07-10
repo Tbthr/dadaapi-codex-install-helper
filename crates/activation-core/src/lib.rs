@@ -267,6 +267,10 @@ where
         self.store.clear()?;
         Ok(true)
     }
+
+    pub fn has_pending(&self) -> Result<bool, NetworkSafetyError> {
+        Ok(self.store.load(self.operating_system)?.is_some())
+    }
 }
 
 fn recovery_temporary_path(path: &Path, parent: &Path) -> Result<PathBuf, RecoveryError> {
@@ -356,6 +360,7 @@ fn is_allowed_transition(from: ActivationPhase, to: ActivationPhase) -> bool {
             | (WritingLocale, StoppingDesktopApp)
             | (StoppingDesktopApp, LaunchingDesktopApp)
             | (LaunchingDesktopApp, Verifying)
+            | (Verifying, Succeeded)
             | (
                 WritingLocale | StoppingDesktopApp | LaunchingDesktopApp | Verifying,
                 RestoringNetwork
@@ -468,7 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn supports_proxy_backed_activation_flow() {
+    fn supports_proxy_backed_activation_flow_until_manual_recovery() {
         let mut machine = ActivationMachine::default();
         for phase in [
             ActivationPhase::DetectingApp,
@@ -482,8 +487,6 @@ mod tests {
             ActivationPhase::StoppingDesktopApp,
             ActivationPhase::LaunchingDesktopApp,
             ActivationPhase::Verifying,
-            ActivationPhase::RestoringNetwork,
-            ActivationPhase::StoppingLocalProxy,
             ActivationPhase::Succeeded,
         ] {
             machine.transition(phase).expect("valid transition");

@@ -1,13 +1,10 @@
 pub mod activation_runtime;
 
-use activation_core::{
-    ActivationError, LocaleActivationService, NetworkRecoveryService, NetworkRecoveryStore,
-};
+use activation_core::{ActivationError, LocaleActivationService};
 use activation_runtime::DesktopActivationState;
-use platform::NativePlatformAdapter;
 use shared_types::{
     ActivationEvent, ActivationPhase, CommandError, LocaleActivationResult, LocaleOverview,
-    OperatingSystem,
+    NetworkRecoveryStatus, OperatingSystem,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -46,6 +43,35 @@ async fn activate_chinese(
         .map_err(command_error)
 }
 
+#[tauri::command]
+async fn get_network_recovery_status(
+    state: State<'_, DesktopActivationState>,
+) -> Result<NetworkRecoveryStatus, CommandError> {
+    let Some(runtime) = state.runtime() else {
+        return Ok(NetworkRecoveryStatus {
+            pending: false,
+            local_proxy_active: false,
+        });
+    };
+    runtime
+        .coordinator
+        .network_recovery_status()
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+async fn restore_network(
+    state: State<'_, DesktopActivationState>,
+) -> Result<NetworkRecoveryStatus, CommandError> {
+    let runtime = state.runtime().ok_or_else(activation_unavailable_error)?;
+    runtime
+        .coordinator
+        .restore_network()
+        .await
+        .map_err(command_error)
+}
+
 fn activation_unavailable_error() -> CommandError {
     CommandError {
         code: "activation_unavailable".to_owned(),
@@ -69,7 +95,7 @@ fn activation_phase_message(phase: ActivationPhase) -> &'static str {
         ActivationPhase::Verifying => "正在验证中文界面是否生效",
         ActivationPhase::RestoringNetwork => "正在恢复原网络设置",
         ActivationPhase::StoppingLocalProxy => "正在关闭临时本地代理",
-        ActivationPhase::Succeeded => "中文已生效，原网络设置已恢复",
+        ActivationPhase::Succeeded => "中文已生效，代理仍在使用，请按需手动恢复网络",
         ActivationPhase::Failed => "中文激活未完成",
     }
 }
@@ -105,16 +131,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
-            let recovery_path = app_data_dir.join("recovery.json");
-            let service = NetworkRecoveryService::new(
-                NativePlatformAdapter,
-                NetworkRecoveryStore::new(recovery_path),
-                current_operating_system(),
-            );
-            let restored = tauri::async_runtime::block_on(service.restore_pending())?;
-            if restored {
-                tracing::info!("restored pending network state during startup");
-            }
             let activation_runtime =
                 activation_runtime::DesktopActivationRuntime::from_build_environment(app_data_dir)?;
             if activation_runtime.is_some() {
@@ -135,7 +151,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_locale_overview,
             is_activation_available,
-            activate_chinese
+            activate_chinese,
+            get_network_recovery_status,
+            restore_network
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Wocao Hub desktop application");

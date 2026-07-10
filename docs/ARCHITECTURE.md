@@ -42,16 +42,17 @@ ChatGPT/OpenAI Services
 Idle → DetectingApp → FetchingProxyConfig → FilteringProxyNodes
 → TestingProxyNodes → SelectingProxyNode → StartingLocalProxy
 → SavingNetworkState → WritingLocale → StoppingDesktopApp
-→ LaunchingDesktopApp → Verifying → RestoringNetwork
-→ StoppingLocalProxy → Succeeded | Failed
+→ LaunchingDesktopApp → Verifying → Succeeded | Failed
+
+PendingManualRecovery → RestoringNetwork → StoppingLocalProxy → Idle
 ```
 
 节点测速使用各自的临时代理，不修改系统网络。只有正式最优节点的本地代理启动并通过就绪检查后，才进入 `SavingNetworkState` 并创建 `recovery.json`。只有确认网络恢复后才能删除该文件。
 
 - `recovery.json` 使用同目录临时文件替换写入；macOS 文件权限固定为仅当前用户可读写。
-- 应用临时代理失败时必须立即尝试恢复；恢复失败时保留 `recovery.json`，供下次启动继续恢复。
-- 客户端启动时应先检查并恢复遗留的 `recovery.json`，再允许开始新的激活。
-- Tauri 启动阶段已经同步执行遗留恢复；恢复失败时应用拒绝进入正常界面，避免用户在未知代理状态下继续操作。
+- 应用临时代理失败时必须立即尝试回滚可能发生的部分修改；回滚失败时保留 `recovery.json`。
+- 激活完成或验证失败后保留 `recovery.json` 和本地代理会话，等待用户点击“恢复原网络”。
+- 客户端启动时只检查遗留的 `recovery.json`，不得自动恢复；存在遗留状态时阻止新的激活并展示手动恢复入口。
 - 系统代理只允许指向回环地址和非零端口，静态路由包不能直接指定任意系统代理地址。
 - macOS 检测到认证代理时停止激活，因为系统接口无法读取原密码，继续修改无法保证完整恢复。
 
@@ -85,7 +86,7 @@ Idle → DetectingApp → FetchingProxyConfig → FilteringProxyNodes
 - 具体代理协议实现必须通过 Rust `LocalProxyEngine` 边界接入，最终客户端不得依赖 Mihomo、Go Sidecar 或外部常驻进程。
 - 本地代理只允许返回回环地址和非零端口；启动后必须在限定时间内通过就绪检查，之后才能修改系统代理。
 - 就绪检查失败时先尝试优雅关闭，关闭失败再强制中止；仍在运行的会话被提前释放时必须同步触发中止信号。
-- 系统代理恢复完成后才能关闭本地代理，避免恢复过程中出现新的断网窗口。
+- 用户触发系统代理恢复且确认完成后才能关闭本地代理，避免恢复过程中出现新的断网窗口。
 - 如果系统代理恢复失败，协调器保留 `recovery.json` 和当前本地代理会话，不得在系统仍可能指向该回环端口时主动关闭代理。
 
 ### Static Route Bundle

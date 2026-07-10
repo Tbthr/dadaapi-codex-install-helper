@@ -639,15 +639,16 @@ fn on_off(value: bool) -> &'static str {
 
 #[cfg(target_os = "windows")]
 async fn stop_windows_app(_app: &DesktopApp) -> Result<(), PlatformError> {
-    let status = Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            "Get-Process -Name Codex,ChatGPT -ErrorAction SilentlyContinue | Stop-Process -Force",
-        ])
+    let mut command = hidden_windows_command("powershell.exe");
+    command.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "Get-Process -Name Codex,ChatGPT -ErrorAction SilentlyContinue | Stop-Process -Force",
+    ]);
+    let status = command
         .status()
         .await
         .map_err(|error| PlatformError::Operation(error.to_string()))?;
@@ -667,14 +668,14 @@ async fn launch_windows_app(app: &DesktopApp) -> Result<(), PlatformError> {
         let app_id = app.bundle_identifier.as_deref().ok_or_else(|| {
             PlatformError::Operation("无法识别 Microsoft Store 应用 ID".to_owned())
         })?;
-        Command::new("explorer.exe")
+        hidden_windows_command("explorer.exe")
             .arg(format!(r"shell:AppsFolder\{app_id}"))
             .spawn()
             .map_err(|error| PlatformError::Operation(error.to_string()))?;
         return Ok(());
     }
 
-    Command::new(&app.executable_path)
+    hidden_windows_command(&app.executable_path)
         .args(["--lang=zh-CN", "--locale=zh-CN"])
         .spawn()
         .map_err(|error| PlatformError::Operation(error.to_string()))?;
@@ -791,7 +792,7 @@ async fn windows_powershell_output(
     script: &str,
     environment: &[(&str, &str)],
 ) -> Result<String, PlatformError> {
-    let mut command = Command::new("powershell.exe");
+    let mut command = hidden_windows_command("powershell.exe");
     command.args([
         "-NoProfile",
         "-NonInteractive",
@@ -811,6 +812,14 @@ async fn windows_powershell_output(
         ));
     }
     String::from_utf8(output.stdout).map_err(|_| PlatformError::InvalidNetworkState)
+}
+
+#[cfg(target_os = "windows")]
+fn hidden_windows_command(program: &str) -> Command {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut command = Command::new(program);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
 }
 
 #[cfg(target_os = "windows")]

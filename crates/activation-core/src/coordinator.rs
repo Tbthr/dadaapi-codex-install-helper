@@ -8,7 +8,8 @@ use locale_config::{apply_chinese_locale, inspect_locale, LocalePaths};
 use platform::{LocalProxySettings, PlatformAdapter};
 use proxy_core::{LocalProxyEngine, LocalProxySupervisor, SupervisedProxySession};
 use shared_types::{
-    ActivationPhase, DesktopApp, LocaleActivationResult, LocaleStatus, OperatingSystem,
+    ActivationPhase, DesktopApp, LocaleActivationResult, LocaleStatus, NetworkRecoveryStatus,
+    OperatingSystem,
 };
 use std::time::Duration;
 use thiserror::Error;
@@ -154,11 +155,16 @@ where
     {
         let _activation_guard = self.activation_lock.lock().await;
         let mut machine = ActivationMachine::default();
-        let result = if self.active_proxy.lock().await.is_some() {
-            Err(ActivationError::PendingNetworkRecovery)
-        } else {
-            self.run_activation(&mut machine, selected_executable_path.as_deref(), &progress)
-                .await
+        let result = match self.recovery.has_pending() {
+            Err(error) => Err(ActivationError::NetworkSafety(error)),
+            Ok(true) => Err(ActivationError::PendingNetworkRecovery),
+            Ok(false) if self.active_proxy.lock().await.is_some() => {
+                Err(ActivationError::PendingNetworkRecovery)
+            }
+            Ok(false) => {
+                self.run_activation(&mut machine, selected_executable_path.as_deref(), &progress)
+                    .await
+            }
         };
         if result.is_err() && machine.phase() != ActivationPhase::Failed {
             let _ = transition_with_progress(&mut machine, ActivationPhase::Failed, &progress);
@@ -222,6 +228,30 @@ where
         self.finish_networked(machine, operation, progress).await
     }
 
+    pub async fn network_recovery_status(&self) -> Result<NetworkRecoveryStatus, ActivationError> {
+        let recovery_record_pending = self.recovery.has_pending()?;
+        let local_proxy_active = self.active_proxy.lock().await.is_some();
+        Ok(NetworkRecoveryStatus {
+            pending: recovery_record_pending || local_proxy_active,
+            local_proxy_active,
+        })
+    }
+
+    pub async fn restore_network(&self) -> Result<NetworkRecoveryStatus, ActivationError> {
+        let _activation_guard = self.activation_lock.lock().await;
+        let restored = self.recovery.restore_pending().await?;
+        let local_proxy_active = self.active_proxy.lock().await.is_some();
+        if !restored && local_proxy_active {
+            return Err(ActivationError::NetworkSafety(
+                NetworkSafetyError::MissingRecoveryRecord,
+            ));
+        }
+        if restored && local_proxy_active {
+            self.stop_active_proxy().await?;
+        }
+        self.network_recovery_status().await
+    }
+
     async fn run_networked_activation<F>(
         &self,
         machine: &mut ActivationMachine,
@@ -270,32 +300,6 @@ where
     where
         F: Fn(ActivationPhase) + Send + Sync + ?Sized,
     {
-        transition_with_progress(machine, ActivationPhase::RestoringNetwork, progress)?;
-        let restore_result = self.recovery.restore_pending().await;
-        let cleanup_error = match restore_result {
-            Ok(true) => None,
-            Ok(false) => Some(ActivationError::NetworkSafety(
-                NetworkSafetyError::MissingRecoveryRecord,
-            )),
-            Err(error) => Some(ActivationError::NetworkSafety(error)),
-        };
-        if let Some(cleanup_error) = cleanup_error {
-            let _ = transition_with_progress(machine, ActivationPhase::Failed, progress);
-            return Err(combine_operation_and_cleanup(
-                operation.err(),
-                cleanup_error,
-            ));
-        }
-
-        transition_with_progress(machine, ActivationPhase::StoppingLocalProxy, progress)?;
-        if let Err(cleanup_error) = self.stop_active_proxy().await {
-            let _ = transition_with_progress(machine, ActivationPhase::Failed, progress);
-            return Err(combine_operation_and_cleanup(
-                operation.err(),
-                cleanup_error,
-            ));
-        }
-
         match operation {
             Ok(value) => {
                 transition_with_progress(machine, ActivationPhase::Succeeded, progress)?;
@@ -422,7 +426,7 @@ mod tests {
     use std::sync::{Arc, Mutex as StdMutex};
 
     #[tokio::test]
-    async fn completes_full_activation_and_restores_before_proxy_shutdown() {
+    async fn completes_full_activation_and_waits_for_manual_network_restore() {
         let fixture = Fixture::new(false, false, false);
 
         let result = fixture
@@ -432,7 +436,7 @@ mod tests {
             .expect("full activation");
 
         assert!(result.locale.chinese_enabled);
-        assert!(!fixture.recovery_path.exists());
+        assert!(fixture.recovery_path.exists());
         assert_eq!(
             fixture.log(),
             [
@@ -447,10 +451,19 @@ mod tests {
                 "stop_desktop_app",
                 "launch_desktop_app",
                 "verify_chinese_effect",
-                "restore_network_state",
-                "proxy_shutdown",
             ]
         );
+
+        let status = fixture
+            .coordinator
+            .restore_network()
+            .await
+            .expect("manual network restore");
+
+        assert!(!status.pending);
+        assert!(!status.local_proxy_active);
+        assert!(!fixture.recovery_path.exists());
+        assert_order(&fixture.log(), "restore_network_state", "proxy_shutdown");
     }
 
     #[tokio::test]
@@ -481,8 +494,6 @@ mod tests {
                 ActivationPhase::StoppingDesktopApp,
                 ActivationPhase::LaunchingDesktopApp,
                 ActivationPhase::Verifying,
-                ActivationPhase::RestoringNetwork,
-                ActivationPhase::StoppingLocalProxy,
                 ActivationPhase::Succeeded,
             ]
         );
@@ -509,7 +520,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn verification_failure_still_restores_before_proxy_shutdown() {
+    async fn verification_failure_waits_for_manual_network_restore() {
         let fixture = Fixture::new(true, false, false);
 
         let error = fixture
@@ -519,8 +530,9 @@ mod tests {
             .expect_err("verification must fail");
 
         assert!(matches!(error, ActivationError::ChineseEffect(_)));
-        assert_order(&fixture.log(), "restore_network_state", "proxy_shutdown");
-        assert!(!fixture.recovery_path.exists());
+        assert!(fixture.recovery_path.exists());
+        assert!(!fixture.log().contains(&"restore_network_state"));
+        assert!(!fixture.log().contains(&"proxy_shutdown"));
     }
 
     #[tokio::test]
@@ -542,21 +554,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn restore_failure_keeps_recovery_record_and_active_proxy() {
+    async fn manual_restore_failure_keeps_recovery_record_and_active_proxy() {
         let fixture = Fixture::new(true, false, true);
 
-        let error = fixture
+        fixture
             .coordinator
             .activate(None)
             .await
-            .expect_err("restore must fail");
+            .expect_err("verification must fail");
+
+        let error = fixture
+            .coordinator
+            .restore_network()
+            .await
+            .expect_err("manual restore must fail");
 
         assert!(matches!(
             error,
-            ActivationError::OperationAndCleanupFailed { .. }
+            ActivationError::NetworkSafety(NetworkSafetyError::Platform(_))
         ));
         let message = error.to_string();
-        assert!(message.contains("中文界面验证未通过"));
         assert!(message.contains("mock restore failure"));
         assert!(fixture.recovery_path.exists());
         assert!(!fixture.log().contains(&"proxy_shutdown"));

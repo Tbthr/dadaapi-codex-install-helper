@@ -4,10 +4,16 @@ import { ref } from "vue";
 import {
   ACTIVATION_PROGRESS_EVENT,
   activateChinese,
+  getNetworkRecoveryStatus,
   isActivationAvailable,
+  restoreNetwork,
 } from "../services/activation";
 import type { ActivationEvent, ActivationPhase } from "../types/activation";
-import type { CommandError, LocaleActivationResult } from "../types/locale";
+import type {
+  CommandError,
+  LocaleActivationResult,
+  NetworkRecoveryStatus,
+} from "../types/locale";
 
 export const useActivationStore = defineStore("activation", () => {
   const available = ref(false);
@@ -17,6 +23,12 @@ export const useActivationStore = defineStore("activation", () => {
   const message = ref("");
   const error = ref("");
   const result = ref<LocaleActivationResult | null>(null);
+  const networkStatus = ref<NetworkRecoveryStatus>({
+    pending: false,
+    localProxyActive: false,
+  });
+  const recoveryRunning = ref(false);
+  const recoveryError = ref("");
   let stopListening: UnlistenFn | null = null;
 
   async function initialize(): Promise<void> {
@@ -30,14 +42,19 @@ export const useActivationStore = defineStore("activation", () => {
           message.value = event.payload.message;
         });
       }
+    } catch {
+      stopListening = null;
+    }
+    try {
       available.value = await isActivationAvailable();
     } catch {
       available.value = false;
     }
+    await refreshNetworkStatus();
   }
 
   async function activate(executablePath: string): Promise<boolean> {
-    if (!available.value || running.value) {
+    if (!available.value || running.value || networkStatus.value.pending) {
       return false;
     }
     running.value = true;
@@ -49,7 +66,7 @@ export const useActivationStore = defineStore("activation", () => {
     try {
       result.value = await activateChinese(executablePath);
       phase.value = "succeeded";
-      message.value = "中文已生效，原网络设置已恢复";
+      message.value = "中文已生效，代理仍在使用，请按需手动恢复网络";
       return true;
     } catch (reason) {
       phase.value = "failed";
@@ -57,6 +74,38 @@ export const useActivationStore = defineStore("activation", () => {
       return false;
     } finally {
       running.value = false;
+      await refreshNetworkStatus();
+    }
+  }
+
+  async function refreshNetworkStatus(): Promise<void> {
+    try {
+      networkStatus.value = await getNetworkRecoveryStatus();
+      recoveryError.value = "";
+    } catch (reason) {
+      recoveryError.value = errorMessage(reason);
+    }
+  }
+
+  async function restoreOriginalNetwork(): Promise<boolean> {
+    if (recoveryRunning.value || !networkStatus.value.pending) {
+      return false;
+    }
+    recoveryRunning.value = true;
+    recoveryError.value = "";
+    try {
+      networkStatus.value = await restoreNetwork();
+      return !networkStatus.value.pending;
+    } catch (reason) {
+      recoveryError.value = errorMessage(reason);
+      try {
+        networkStatus.value = await getNetworkRecoveryStatus();
+      } catch {
+        // Keep the last known status and the original recovery error visible.
+      }
+      return false;
+    } finally {
+      recoveryRunning.value = false;
     }
   }
 
@@ -75,7 +124,12 @@ export const useActivationStore = defineStore("activation", () => {
     message,
     error,
     result,
+    networkStatus,
+    recoveryRunning,
+    recoveryError,
     initialize,
     activate,
+    refreshNetworkStatus,
+    restoreOriginalNetwork,
   };
 });
