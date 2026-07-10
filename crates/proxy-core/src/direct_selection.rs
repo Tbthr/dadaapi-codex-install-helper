@@ -1,11 +1,14 @@
 use crate::{
     parse_node_connection_config, verify_selected_node, ActivationProbeTarget,
-    EmbeddedNodeConnector, HttpConnectProxyEngine, LocalProxySupervisor, NodeBenchmark,
-    NodeConnectionConfig, NodeSelectionReport, ProxyNode, ProxyProtocol, VerifiedActivationNode,
+    ActivationVerificationOptions, EmbeddedNodeConnector, HttpConnectProxyEngine,
+    LocalProxySupervisor, NodeBenchmark, NodeConnectionConfig, NodeSelectionReport, ProxyNode,
+    ProxyProtocol, VerifiedActivationNode,
 };
 use async_trait::async_trait;
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use std::time::Duration;
 use thiserror::Error;
+use tokio::time::{timeout_at, Instant};
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -15,6 +18,8 @@ pub struct DirectSelectionOptions {
     pub minimum_target_coverage: usize,
     pub attempts: usize,
     pub timeout: Duration,
+    pub preflight_timeout: Duration,
+    pub selection_timeout: Duration,
     pub candidate_limit: usize,
 }
 
@@ -51,12 +56,13 @@ pub enum DirectSelectionError {
     #[error("订阅中没有当前客户端支持的海外节点")]
     NoSupportedNodes,
     #[error(
-        "没有通过 ChatGPT/OpenAI 稳定性验证的节点：候选={candidate_count}，代理启动失败={start_failures}，目标验证失败={verification_failures}"
+        "没有在限定时间内通过 ChatGPT/OpenAI 稳定性验证的节点：候选={candidate_count}，代理启动失败={start_failures}，目标验证失败={verification_failures}，超时={timed_out}"
     )]
     NoUsableNodes {
         candidate_count: usize,
         start_failures: usize,
         verification_failures: usize,
+        timed_out: usize,
     },
     #[error("节点测速结束后本地代理关闭失败")]
     ProxyShutdown,
@@ -98,13 +104,16 @@ impl ActivationNodeProbe for HttpActivationNodeProbe {
         verify_selected_node(
             &benchmark,
             local_proxy_url,
-            &options.exit_target_url,
-            &options.probe_targets,
-            options
-                .minimum_target_coverage
-                .clamp(1, options.probe_targets.len()),
-            options.attempts.max(1),
-            options.timeout,
+            &ActivationVerificationOptions {
+                exit_target_url: &options.exit_target_url,
+                probe_targets: &options.probe_targets,
+                minimum_target_coverage: options
+                    .minimum_target_coverage
+                    .clamp(1, options.probe_targets.len()),
+                attempts: options.attempts.max(1),
+                timeout: options.timeout,
+                preflight_timeout: options.preflight_timeout,
+            },
         )
         .await
     }
@@ -170,30 +179,67 @@ where
         let mut start_failures = 0;
         let mut verification_failures = 0;
         let mut verified = Vec::new();
+        let mut tasks = FuturesUnordered::new();
         for (candidate_index, node) in candidates.into_iter().enumerate() {
-            tracing::info!(
-                candidate = candidate_index + 1,
-                total = candidate_count,
-                "testing activation node"
-            );
-            let session = match supervisor.start(&node).await {
-                Ok(session) => session,
-                Err(_) => {
-                    start_failures += 1;
-                    continue;
+            let supervisor = &supervisor;
+            let probe = &self.probe;
+            tasks.push(async move {
+                tracing::info!(
+                    candidate = candidate_index + 1,
+                    total = candidate_count,
+                    "testing activation node in parallel"
+                );
+                let session = match supervisor.start(&node).await {
+                    Ok(session) => session,
+                    Err(_) => return CandidateOutcome::StartFailed,
+                };
+                let local_proxy_url = match Url::parse(&format!("http://{}", session.endpoint())) {
+                    Ok(url) => url,
+                    Err(_) => return CandidateOutcome::InvalidLocalProxy,
+                };
+                let verification = probe.probe(&node, &local_proxy_url, options).await;
+                if session.shutdown().await.is_err() {
+                    return CandidateOutcome::ShutdownFailed;
                 }
+                match verification {
+                    Some(verification) => {
+                        CandidateOutcome::Verified(Box::new(DirectVerifiedNode {
+                            node,
+                            verification,
+                        }))
+                    }
+                    None => CandidateOutcome::VerificationFailed,
+                }
+            });
+        }
+
+        let deadline = Instant::now() + options.selection_timeout.max(Duration::from_millis(1));
+        while !tasks.is_empty() {
+            let outcome = match timeout_at(deadline, tasks.next()).await {
+                Ok(Some(outcome)) => outcome,
+                Ok(None) => break,
+                Err(_) => break,
             };
-            let local_proxy_url = Url::parse(&format!("http://{}", session.endpoint()))
-                .map_err(|_| DirectSelectionError::InvalidLocalProxy)?;
-            let verification = self.probe.probe(&node, &local_proxy_url, options).await;
-            if session.shutdown().await.is_err() {
-                return Err(DirectSelectionError::ProxyShutdown);
+            match outcome {
+                CandidateOutcome::Verified(candidate) => verified.push(*candidate),
+                CandidateOutcome::StartFailed => start_failures += 1,
+                CandidateOutcome::VerificationFailed => verification_failures += 1,
+                CandidateOutcome::ShutdownFailed => {
+                    return Err(DirectSelectionError::ProxyShutdown)
+                }
+                CandidateOutcome::InvalidLocalProxy => {
+                    return Err(DirectSelectionError::InvalidLocalProxy)
+                }
             }
-            if let Some(verification) = verification {
-                verified.push(DirectVerifiedNode { node, verification });
-            } else {
-                verification_failures += 1;
-            }
+        }
+        let timed_out = tasks.len();
+        drop(tasks);
+        if timed_out > 0 {
+            tracing::info!(
+                timed_out,
+                candidate_count,
+                "activation node selection deadline reached"
+            );
         }
         verified.sort_by(|left, right| {
             left.verification
@@ -208,9 +254,18 @@ where
                 candidate_count,
                 start_failures,
                 verification_failures,
+                timed_out,
             })?;
         Ok(DirectNodeSelectionReport { selected, verified })
     }
+}
+
+enum CandidateOutcome {
+    Verified(Box<DirectVerifiedNode>),
+    StartFailed,
+    VerificationFailed,
+    ShutdownFailed,
+    InvalidLocalProxy,
 }
 
 fn probe_handshake_timeout(probe_timeout: Duration) -> Duration {
@@ -315,6 +370,28 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Clone, Copy)]
+    struct DelayedProbe {
+        delay: Duration,
+        succeeds: bool,
+    }
+
+    #[async_trait]
+    impl ActivationNodeProbe for DelayedProbe {
+        async fn probe(
+            &self,
+            node: &ProxyNode,
+            local_proxy_url: &Url,
+            options: &DirectSelectionOptions,
+        ) -> Option<VerifiedActivationNode> {
+            tokio::time::sleep(self.delay).await;
+            if !self.succeeds {
+                return None;
+            }
+            FakeProbe.probe(node, local_proxy_url, options).await
+        }
+    }
+
     #[tokio::test]
     async fn selects_best_supported_overseas_node_with_local_proxy_lifecycle() {
         let selector = DirectNodeSelector::new(
@@ -365,6 +442,64 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn probes_all_candidates_concurrently() {
+        let selector = DirectNodeSelector::new(
+            EmbeddedNodeConnector::default(),
+            DelayedProbe {
+                delay: Duration::from_millis(250),
+                succeeds: true,
+            },
+            Duration::from_secs(1),
+        );
+        let mut options = options();
+        options.selection_timeout = Duration::from_secs(2);
+        let nodes: Vec<_> = (1..=4)
+            .map(|index| {
+                basic_vless_node(index, &format!("US node {index}"), NodeRegion::UnitedStates)
+            })
+            .collect();
+        let started = Instant::now();
+
+        let report = selector
+            .select(&nodes, &options)
+            .await
+            .expect("parallel selection");
+
+        assert_eq!(report.verified.len(), 4);
+        assert!(started.elapsed() < Duration::from_millis(700));
+    }
+
+    #[tokio::test]
+    async fn enforces_the_overall_selection_deadline() {
+        let selector = DirectNodeSelector::new(
+            EmbeddedNodeConnector::default(),
+            DelayedProbe {
+                delay: Duration::from_secs(5),
+                succeeds: true,
+            },
+            Duration::from_secs(1),
+        );
+        let mut options = options();
+        options.selection_timeout = Duration::from_millis(100);
+        let nodes = [
+            basic_vless_node(1, "US node 1", NodeRegion::UnitedStates),
+            basic_vless_node(2, "US node 2", NodeRegion::UnitedStates),
+        ];
+        let started = Instant::now();
+
+        let error = selector
+            .select(&nodes, &options)
+            .await
+            .expect_err("selection deadline");
+
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(matches!(
+            error,
+            DirectSelectionError::NoUsableNodes { timed_out: 2, .. }
+        ));
+    }
+
     fn basic_vless_node(index: usize, name: &str, region: NodeRegion) -> ProxyNode {
         ProxyNode {
             index,
@@ -403,6 +538,8 @@ mod tests {
             minimum_target_coverage: 1,
             attempts: 2,
             timeout: Duration::from_secs(1),
+            preflight_timeout: Duration::from_millis(500),
+            selection_timeout: Duration::from_secs(2),
             candidate_limit: 8,
         }
     }

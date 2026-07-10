@@ -59,7 +59,7 @@ fn activation_phase_message(phase: ActivationPhase) -> &'static str {
         ActivationPhase::DetectingApp => "正在重新检测 ChatGPT/Codex",
         ActivationPhase::FetchingProxyConfig => "正在获取并验证加密路由",
         ActivationPhase::FilteringProxyNodes => "正在筛选可用的海外节点",
-        ActivationPhase::TestingProxyNodes => "正在检测 ChatGPT/OpenAI 节点稳定性",
+        ActivationPhase::TestingProxyNodes => "正在并行检测候选节点（最多 15 秒）",
         ActivationPhase::SelectingProxyNode => "已选出当前最稳定节点",
         ActivationPhase::StartingLocalProxy => "正在启动临时本地代理",
         ActivationPhase::SavingNetworkState => "正在保存原网络设置",

@@ -38,6 +38,8 @@ pub fn default_activation_selection_options() -> Result<DirectSelectionOptions, 
         minimum_target_coverage: 3,
         attempts: 3,
         timeout: Duration::from_secs(8),
+        preflight_timeout: Duration::from_secs(3),
+        selection_timeout: Duration::from_secs(15),
         candidate_limit: 8,
     })
 }

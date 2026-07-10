@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine;
+use futures_util::future::join_all;
 use percent_encoding::percent_decode_str;
 use reqwest::{Client, Proxy};
 use serde::{Deserialize, Serialize};
@@ -402,64 +403,121 @@ impl ProxyExitProbe {
     }
 }
 
+pub(crate) struct ActivationVerificationOptions<'a> {
+    pub exit_target_url: &'a Url,
+    pub probe_targets: &'a [ActivationProbeTarget],
+    pub minimum_target_coverage: usize,
+    pub attempts: usize,
+    pub timeout: Duration,
+    pub preflight_timeout: Duration,
+}
+
 pub(crate) async fn verify_selected_node(
     result: &NodeBenchmark,
     local_proxy_url: &Url,
-    exit_target_url: &Url,
-    probe_targets: &[ActivationProbeTarget],
-    minimum_target_coverage: usize,
-    attempts: usize,
-    timeout: Duration,
+    options: &ActivationVerificationOptions<'_>,
 ) -> Option<VerifiedActivationNode> {
-    let mut exit_delays = Vec::with_capacity(attempts);
-    let mut country_code = None;
-    for _ in 0..attempts {
-        let Ok(exit) = probe_proxy_exit(local_proxy_url, exit_target_url, timeout).await else {
-            continue;
-        };
-        if exit.excluded_region() {
-            return None;
+    let attempts = options.attempts.max(1);
+    let preflight = probe_activation_round(
+        local_proxy_url,
+        options.exit_target_url,
+        options.probe_targets,
+        options
+            .preflight_timeout
+            .min(options.timeout)
+            .max(Duration::from_millis(1)),
+    )
+    .await;
+    let first_exit = preflight.exit?;
+    if first_exit.excluded_region() {
+        return None;
+    }
+    let preflight_coverage = preflight
+        .target_delays
+        .iter()
+        .filter(|delay| delay.is_some())
+        .count();
+    if preflight_coverage < options.minimum_target_coverage {
+        return None;
+    }
+
+    let country_code = first_exit.country_code;
+    let mut exit_delays = vec![first_exit.latency_ms];
+    let mut target_samples: Vec<_> = options
+        .probe_targets
+        .iter()
+        .zip(preflight.target_delays)
+        .map(|(target, delay)| (target.name.clone(), delay.into_iter().collect::<Vec<_>>()))
+        .collect();
+    let verification_rounds = join_all((1..attempts).map(|_| {
+        probe_activation_round(
+            local_proxy_url,
+            options.exit_target_url,
+            options.probe_targets,
+            options.timeout,
+        )
+    }))
+    .await;
+    for round in verification_rounds {
+        if let Some(exit) = round.exit {
+            if exit.excluded_region() || exit.country_code != country_code {
+                return None;
+            }
+            exit_delays.push(exit.latency_ms);
         }
-        if country_code
-            .as_ref()
-            .is_some_and(|country| country != &exit.country_code)
-        {
-            return None;
+        for ((_, delays), delay) in target_samples.iter_mut().zip(round.target_delays) {
+            if let Some(delay) = delay {
+                delays.push(delay);
+            }
         }
-        country_code = Some(exit.country_code);
-        exit_delays.push(exit.latency_ms);
     }
     tracing::info!(
         successful = exit_delays.len(),
         attempts,
         "activation exit probe completed"
     );
-
-    let mut target_samples = Vec::with_capacity(probe_targets.len());
-    for target in probe_targets {
-        let mut delays = Vec::with_capacity(attempts);
-        for _ in 0..attempts {
-            if let Ok(probe) = probe_proxy_target(local_proxy_url, target, timeout).await {
-                delays.push(probe.latency_ms);
-            }
-        }
+    for (name, delays) in &target_samples {
         tracing::info!(
-            target = target.name,
+            target = name,
             successful = delays.len(),
             attempts,
             "activation target probe completed"
         );
-        target_samples.push((target.name.clone(), delays));
     }
 
     verified_from_probe_samples(
         result,
-        country_code?,
+        country_code,
         exit_delays,
         attempts,
         target_samples,
-        minimum_target_coverage,
+        options.minimum_target_coverage,
     )
+}
+
+struct ActivationProbeRound {
+    exit: Option<ProxyExitProbe>,
+    target_delays: Vec<Option<u128>>,
+}
+
+async fn probe_activation_round(
+    local_proxy_url: &Url,
+    exit_target_url: &Url,
+    probe_targets: &[ActivationProbeTarget],
+    timeout: Duration,
+) -> ActivationProbeRound {
+    let exit_probe = probe_proxy_exit(local_proxy_url, exit_target_url, timeout);
+    let target_probes = join_all(probe_targets.iter().map(|target| async move {
+        probe_proxy_target(local_proxy_url, target, timeout)
+            .await
+            .ok()
+            .map(|probe| probe.latency_ms)
+    }));
+    let (exit, target_delays) = tokio::join!(exit_probe, target_probes);
+    ActivationProbeRound {
+        exit: exit.ok(),
+        target_delays,
+    }
 }
 
 fn verified_from_probe_samples(
