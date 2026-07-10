@@ -1,0 +1,23 @@
+[package]
+name = "desktop-discovery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+dirs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+shared-types = { path = "../shared-types" }
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+plist.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

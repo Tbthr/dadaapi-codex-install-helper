@@ -1,0 +1,32 @@
+[package]
+name = "local-e2e"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+activation-core = { path = "../../crates/activation-core" }
+axum.workspace = true
+axum-server.workspace = true
+base64.workspace = true
+config-server = { path = "../../services/config-server" }
+ed25519-dalek.workspace = true
+getrandom.workspace = true
+proxy-core = { path = "../../crates/proxy-core" }
+rcgen.workspace = true
+remote-config = { path = "../../crates/remote-config" }
+route-catalog = { path = "../../crates/route-catalog" }
+rustls.workspace = true
+shared-types = { path = "../../crates/shared-types" }
+subscription-relay = { path = "../../services/subscription-relay" }
+thiserror.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

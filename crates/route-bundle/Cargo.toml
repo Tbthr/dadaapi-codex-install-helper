@@ -1,0 +1,28 @@
+[package]
+name = "route-bundle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+base64.workspace = true
+chacha20poly1305.workspace = true
+chrono.workspace = true
+ed25519-dalek.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+route-catalog = { path = "../route-catalog" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

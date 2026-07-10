@@ -1,0 +1,92 @@
+# Wocao Hub
+
+Wocao Hub 是 wocao.ai 推出的开源跨平台 AI 桌面工具。首个版本面向 Windows 和 macOS，提供 ChatGPT/Codex 中文配置、安全路由更新、网络修复和官方软件下载能力。
+
+当前仓库已完成桌面激活核心链路：检测新版 ChatGPT/旧版 Codex、从 GitHub Raw 下载加密路由包、验证 Ed25519 签名和 SHA-256、使用 XChaCha20-Poly1305 解密、筛选和测试海外节点、启动本地代理、安全修改与恢复系统网络、写入中文配置、重启应用并验证 Renderer 运行语言。生产激活 Command 已稳定注册，未注入完整构建配置时保持只读模式。
+
+## 技术栈
+
+- Tauri v2
+- Vue 3 + TypeScript
+- Rust Workspace
+- Tokio
+- pnpm
+
+## 工程结构
+
+- `apps/desktop`：Tauri 桌面客户端
+- `crates`：可测试、可复用的 Rust 核心模块
+- `crates/route-bundle`：静态路由包下载、验签、校验、解密和密文缓存
+- `tools/route-e2e`：GitHub 生产路由真实联调工具
+- `services`：旧配置服务链路和本地兼容测试代码，不是生产依赖
+- `docs`：需求、架构、规范、计划和 AI 开发提示词
+
+## 环境要求
+
+- Rust stable，包含 `rustfmt` 和 `clippy`
+- Node.js 22+
+- pnpm 10+
+- macOS Command Line Tools，或 Windows 对应的 MSVC/WebView2 环境
+
+## 开发命令
+
+```bash
+pnpm install
+pnpm dev
+```
+
+完整验证：
+
+```bash
+pnpm verify
+```
+
+GitHub 静态路由真实联调：
+
+```bash
+cargo run -p route-e2e -- --quick
+cargo run -p route-e2e
+```
+
+工具默认读取当前用户配置目录下的 `wocao-hub/routes/route-signing-public.pem` 和 `route-encryption-key.bin`。也可通过以下环境变量覆盖文件位置，但不得把密钥写入仓库或命令行参数：
+
+- `WOCAO_HUB_ROUTE_PUBLIC_KEY_FILE`
+- `WOCAO_HUB_ROUTE_KEY_FILE`
+- `WOCAO_HUB_ROUTE_MANIFEST_URL`
+- `WOCAO_HUB_ROUTE_KEY_ID`
+
+桌面激活运行时通过构建环境注入四项配置：
+
+- `WOCAO_HUB_ROUTE_MANIFEST_URL`：无凭据、无查询参数的 HTTPS `manifest.json` 地址。
+- `WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM`：验证路由清单签名的 Ed25519 公钥 PEM，可使用真实换行或转义的 `\n`。
+- `WOCAO_HUB_ROUTE_KEY_B64`：32 字节 XChaCha20-Poly1305 解密 key 的 Base64。它会进入官方客户端，只能用于避免直接浏览，不能视为不可提取秘密。
+- `WOCAO_HUB_ROUTE_KEY_ID`：必须与签名清单中的 `keyId` 一致。
+
+四项都未提供时，桌面端只装载只读检测能力；仅缺任一项或内容无效时，应用拒绝启动，避免半配置运行。签名私钥和原始上游订阅地址不得进入客户端构建。
+
+## 当前范围
+
+- 不使用 Go Sidecar
+- 不使用卡密、激活码、IP 绑定或次数限制
+- 不使用七牛或自建软件下载镜像
+- 软件安装包通过用户本地网络从官方地址下载
+- 中文订阅由独立 GitHub 仓库定时发布为签名加密路由包，客户端在本机验签、解密、解析和筛选
+- ChatGPT/Codex 代理流量由客户端直接连接选中的订阅节点，不经过 wocao.ai 服务器
+
+## 当前可用能力
+
+- 识别 macOS 新版 ChatGPT 与旧版 Codex
+- Windows ChatGPT/Codex 常规安装和 Microsoft Store 路径检测
+- 读取 `config.toml` 与全局状态中的语言设置
+- 写入前备份原文件，写入失败时恢复现场
+- 幂等写入 `localeOverride = "zh-CN"`
+- 恢复原语言配置
+- 配置完成后停止并重新打开目标桌面应用
+- GitHub 静态路由下载、Ed25519 验签、SHA-256 校验和 XChaCha20-Poly1305 解密
+- 仅保存签名清单、签名和密文的私有原子缓存及严格安全回退
+- VLESS TCP/TLS、Hysteria2 本地协议连接
+- ChatGPT/OpenAI 多目标节点选优及脱敏结果缓存
+- 网络恢复优先的完整激活协调器
+- 中文配置与 Renderer `--lang=zh-CN` 双重验证
+
+详细需求见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。

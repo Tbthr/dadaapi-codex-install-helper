@@ -1,0 +1,22 @@
+[package]
+name = "route-catalog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+base64.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+proxy-core = { path = "../proxy-core" }
+reqwest.workspace = true
+serde.workspace = true
+sha2.workspace = true
+shared-types = { path = "../shared-types" }
+thiserror.workspace = true
+tokio.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

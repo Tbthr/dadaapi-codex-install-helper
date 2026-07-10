@@ -1,0 +1,17 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+node_modules/
+target/
+dist/
+*.log
+coverage/
+apps/desktop/src-tauri/gen/
+services/config-server/data/
+**/route-encryption-key.bin
+**/route-signing-private.pem
+*.p12
+*.pfx
