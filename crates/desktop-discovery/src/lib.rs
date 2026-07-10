@@ -218,7 +218,19 @@ fn inspect_macos_bundle(path: &Path) -> Result<Option<DesktopApp>, DiscoveryErro
         let lower = name.to_ascii_lowercase();
         lower.contains("chatgpt") || lower.contains("codex")
     });
-    if !supported_identifier && !supported_name {
+    let supported_bundle = if bundle_identifier.is_some() {
+        supported_identifier
+    } else {
+        supported_name
+    };
+    if !supported_bundle
+        || excluded_macos_helper(
+            path,
+            bundle_identifier.as_deref(),
+            &display_name,
+            executable_name,
+        )
+    {
         return Ok(None);
     }
 
@@ -243,6 +255,24 @@ fn inspect_macos_bundle(path: &Path) -> Result<Option<DesktopApp>, DiscoveryErro
         version,
         running,
     }))
+}
+
+#[cfg(target_os = "macos")]
+fn excluded_macos_helper(
+    path: &Path,
+    bundle_identifier: Option<&str>,
+    display_name: &str,
+    executable_name: &str,
+) -> bool {
+    let identifier = bundle_identifier.unwrap_or_default().to_ascii_lowercase();
+    let display_name = display_name.to_ascii_lowercase();
+    let executable_name = executable_name.to_ascii_lowercase();
+    let path = path.to_string_lossy().to_ascii_lowercase();
+    identifier == "com.openai.sky.cuaservice"
+        || identifier.starts_with("com.openai.sky.")
+        || display_name.contains("computer use")
+        || executable_name.contains("computeruse")
+        || path.contains("/.codex/computer-use/")
 }
 
 #[cfg(target_os = "windows")]
@@ -489,5 +519,35 @@ mod tests {
         assert_eq!(detected.display_name, "ChatGPT");
         assert_eq!(detected.version.as_deref(), Some("26.707.31428"));
         assert!(detected.executable_path.ends_with("Contents/MacOS/ChatGPT"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn excludes_codex_computer_use_helper() {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let app = temp.path().join("Codex Computer Use.app");
+        let contents = app.join("Contents");
+        std::fs::create_dir_all(contents.join("MacOS")).expect("bundle directories");
+
+        let mut info = plist::Dictionary::new();
+        info.insert(
+            "CFBundleIdentifier".to_owned(),
+            plist::Value::String("com.openai.sky.CUAService".to_owned()),
+        );
+        info.insert(
+            "CFBundleName".to_owned(),
+            plist::Value::String("Codex Computer Use".to_owned()),
+        );
+        info.insert(
+            "CFBundleExecutable".to_owned(),
+            plist::Value::String("SkyComputerUseService".to_owned()),
+        );
+        plist::Value::Dictionary(info)
+            .to_file_xml(contents.join("Info.plist"))
+            .expect("write plist");
+
+        let detected = inspect_macos_bundle(&app).expect("valid bundle");
+
+        assert!(detected.is_none());
     }
 }
