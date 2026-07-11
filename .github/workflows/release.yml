@@ -18,13 +18,17 @@ jobs:
       matrix:
         include:
           - platform: macos-14
-            target: aarch64-apple-darwin
-          - platform: macos-15-intel
-            target: x86_64-apple-darwin
+            target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundles: dmg
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-          - platform: windows-latest
+            rust_targets: x86_64-pc-windows-msvc
+            bundles: nsis
+          - platform: windows-11-arm
             target: aarch64-pc-windows-msvc
+            rust_targets: aarch64-pc-windows-msvc
+            bundles: nsis
 
     runs-on: ${{ matrix.platform }}
 
@@ -41,7 +45,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
       - run: pnpm install --frozen-lockfile
 
@@ -62,4 +70,4 @@ jobs:
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
