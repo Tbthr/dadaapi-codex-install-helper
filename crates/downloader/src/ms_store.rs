@@ -719,4 +719,15 @@ mod tests {
             .host_str()
             .is_some_and(|host| host.ends_with("dl.delivery.mp.microsoft.com")));
     }
+
+    #[tokio::test]
+    #[ignore = "live refreshed GitHub metadata integration"]
+    async fn resolves_remote_arm64_msix() {
+        let url = resolve_remote_msix_url(CpuArchitecture::Arm64)
+            .await
+            .expect("remote arm64 msix");
+        assert!(url
+            .host_str()
+            .is_some_and(|host| host.ends_with("dl.delivery.mp.microsoft.com")));
+    }
 }
