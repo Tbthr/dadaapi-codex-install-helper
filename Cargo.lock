@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "activation-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -670,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "cli-tools"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "dirs",
  "shared-types",
@@ -699,7 +699,7 @@ dependencies = [
 
 [[package]]
 name = "config-server"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -1023,7 +1023,7 @@ dependencies = [
 
 [[package]]
 name = "desktop-discovery"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "dirs",
@@ -1038,7 +1038,7 @@ dependencies = [
 
 [[package]]
 name = "diagnostics"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "libc",
@@ -1155,7 +1155,7 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "downloader"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "futures-util",
  "reqwest 0.12.28",
@@ -2613,7 +2613,7 @@ checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
 name = "local-e2e"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "activation-core",
  "anyhow",
@@ -2641,7 +2641,7 @@ dependencies = [
 
 [[package]]
 name = "locale-config"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "dirs",
  "serde_json",
@@ -3341,7 +3341,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "platform"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "dirs",
@@ -3518,7 +3518,7 @@ dependencies = [
 
 [[package]]
 name = "proxy-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3816,7 +3816,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "remote-config"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3932,7 +3932,7 @@ dependencies = [
 
 [[package]]
 name = "route-bundle"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.22.1",
  "chacha20poly1305",
@@ -3954,7 +3954,7 @@ dependencies = [
 
 [[package]]
 name = "route-catalog"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3972,7 +3972,7 @@ dependencies = [
 
 [[package]]
 name = "route-e2e"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "activation-core",
  "anyhow",
@@ -4495,7 +4495,7 @@ dependencies = [
 
 [[package]]
 name = "shared-types"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "serde",
@@ -4896,7 +4896,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "subscription-relay"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -6808,7 +6808,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "wocao-hub-desktop"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "activation-core",
  "base64 0.22.1",
