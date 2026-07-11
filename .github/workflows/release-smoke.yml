@@ -26,12 +26,15 @@ jobs:
       - name: Download released installer
         shell: pwsh
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
           RELEASE_ARCHITECTURE: ${{ matrix.architecture }}
         run: |
           $asset = "Wocao.Hub_$($env:RELEASE_TAG.TrimStart('v'))_$env:RELEASE_ARCHITECTURE-setup.exe"
-          $url = "https://github.com/${{ github.repository }}/releases/download/$env:RELEASE_TAG/$asset"
-          Invoke-WebRequest -Uri $url -OutFile installer.exe
+          gh release download $env:RELEASE_TAG `
+            --repo $env:GITHUB_REPOSITORY `
+            --pattern $asset `
+            --output installer.exe
           $signature = Get-AuthenticodeSignature installer.exe
           Write-Host "Installer Authenticode status: $($signature.Status)"
 
