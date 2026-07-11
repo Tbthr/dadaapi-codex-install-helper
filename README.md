@@ -4,6 +4,24 @@ Wocao Hub 是 wocao.ai 推出的开源跨平台 AI 桌面工具。首个版本�
 
 当前仓库已完成桌面激活核心链路：检测新版 ChatGPT/旧版 Codex、从 GitHub Raw 下载加密路由包、验证 Ed25519 签名和 SHA-256、使用 XChaCha20-Poly1305 解密、筛选和测试海外节点、启动本地代理、安全修改并由用户手动恢复系统网络、写入中文配置、重启应用并验证 Renderer 运行语言。生产激活 Command 已稳定注册，未注入完整构建配置时保持只读模式。
 
+## 快速安装
+
+Windows 11（PowerShell）：
+
+```powershell
+irm https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.ps1 | iex
+```
+
+macOS（终端）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.sh | /bin/sh
+```
+
+安装脚本会从 GitHub 最新正式 Release 获取安装包，自动选择 Windows x64/ARM64 或 macOS Universal 版本，并使用 GitHub Release 提供的 SHA-256 摘要校验下载内容。Windows 脚本会在校验通过后解除浏览器下载隔离标记；macOS 脚本会在校验 DMG 和应用代码签名完整性后安装并启动应用。
+
+不希望执行远程脚本的用户可以在 [GitHub Releases](https://github.com/ray7086/wocao-hub/releases/latest) 手动下载安装包并查看公开脚本源码。
+
 ## 技术栈
 
 - Tauri v2

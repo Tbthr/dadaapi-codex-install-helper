@@ -1,0 +1,45 @@
+name: Verify install scripts
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/install.ps1"
+      - "scripts/install.sh"
+      - ".github/workflows/install-scripts.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/install.ps1"
+      - "scripts/install.sh"
+      - ".github/workflows/install-scripts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - windows-latest
+          - windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify the released installer
+        shell: pwsh
+        env:
+          WOCAO_HUB_INSTALL_DRY_RUN: "1"
+        run: ./scripts/install.ps1
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify the released DMG
+        env:
+          WOCAO_HUB_INSTALL_DRY_RUN: "1"
+        run: /bin/sh scripts/install.sh
