@@ -10,6 +10,7 @@ Tauri Command Layer
 Rust Application Services
     ↓
 Discovery | Platform | Proxy | Locale | Route Bundle | Downloader | Diagnostics
+                                             | CLI Tools
 
 GitHub Actions Route Publisher
     ↓ HTTPS upstream subscription
@@ -134,6 +135,10 @@ WritingLocale → ReadingLocale → Configured | Failed
 - 应用数据目录
 - 安装器启动
 
+下载任务只接受可信产品目录中的固定官方链接，目标路径由后端计算且不写入任务状态文件。下载完成后进入 `Ready`，用户触发安装时由系统默认图形界面直接打开 DMG 或 EXE；前端不能传入任意 URL、本地路径、命令或参数。
+
+CLI 安装只接受共享类型中的 `CodexCli` 与 `ClaudeCodeCli`，核心服务将其映射到固定 npm 包并使用官方 npm registry。Node/npm 缺失时返回稳定错误，由界面引导用户先安装可信目录中的 Node.js LTS。Windows 子进程必须隐藏控制台窗口。
+
 ## Local Data
 
 ```text
@@ -143,6 +148,7 @@ route-bundles/      已签名且仍为密文的路由缓存
 recovery.json       未完成的网络恢复记录
 downloads.json      下载任务状态
 logs/app.log        脱敏日志
+diagnostics-exports/ 仅包含白名单摘要和二次脱敏日志的诊断包
 ```
 
 ## Public Route Artifacts
@@ -171,3 +177,11 @@ https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/routes.en
 - `WOCAO_HUB_ROUTE_KEY_ID`：预期密钥标识。
 - 四项全部缺失时只装载只读桌面能力；仅缺一项或任何一项格式错误时启动失败。
 - 公钥、清单 URL 和 `keyId` 是公开配置。解密 key 会进入官方客户端，只能作为混淆手段；签名私钥和原始上游订阅地址不得进入客户端构建。
+
+### Desktop Updates
+
+- 客户端通过 Tauri Updater 检查 `ray7086/wocao-hub` GitHub Releases 中的 `latest.json`，不依赖自建版本服务器。
+- 应用启动后后台检查一次；发现新版本后只提示，不自动安装或强制重启。
+- 更新包下载完成并通过 Tauri 更新签名验证后，由用户确认重启。
+- 更新签名私钥与密码只存在于 GitHub Actions Secrets 和发布者私有环境；客户端仅内置更新公钥。
+- GitHub Actions 对 macOS Intel/Apple Silicon 与 Windows x64/ARM64 分别构建并发布更新资产。

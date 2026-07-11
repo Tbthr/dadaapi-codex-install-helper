@@ -24,6 +24,13 @@ export interface LocaleOverview {
   locale: LocaleStatus;
 }
 
+export interface RepairOverview {
+  app: DesktopApp | null;
+  locale: LocaleStatus;
+  networkRecovery: NetworkRecoveryStatus;
+  activationAvailable: boolean;
+}
+
 export interface LocaleActivationResult {
   app: DesktopApp;
   locale: LocaleStatus;
@@ -41,7 +48,9 @@ export interface LocaleRestoreResult {
   app: DesktopApp | null;
   locale: LocaleStatus;
   restoredFiles: string[];
+  configurationRestored: boolean;
   restarted: boolean;
+  restartWarning: CommandError | null;
 }
 
 export interface CommandError {

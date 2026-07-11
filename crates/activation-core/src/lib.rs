@@ -19,7 +19,7 @@ use platform::{
 };
 use serde::{Deserialize, Serialize};
 use shared_types::{
-    ActivationPhase, DesktopApp, LocaleOverview, LocaleRestoreResult, OperatingSystem,
+    ActivationPhase, CommandError, DesktopApp, LocaleOverview, LocaleRestoreResult, OperatingSystem,
 };
 use std::fmt;
 use std::fs;
@@ -399,21 +399,54 @@ impl LocaleActivationService {
             .await
             .map_err(|error| ActivationError::BackgroundTask(error.to_string()))??;
 
-        let restarted = if let Some(app) = app.as_ref() {
-            self.platform.stop_desktop_app(app).await?;
-            self.platform.launch_desktop_app(app).await?;
-            true
-        } else {
-            false
-        };
+        let (restarted, restart_warning) =
+            restart_running_app_after_restore(&self.platform, app.as_ref()).await;
 
         Ok(LocaleRestoreResult {
             app,
             locale: restored.status,
             restored_files: restored.restored_files,
+            configuration_restored: true,
             restarted,
+            restart_warning,
         })
     }
+}
+
+async fn restart_running_app_after_restore<P>(
+    platform: &P,
+    app: Option<&DesktopApp>,
+) -> (bool, Option<CommandError>)
+where
+    P: PlatformAdapter,
+{
+    let Some(app) = app.filter(|app| app.running) else {
+        return (false, None);
+    };
+
+    if let Err(error) = platform.stop_desktop_app(app).await {
+        tracing::warn!(error = %error, product = ?app.product, "could not stop desktop app after locale restore");
+        return (
+            false,
+            Some(CommandError {
+                code: "locale_restore_stop_failed".to_owned(),
+                message: "中文配置已撤销，但无法关闭正在运行的 ChatGPT/Codex".to_owned(),
+            }),
+        );
+    }
+
+    if let Err(error) = platform.launch_desktop_app(app).await {
+        tracing::warn!(error = %error, product = ?app.product, "could not relaunch desktop app after locale restore");
+        return (
+            false,
+            Some(CommandError {
+                code: "locale_restore_launch_failed".to_owned(),
+                message: "中文配置已撤销，但无法重新打开 ChatGPT/Codex，请手动启动".to_owned(),
+            }),
+        );
+    }
+
+    (true, None)
 }
 
 async fn detect_apps(
@@ -618,6 +651,55 @@ mod tests {
         assert!(path.exists());
     }
 
+    #[tokio::test]
+    async fn locale_restore_does_not_start_an_app_that_was_not_running() {
+        let platform = MockPlatform::default();
+        let mut app = desktop_app();
+        app.running = false;
+
+        let (restarted, warning) = restart_running_app_after_restore(&platform, Some(&app)).await;
+
+        assert!(!restarted);
+        assert!(warning.is_none());
+        let state = platform.state.lock().expect("mock state");
+        assert_eq!(state.stop_calls, 0);
+        assert_eq!(state.launch_calls, 0);
+    }
+
+    #[tokio::test]
+    async fn locale_restore_reports_partial_success_when_relaunch_fails() {
+        let platform = MockPlatform::with_app_failures(false, true);
+        let app = desktop_app();
+
+        let (restarted, warning) = restart_running_app_after_restore(&platform, Some(&app)).await;
+
+        assert!(!restarted);
+        assert_eq!(
+            warning.as_ref().map(|warning| warning.code.as_str()),
+            Some("locale_restore_launch_failed")
+        );
+        let state = platform.state.lock().expect("mock state");
+        assert_eq!(state.stop_calls, 1);
+        assert_eq!(state.launch_calls, 1);
+    }
+
+    #[tokio::test]
+    async fn locale_restore_reports_partial_success_when_stop_fails() {
+        let platform = MockPlatform::with_app_failures(true, false);
+        let app = desktop_app();
+
+        let (restarted, warning) = restart_running_app_after_restore(&platform, Some(&app)).await;
+
+        assert!(!restarted);
+        assert_eq!(
+            warning.as_ref().map(|warning| warning.code.as_str()),
+            Some("locale_restore_stop_failed")
+        );
+        let state = platform.state.lock().expect("mock state");
+        assert_eq!(state.stop_calls, 1);
+        assert_eq!(state.launch_calls, 0);
+    }
+
     fn local_proxy_settings() -> LocalProxySettings {
         LocalProxySettings::new(
             SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 17_892),
@@ -626,11 +708,27 @@ mod tests {
         .expect("valid local proxy settings")
     }
 
+    fn desktop_app() -> DesktopApp {
+        DesktopApp {
+            product: shared_types::DesktopProduct::ChatGpt,
+            display_name: "ChatGPT".to_owned(),
+            install_path: "/Applications/ChatGPT.app".to_owned(),
+            executable_path: "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT".to_owned(),
+            bundle_identifier: Some("com.openai.codex".to_owned()),
+            version: Some("1.0.0".to_owned()),
+            running: true,
+        }
+    }
+
     #[derive(Debug, Default)]
     struct MockPlatformState {
+        stop_calls: usize,
+        launch_calls: usize,
         save_calls: usize,
         apply_calls: usize,
         restore_calls: usize,
+        stop_fails: bool,
+        launch_fails: bool,
         apply_fails: bool,
         restore_fails: bool,
     }
@@ -650,16 +748,38 @@ mod tests {
                 })),
             }
         }
+
+        fn with_app_failures(stop_fails: bool, launch_fails: bool) -> Self {
+            Self {
+                state: Arc::new(Mutex::new(MockPlatformState {
+                    stop_fails,
+                    launch_fails,
+                    ..MockPlatformState::default()
+                })),
+            }
+        }
     }
 
     #[async_trait]
     impl PlatformAdapter for MockPlatform {
         async fn stop_desktop_app(&self, _app: &DesktopApp) -> Result<(), PlatformError> {
-            Ok(())
+            let mut state = self.state.lock().expect("mock state");
+            state.stop_calls += 1;
+            if state.stop_fails {
+                Err(PlatformError::Operation("mock stop failure".to_owned()))
+            } else {
+                Ok(())
+            }
         }
 
         async fn launch_desktop_app(&self, _app: &DesktopApp) -> Result<(), PlatformError> {
-            Ok(())
+            let mut state = self.state.lock().expect("mock state");
+            state.launch_calls += 1;
+            if state.launch_fails {
+                Err(PlatformError::Operation("mock launch failure".to_owned()))
+            } else {
+                Ok(())
+            }
         }
 
         async fn desktop_app_uses_locale(

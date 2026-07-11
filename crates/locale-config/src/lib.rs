@@ -12,6 +12,7 @@ use toml_edit::{value, DocumentMut, Item, Table};
 const CHINESE_LOCALE: &str = "zh-CN";
 const BACKUP_SUFFIX: &str = ".wocao-hub.bak";
 const MISSING_SUFFIX: &str = ".wocao-hub.missing";
+const MISSING_MARKER_CONTENTS: &[u8] = b"missing\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalePaths {
@@ -71,6 +72,36 @@ pub enum LocaleConfigError {
     InvalidGlobalState,
     #[error("没有可恢复的原始中文配置备份")]
     BackupNotFound,
+    #[error("恢复数据冲突，备份和缺失标记不能同时存在（{0}）")]
+    ConflictingRestoreData(String),
+    #[error("缺失标记内容无效，无法安全恢复（{0}）")]
+    InvalidMissingMarker(String),
+    #[error("恢复失败且事务回滚未完整完成：{source}；回滚错误：{rollback_errors}")]
+    TransactionRollback {
+        #[source]
+        source: Box<LocaleConfigError>,
+        rollback_errors: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct FileSnapshot {
+    contents: Option<Vec<u8>>,
+    permissions: Option<fs::Permissions>,
+}
+
+#[derive(Debug)]
+enum RestoreAction {
+    Replace(Vec<u8>),
+    Remove,
+}
+
+#[derive(Debug)]
+struct RestorePlan {
+    target_path: PathBuf,
+    artifact_path: PathBuf,
+    artifact_snapshot: FileSnapshot,
+    action: RestoreAction,
 }
 
 pub fn default_locale_paths() -> Result<LocalePaths, LocaleConfigError> {
@@ -154,20 +185,77 @@ pub fn apply_chinese_locale(paths: &LocalePaths) -> Result<LocaleApplyOutcome, L
 }
 
 pub fn restore_locale(paths: &LocalePaths) -> Result<LocaleRestoreOutcome, LocaleConfigError> {
-    let mut restored_files = Vec::new();
-    if restore_backup(&paths.config_path)? {
-        restored_files.push(paths.config_path.to_string_lossy().into_owned());
-    }
-    if restore_backup(&paths.global_state_path)? {
-        restored_files.push(paths.global_state_path.to_string_lossy().into_owned());
-    }
-    if restored_files.is_empty() {
+    restore_locale_transaction(paths, apply_restore_plan, remove_restore_file)
+}
+
+fn restore_locale_transaction<Apply, Cleanup>(
+    paths: &LocalePaths,
+    mut apply: Apply,
+    mut cleanup: Cleanup,
+) -> Result<LocaleRestoreOutcome, LocaleConfigError>
+where
+    Apply: FnMut(&RestorePlan) -> Result<(), LocaleConfigError>,
+    Cleanup: FnMut(&Path) -> Result<(), LocaleConfigError>,
+{
+    let plans = [
+        preflight_restore(&paths.config_path)?,
+        preflight_restore(&paths.global_state_path)?,
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    if plans.is_empty() {
         return Err(LocaleConfigError::BackupNotFound);
     }
 
+    let target_snapshots = plans
+        .iter()
+        .map(|plan| {
+            read_snapshot(&plan.target_path).map(|snapshot| (plan.target_path.clone(), snapshot))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for plan in &plans {
+        if let Err(error) = apply(plan) {
+            return Err(rollback_restore_transaction(
+                error,
+                &plans,
+                &target_snapshots,
+                false,
+            ));
+        }
+    }
+
+    let mut status = match inspect_locale(paths) {
+        Ok(status) => status,
+        Err(error) => {
+            return Err(rollback_restore_transaction(
+                error,
+                &plans,
+                &target_snapshots,
+                false,
+            ));
+        }
+    };
+
+    for plan in &plans {
+        if let Err(error) = cleanup(&plan.artifact_path) {
+            return Err(rollback_restore_transaction(
+                error,
+                &plans,
+                &target_snapshots,
+                true,
+            ));
+        }
+    }
+
+    status.restore_available = false;
     Ok(LocaleRestoreOutcome {
-        status: inspect_locale(paths)?,
-        restored_files,
+        status,
+        restored_files: plans
+            .iter()
+            .map(|plan| plan.target_path.to_string_lossy().into_owned())
+            .collect(),
     })
 }
 
@@ -330,8 +418,12 @@ fn set_safe_permissions(original: &Path, temporary: &Path) -> Result<(), std::io
 }
 
 #[cfg(not(unix))]
-fn set_safe_permissions(_original: &Path, _temporary: &Path) -> Result<(), std::io::Error> {
-    Ok(())
+fn set_safe_permissions(original: &Path, temporary: &Path) -> Result<(), std::io::Error> {
+    match fs::metadata(original) {
+        Ok(metadata) => fs::set_permissions(temporary, metadata.permissions()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 fn prepare_backup(path: &Path, original: Option<&[u8]>) -> Result<(), LocaleConfigError> {
@@ -340,52 +432,145 @@ fn prepare_backup(path: &Path, original: Option<&[u8]>) -> Result<(), LocaleConf
     }
     match original {
         Some(contents) => atomic_write(&suffixed(path, BACKUP_SUFFIX), contents),
-        None => atomic_write(&suffixed(path, MISSING_SUFFIX), b"missing\n"),
+        None => atomic_write(&suffixed(path, MISSING_SUFFIX), MISSING_MARKER_CONTENTS),
     }
 }
 
-fn restore_backup(path: &Path) -> Result<bool, LocaleConfigError> {
+fn preflight_restore(path: &Path) -> Result<Option<RestorePlan>, LocaleConfigError> {
     let backup = suffixed(path, BACKUP_SUFFIX);
     let missing = suffixed(path, MISSING_SUFFIX);
-    if let Some(contents) = read_optional(&backup)? {
-        atomic_write(path, &contents)?;
-        remove_restore_file(&backup)?;
-        let _ = fs::remove_file(&missing);
-        return Ok(true);
+    let backup_snapshot = read_snapshot(&backup)?;
+    let missing_snapshot = read_snapshot(&missing)?;
+
+    if backup_snapshot.contents.is_some() && missing_snapshot.contents.is_some() {
+        return Err(LocaleConfigError::ConflictingRestoreData(
+            path.to_string_lossy().into_owned(),
+        ));
     }
-    if missing.exists() {
-        if path.exists() {
-            fs::remove_file(path).map_err(|source| LocaleConfigError::Write {
-                path: path.to_string_lossy().into_owned(),
-                source,
-            })?;
+
+    if let Some(contents) = backup_snapshot.contents.clone() {
+        return Ok(Some(RestorePlan {
+            target_path: path.to_path_buf(),
+            artifact_path: backup,
+            artifact_snapshot: backup_snapshot,
+            action: RestoreAction::Replace(contents),
+        }));
+    }
+
+    if let Some(contents) = missing_snapshot.contents.as_deref() {
+        if contents != MISSING_MARKER_CONTENTS {
+            return Err(LocaleConfigError::InvalidMissingMarker(
+                missing.to_string_lossy().into_owned(),
+            ));
         }
-        remove_restore_file(&missing)?;
-        return Ok(true);
+        return Ok(Some(RestorePlan {
+            target_path: path.to_path_buf(),
+            artifact_path: missing,
+            artifact_snapshot: missing_snapshot,
+            action: RestoreAction::Remove,
+        }));
     }
-    Ok(false)
+
+    Ok(None)
+}
+
+fn read_snapshot(path: &Path) -> Result<FileSnapshot, LocaleConfigError> {
+    let Some(contents) = read_optional(path)? else {
+        return Ok(FileSnapshot {
+            contents: None,
+            permissions: None,
+        });
+    };
+    let permissions = fs::metadata(path)
+        .map(|metadata| metadata.permissions())
+        .map_err(|source| LocaleConfigError::Read {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        })?;
+    Ok(FileSnapshot {
+        contents: Some(contents),
+        permissions: Some(permissions),
+    })
+}
+
+fn apply_restore_plan(plan: &RestorePlan) -> Result<(), LocaleConfigError> {
+    match &plan.action {
+        RestoreAction::Replace(contents) => atomic_write(&plan.target_path, contents),
+        RestoreAction::Remove => remove_file_if_exists(&plan.target_path),
+    }
+}
+
+fn rollback_restore_transaction(
+    source: LocaleConfigError,
+    plans: &[RestorePlan],
+    target_snapshots: &[(PathBuf, FileSnapshot)],
+    restore_artifacts: bool,
+) -> LocaleConfigError {
+    let mut rollback_errors = Vec::new();
+
+    if restore_artifacts {
+        for plan in plans {
+            if let Err(error) = restore_file_snapshot(&plan.artifact_path, &plan.artifact_snapshot)
+            {
+                rollback_errors.push(error.to_string());
+            }
+        }
+    }
+
+    for (path, snapshot) in target_snapshots.iter().rev() {
+        if let Err(error) = restore_file_snapshot(path, snapshot) {
+            rollback_errors.push(error.to_string());
+        }
+    }
+
+    if rollback_errors.is_empty() {
+        source
+    } else {
+        LocaleConfigError::TransactionRollback {
+            source: Box::new(source),
+            rollback_errors: rollback_errors.join("；"),
+        }
+    }
+}
+
+fn restore_file_snapshot(path: &Path, snapshot: &FileSnapshot) -> Result<(), LocaleConfigError> {
+    match snapshot.contents.as_deref() {
+        Some(contents) => {
+            atomic_write(path, contents)?;
+            if let Some(permissions) = &snapshot.permissions {
+                fs::set_permissions(path, permissions.clone()).map_err(|source| {
+                    LocaleConfigError::Write {
+                        path: path.to_string_lossy().into_owned(),
+                        source,
+                    }
+                })?;
+            }
+            Ok(())
+        }
+        None => remove_file_if_exists(path),
+    }
 }
 
 fn restore_snapshot(path: &Path, original: Option<&[u8]>) -> Result<(), LocaleConfigError> {
     match original {
         Some(contents) => atomic_write(path, contents),
-        None => {
-            if path.exists() {
-                fs::remove_file(path).map_err(|source| LocaleConfigError::Write {
-                    path: path.to_string_lossy().into_owned(),
-                    source,
-                })?;
-            }
-            Ok(())
-        }
+        None => remove_file_if_exists(path),
     }
 }
 
 fn remove_restore_file(path: &Path) -> Result<(), LocaleConfigError> {
-    fs::remove_file(path).map_err(|source| LocaleConfigError::Write {
-        path: path.to_string_lossy().into_owned(),
-        source,
-    })
+    remove_file_if_exists(path)
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<(), LocaleConfigError> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(LocaleConfigError::Write {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        }),
+    }
 }
 
 fn has_restore_data(path: &Path) -> bool {
@@ -457,6 +642,160 @@ mod tests {
     }
 
     #[test]
+    fn rolls_back_first_file_when_second_restore_fails() {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let paths = LocalePaths::from_codex_home(temp.path().join(".codex"));
+        fs::create_dir_all(paths.config_path.parent().expect("config parent"))
+            .expect("create config directory");
+        let original_config = b"model = \"gpt-5\"\n";
+        let original_state = br#"{"theme":"dark"}
+"#;
+        fs::write(&paths.config_path, original_config).expect("write config");
+        fs::write(&paths.global_state_path, original_state).expect("write state");
+
+        apply_chinese_locale(&paths).expect("apply locale");
+        let applied_config = fs::read(&paths.config_path).expect("read applied config");
+        let applied_state = fs::read(&paths.global_state_path).expect("read applied state");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            fs::set_permissions(&paths.config_path, fs::Permissions::from_mode(0o640))
+                .expect("set config permissions");
+        }
+
+        let mut apply_count = 0;
+        let error = restore_locale_transaction(
+            &paths,
+            |plan| {
+                apply_count += 1;
+                if apply_count == 2 {
+                    return Err(injected_write_error(&plan.target_path));
+                }
+                apply_restore_plan(plan)
+            },
+            remove_restore_file,
+        )
+        .expect_err("second restore must fail");
+
+        assert!(matches!(error, LocaleConfigError::Write { .. }));
+        assert_eq!(
+            fs::read(&paths.config_path).expect("read rolled back config"),
+            applied_config
+        );
+        assert_eq!(
+            fs::read(&paths.global_state_path).expect("read rolled back state"),
+            applied_state
+        );
+        assert!(has_restore_data(&paths.config_path));
+        assert!(has_restore_data(&paths.global_state_path));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mode = fs::metadata(&paths.config_path)
+                .expect("read config metadata")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o640);
+        }
+
+        restore_locale(&paths).expect("retry restore");
+        assert_eq!(
+            fs::read(&paths.config_path).expect("read restored config"),
+            original_config
+        );
+        assert_eq!(
+            fs::read(&paths.global_state_path).expect("read restored state"),
+            original_state
+        );
+    }
+
+    #[test]
+    fn rolls_back_files_and_recreates_artifacts_when_cleanup_fails() {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let paths = LocalePaths::from_codex_home(temp.path().join(".codex"));
+        fs::create_dir_all(paths.config_path.parent().expect("config parent"))
+            .expect("create config directory");
+        let original_config = b"model = \"gpt-5\"\n";
+        let original_state = br#"{"theme":"dark"}
+"#;
+        fs::write(&paths.config_path, original_config).expect("write config");
+        fs::write(&paths.global_state_path, original_state).expect("write state");
+
+        apply_chinese_locale(&paths).expect("apply locale");
+        let applied_config = fs::read(&paths.config_path).expect("read applied config");
+        let applied_state = fs::read(&paths.global_state_path).expect("read applied state");
+
+        let mut cleanup_count = 0;
+        let error = restore_locale_transaction(&paths, apply_restore_plan, |artifact_path| {
+            cleanup_count += 1;
+            if cleanup_count == 2 {
+                return Err(injected_write_error(artifact_path));
+            }
+            remove_restore_file(artifact_path)
+        })
+        .expect_err("second cleanup must fail");
+
+        assert!(matches!(error, LocaleConfigError::Write { .. }));
+        assert_eq!(
+            fs::read(&paths.config_path).expect("read rolled back config"),
+            applied_config
+        );
+        assert_eq!(
+            fs::read(&paths.global_state_path).expect("read rolled back state"),
+            applied_state
+        );
+        assert!(has_restore_data(&paths.config_path));
+        assert!(has_restore_data(&paths.global_state_path));
+
+        restore_locale(&paths).expect("retry restore");
+        assert_eq!(
+            fs::read(&paths.config_path).expect("read restored config"),
+            original_config
+        );
+        assert_eq!(
+            fs::read(&paths.global_state_path).expect("read restored state"),
+            original_state
+        );
+    }
+
+    #[test]
+    fn preflights_all_restore_artifacts_before_changing_files() {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let paths = LocalePaths::from_codex_home(temp.path().join(".codex"));
+        fs::create_dir_all(paths.config_path.parent().expect("config parent"))
+            .expect("create config directory");
+        fs::write(&paths.config_path, b"model = \"gpt-5\"\n").expect("write config");
+
+        apply_chinese_locale(&paths).expect("apply locale");
+        let applied_config = fs::read(&paths.config_path).expect("read applied config");
+        let applied_state = fs::read(&paths.global_state_path).expect("read applied state");
+        let state_marker = suffixed(&paths.global_state_path, MISSING_SUFFIX);
+        fs::write(&state_marker, b"corrupt\n").expect("corrupt missing marker");
+
+        let error = restore_locale(&paths).expect_err("invalid marker must fail preflight");
+
+        assert!(matches!(error, LocaleConfigError::InvalidMissingMarker(_)));
+        assert_eq!(
+            fs::read(&paths.config_path).expect("read unchanged config"),
+            applied_config
+        );
+        assert_eq!(
+            fs::read(&paths.global_state_path).expect("read unchanged state"),
+            applied_state
+        );
+        assert!(suffixed(&paths.config_path, BACKUP_SUFFIX).is_file());
+        assert_eq!(
+            fs::read(&state_marker).expect("read invalid marker"),
+            b"corrupt\n"
+        );
+    }
+
+    #[test]
     fn restore_removes_files_that_did_not_exist_before_apply() {
         let temp = tempfile::tempdir().expect("temporary directory");
         let paths = LocalePaths::from_codex_home(temp.path().join(".codex"));
@@ -499,5 +838,12 @@ mod tests {
             set_global_state_chinese_locale(&output).expect("idempotent global state"),
             output
         );
+    }
+
+    fn injected_write_error(path: &Path) -> LocaleConfigError {
+        LocaleConfigError::Write {
+            path: path.to_string_lossy().into_owned(),
+            source: std::io::Error::other("injected restore failure"),
+        }
     }
 }

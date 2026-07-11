@@ -7,6 +7,7 @@
 node_modules/
 target/
 dist/
+design-system/
 *.log
 coverage/
 apps/desktop/src-tauri/gen/

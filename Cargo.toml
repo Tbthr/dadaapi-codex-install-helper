@@ -2,6 +2,7 @@
 members = [
   "apps/desktop/src-tauri",
   "crates/activation-core",
+  "crates/cli-tools",
   "crates/desktop-discovery",
   "crates/diagnostics",
   "crates/downloader",
@@ -23,7 +24,7 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 license = "UNLICENSED"
-repository = "https://github.com/wocao-ai/wocao-hub"
+repository = "https://github.com/ray7086/wocao-hub"
 rust-version = "1.85"
 
 [workspace.dependencies]

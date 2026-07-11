@@ -1,4 +1,4 @@
-use shared_types::{DesktopApp, DesktopProduct};
+use shared_types::{DesktopApp, DesktopProduct, InstalledSoftwareId, SoftwareInstallationStatus};
 use std::collections::HashSet;
 use std::path::Path;
 #[cfg(target_os = "macos")]
@@ -42,6 +42,74 @@ pub fn detect_installed_apps() -> Result<Vec<DesktopApp>, DiscoveryError> {
 
     #[allow(unreachable_code)]
     Err(DiscoveryError::UnsupportedPlatform)
+}
+
+pub fn detect_supported_software() -> Vec<SoftwareInstallationStatus> {
+    let chat_gpt_installed = detect_installed_apps().is_ok_and(|apps| !apps.is_empty());
+    vec![
+        SoftwareInstallationStatus {
+            id: InstalledSoftwareId::ChatGpt,
+            installed: chat_gpt_installed,
+        },
+        SoftwareInstallationStatus {
+            id: InstalledSoftwareId::ClaudeDesktop,
+            installed: known_software_installed(InstalledSoftwareId::ClaudeDesktop),
+        },
+        SoftwareInstallationStatus {
+            id: InstalledSoftwareId::CcSwitch,
+            installed: known_software_installed(InstalledSoftwareId::CcSwitch),
+        },
+        SoftwareInstallationStatus {
+            id: InstalledSoftwareId::VisualStudioCode,
+            installed: known_software_installed(InstalledSoftwareId::VisualStudioCode),
+        },
+    ]
+}
+
+#[cfg(target_os = "macos")]
+fn known_software_installed(id: InstalledSoftwareId) -> bool {
+    let names: &[&str] = match id {
+        InstalledSoftwareId::ClaudeDesktop => &["Claude.app"],
+        InstalledSoftwareId::CcSwitch => &["CC Switch.app", "CC-Switch.app"],
+        InstalledSoftwareId::VisualStudioCode => &["Visual Studio Code.app"],
+        _ => &[],
+    };
+    names.iter().any(|name| {
+        Path::new("/Applications").join(name).is_dir()
+            || dirs::home_dir().is_some_and(|home| home.join("Applications").join(name).is_dir())
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn known_software_installed(id: InstalledSoftwareId) -> bool {
+    let relative_paths: &[&str] = match id {
+        InstalledSoftwareId::ClaudeDesktop => {
+            &[r"Programs\Claude\Claude.exe", r"AnthropicClaude\Claude.exe"]
+        }
+        InstalledSoftwareId::CcSwitch => &[
+            r"Programs\CC Switch\CC Switch.exe",
+            r"CC Switch\CC Switch.exe",
+        ],
+        InstalledSoftwareId::VisualStudioCode => &[
+            r"Programs\Microsoft VS Code\Code.exe",
+            r"Microsoft VS Code\Code.exe",
+        ],
+        _ => &[],
+    };
+    ["LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"]
+        .into_iter()
+        .filter_map(std::env::var_os)
+        .map(std::path::PathBuf::from)
+        .any(|base| {
+            relative_paths
+                .iter()
+                .any(|relative| base.join(relative).is_file())
+        })
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn known_software_installed(_id: InstalledSoftwareId) -> bool {
+    false
 }
 
 fn product_from_name(value: &str) -> DesktopProduct {

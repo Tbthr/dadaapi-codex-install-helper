@@ -27,6 +27,8 @@ Wocao Hub 是 wocao.ai 品牌下的开源跨平台桌面工具，支持 Windows 
 - GitHub 静态路由包下载、签名验证、哈希校验、解密和密文本地缓存
 - 遗留代理状态检测和手动网络恢复
 - 官方软件下载中心
+- ChatGPT、Claude Desktop、CC Switch、Node.js LTS 官方安装包下载并打开
+- Codex CLI、Claude Code CLI 状态检测与官方 npm 安装
 - 下载进度、取消、重试、断点续传、打开目录和复制链接
 - 修复工具、诊断日志和日志导出
 - Windows x64/ARM64、Mac Intel/Apple Silicon 发布
@@ -60,6 +62,7 @@ Wocao Hub 是 wocao.ai 品牌下的开源跨平台桌面工具，支持 Windows 
 - 远程签名、格式、哈希或解密错误必须直接失败，不得用缓存掩盖。
 - 客户端获取订阅后在本机解析、筛选和测试节点，本地代理直接连接选中的海外节点。
 - 软件安装包必须从官方来源下载。
+- CLI 只允许从 `https://registry.npmjs.org` 安装固定白名单包，不接受前端传入包名或命令。
 - 软件下载安装流量使用用户本地网络，并遵循系统代理或 VPN。
 - 官方下载失败时展示真实错误，不自动切换自建镜像。
 - 中文激活节点必须排除香港和国内地区。

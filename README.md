@@ -88,5 +88,12 @@ cargo run -p route-e2e
 - ChatGPT/OpenAI 多目标节点选优及脱敏结果缓存
 - 网络恢复优先的完整激活协调器
 - 中文配置与 Renderer `--lang=zh-CN` 双重验证
+- 可信 ChatGPT 官方安装包目录与当前系统/架构匹配
+- `.part` + ETag/Last-Modified 安全断点续传、取消、重试和 SHA-256 校验
+- 持久化下载任务、真实进度事件和官方下载目录打开能力
+- 下载完成后通过系统默认图形界面直接打开 DMG 或 EXE 安装包
+- 路由配置不可用时仍可检测并由用户手动恢复遗留系统代理
+- 中文配置跨文件事务撤销、部分成功结果和修复状态聚合 Command
+- 私有滚动日志、双重脱敏诊断摘要与安全 ZIP 导出
 
 详细需求见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。

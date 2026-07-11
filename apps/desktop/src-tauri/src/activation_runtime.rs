@@ -1,6 +1,6 @@
 use activation_core::{
-    default_activation_selection_options, ActivationCoordinator, RuntimeChineseEffectVerifier,
-    StaticRouteProxyPreparationService,
+    default_activation_selection_options, ActivationCoordinator, NetworkRecoveryService,
+    RuntimeChineseEffectVerifier, StaticRouteProxyPreparationService,
 };
 use desktop_discovery::SystemDesktopDiscovery;
 use locale_config::{default_locale_paths, LocaleConfigError};
@@ -33,12 +33,19 @@ pub struct DesktopActivationRuntime {
 
 pub struct DesktopActivationState {
     runtime: Option<DesktopActivationRuntime>,
+    fallback_recovery: NetworkRecoveryService<NativePlatformAdapter>,
 }
 
 impl DesktopActivationState {
     #[must_use]
-    pub fn new(runtime: Option<DesktopActivationRuntime>) -> Self {
-        Self { runtime }
+    pub fn new(
+        runtime: Option<DesktopActivationRuntime>,
+        fallback_recovery: NetworkRecoveryService<NativePlatformAdapter>,
+    ) -> Self {
+        Self {
+            runtime,
+            fallback_recovery,
+        }
     }
 
     #[must_use]
@@ -49,6 +56,11 @@ impl DesktopActivationState {
     #[must_use]
     pub fn runtime(&self) -> Option<&DesktopActivationRuntime> {
         self.runtime.as_ref()
+    }
+
+    #[must_use]
+    pub fn fallback_recovery(&self) -> &NetworkRecoveryService<NativePlatformAdapter> {
+        &self.fallback_recovery
     }
 }
 
@@ -203,10 +215,43 @@ mod tests {
 
     #[test]
     fn activation_state_is_read_only_without_build_configuration() {
-        let state = DesktopActivationState::new(None);
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let state = DesktopActivationState::new(
+            None,
+            NetworkRecoveryService::new(
+                NativePlatformAdapter,
+                NetworkRecoveryStore::new(directory.path().join("recovery.json")),
+                shared_types::OperatingSystem::MacOs,
+            ),
+        );
 
         assert!(!state.is_available());
         assert!(state.runtime().is_none());
+    }
+
+    #[test]
+    fn read_only_state_still_exposes_pending_network_recovery() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let recovery_store = NetworkRecoveryStore::new(directory.path().join("recovery.json"));
+        recovery_store
+            .save(
+                shared_types::OperatingSystem::MacOs,
+                &platform::NetworkState::from_serialized("safe-test-state".to_owned()),
+            )
+            .expect("save recovery record");
+        let state = DesktopActivationState::new(
+            None,
+            NetworkRecoveryService::new(
+                NativePlatformAdapter,
+                recovery_store,
+                shared_types::OperatingSystem::MacOs,
+            ),
+        );
+
+        assert!(state
+            .fallback_recovery()
+            .has_pending()
+            .expect("read pending recovery"));
     }
 
     fn public_key_pem() -> String {

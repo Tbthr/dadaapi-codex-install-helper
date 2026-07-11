@@ -54,15 +54,25 @@
 
 ## M3 - Official Download Center
 
-- 官方产品目录
-- 平台和架构识别
-- 下载进度、取消、重试和断点续传
-- 安装器启动
+- [x] 可信 ChatGPT 官方产品目录
+- [x] Claude Desktop、CC Switch、Node.js LTS 动态官方下载目录
+- [x] Codex CLI、Claude Code CLI 检测与官方 npm 安装
+- [x] Windows/macOS 与 x64/ARM64 主机识别
+- [x] 下载进度、取消、重试和 ETag/Last-Modified 安全断点续传
+- [x] 下载任务持久化与 Tauri 进度事件
+- [x] 完成任务打开所在目录与打开官方下载页
+- [x] 下载完成后使用系统默认方式直接打开安装包
+- [x] 可信官方下载链接获取
+- [x] 下载中心与 CLI 安装前端交互
 
 ## M4 - Desktop Productization
 
-- 完整桌面导航和状态反馈
-- 日志导出和修复工具
-- Windows/macOS 签名与安装包
-- 自动更新和发布流程
-- 开源许可证与贡献指南确认
+- [ ] 完整桌面导航和状态反馈
+- [x] 中文配置事务恢复与部分成功结果
+- [x] 路由配置不可用时的遗留网络手动恢复
+- [x] 私有滚动日志、双重脱敏诊断摘要与 ZIP 导出后端
+- [ ] 修复工具和诊断导出前端交互
+- [ ] Windows/macOS 签名与安装包
+- [x] GitHub Releases 自动更新检查、签名下载与重启安装流程
+- [x] Windows/macOS 多架构 GitHub Actions 发布工作流
+- [ ] 开源许可证与贡献指南确认

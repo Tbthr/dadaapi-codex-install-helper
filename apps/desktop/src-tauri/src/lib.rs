@@ -1,10 +1,17 @@
 pub mod activation_runtime;
+pub mod cli_tools;
+pub mod desktop_diagnostics;
+pub mod downloads;
+pub mod software_status;
 
-use activation_core::{ActivationError, LocaleActivationService};
+use activation_core::{
+    ActivationError, LocaleActivationService, NetworkRecoveryService, NetworkRecoveryStore,
+};
 use activation_runtime::DesktopActivationState;
+use platform::NativePlatformAdapter;
 use shared_types::{
-    ActivationEvent, ActivationPhase, CommandError, LocaleActivationResult, LocaleOverview,
-    NetworkRecoveryStatus, OperatingSystem,
+    ActivationEvent, ActivationPhase, CommandError, CpuArchitecture, LocaleActivationResult,
+    LocaleOverview, LocaleRestoreResult, NetworkRecoveryStatus, OperatingSystem, RepairOverview,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -16,6 +23,33 @@ async fn get_locale_overview() -> Result<LocaleOverview, CommandError> {
         .overview()
         .await
         .map_err(command_error)
+}
+
+#[tauri::command]
+async fn restore_locale_configuration(
+    selected_executable_path: Option<String>,
+) -> Result<LocaleRestoreResult, CommandError> {
+    LocaleActivationService::default()
+        .restore(selected_executable_path)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+async fn get_repair_overview(
+    state: State<'_, DesktopActivationState>,
+) -> Result<RepairOverview, CommandError> {
+    let overview = LocaleActivationService::default()
+        .overview()
+        .await
+        .map_err(command_error)?;
+    let network_recovery = network_recovery_status(&state).await?;
+    Ok(RepairOverview {
+        app: overview.apps.into_iter().next(),
+        locale: overview.locale,
+        network_recovery,
+        activation_available: state.is_available(),
+    })
 }
 
 #[tauri::command]
@@ -47,29 +81,55 @@ async fn activate_chinese(
 async fn get_network_recovery_status(
     state: State<'_, DesktopActivationState>,
 ) -> Result<NetworkRecoveryStatus, CommandError> {
-    let Some(runtime) = state.runtime() else {
-        return Ok(NetworkRecoveryStatus {
-            pending: false,
-            local_proxy_active: false,
-        });
-    };
-    runtime
-        .coordinator
-        .network_recovery_status()
-        .await
-        .map_err(command_error)
+    network_recovery_status(&state).await
+}
+
+async fn network_recovery_status(
+    state: &DesktopActivationState,
+) -> Result<NetworkRecoveryStatus, CommandError> {
+    if let Some(runtime) = state.runtime() {
+        return runtime
+            .coordinator
+            .network_recovery_status()
+            .await
+            .map_err(command_error);
+    }
+
+    let pending = state
+        .fallback_recovery()
+        .has_pending()
+        .map_err(|error| command_error(ActivationError::NetworkSafety(error)))?;
+    Ok(NetworkRecoveryStatus {
+        pending,
+        local_proxy_active: false,
+    })
 }
 
 #[tauri::command]
 async fn restore_network(
     state: State<'_, DesktopActivationState>,
 ) -> Result<NetworkRecoveryStatus, CommandError> {
-    let runtime = state.runtime().ok_or_else(activation_unavailable_error)?;
-    runtime
-        .coordinator
-        .restore_network()
+    if let Some(runtime) = state.runtime() {
+        return runtime
+            .coordinator
+            .restore_network()
+            .await
+            .map_err(command_error);
+    }
+
+    state
+        .fallback_recovery()
+        .restore_pending()
         .await
-        .map_err(command_error)
+        .map_err(|error| command_error(ActivationError::NetworkSafety(error)))?;
+    let pending = state
+        .fallback_recovery()
+        .has_pending()
+        .map_err(|error| command_error(ActivationError::NetworkSafety(error)))?;
+    Ok(NetworkRecoveryStatus {
+        pending,
+        local_proxy_active: false,
+    })
 }
 
 fn activation_unavailable_error() -> CommandError {
@@ -126,13 +186,20 @@ fn command_error(error: ActivationError) -> CommandError {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    diagnostics::init("wocao-hub-desktop");
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
+            let diagnostics_state =
+                desktop_diagnostics::DesktopDiagnosticsState::new(&app_data_dir)?;
+            diagnostics_state.initialize_tracing()?;
+            app.manage(diagnostics_state);
             let activation_runtime =
-                activation_runtime::DesktopActivationRuntime::from_build_environment(app_data_dir)?;
+                activation_runtime::DesktopActivationRuntime::from_build_environment(
+                    app_data_dir.clone(),
+                )?;
             if activation_runtime.is_some() {
                 tracing::info!("desktop activation runtime configured");
             } else {
@@ -145,15 +212,44 @@ pub fn run() {
                     "desktop activation runtime not configured"
                 );
             }
-            app.manage(DesktopActivationState::new(activation_runtime));
+            let fallback_recovery = NetworkRecoveryService::new(
+                NativePlatformAdapter,
+                NetworkRecoveryStore::new(app_data_dir.join("recovery.json")),
+                current_operating_system(),
+            );
+            app.manage(DesktopActivationState::new(
+                activation_runtime,
+                fallback_recovery,
+            ));
+            app.manage(downloads::DesktopDownloadState::new(
+                app_data_dir.join("downloads"),
+                app_data_dir.join("downloads.json"),
+            )?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_locale_overview,
+            get_repair_overview,
+            restore_locale_configuration,
             is_activation_available,
             activate_chinese,
             get_network_recovery_status,
-            restore_network
+            restore_network,
+            cli_tools::get_cli_tools_overview,
+            cli_tools::install_cli_tool,
+            software_status::get_software_installation_statuses,
+            downloads::get_download_catalog,
+            downloads::get_official_download_link,
+            downloads::list_download_tasks,
+            downloads::start_download,
+            downloads::cancel_download,
+            downloads::retry_download,
+            downloads::reveal_download,
+            downloads::launch_installer,
+            downloads::open_official_product_page,
+            desktop_diagnostics::get_diagnostic_summary,
+            desktop_diagnostics::export_diagnostics,
+            desktop_diagnostics::reveal_diagnostics_export
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Wocao Hub desktop application");
@@ -172,6 +268,21 @@ fn current_operating_system() -> OperatingSystem {
 
     #[allow(unreachable_code)]
     OperatingSystem::MacOs
+}
+
+fn current_cpu_architecture() -> CpuArchitecture {
+    #[cfg(target_arch = "aarch64")]
+    {
+        return CpuArchitecture::Arm64;
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        return CpuArchitecture::X64;
+    }
+
+    #[allow(unreachable_code)]
+    CpuArchitecture::X64
 }
 
 #[cfg(test)]

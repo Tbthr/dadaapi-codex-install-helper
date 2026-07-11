@@ -24,6 +24,132 @@ pub enum DesktopProduct {
     Codex,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SoftwareProductId {
+    ChatGptDesktop,
+    ClaudeDesktop,
+    CcSwitch,
+    NodeJsLts,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CliToolId {
+    CodexCli,
+    ClaudeCodeCli,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CliToolStatus {
+    pub id: CliToolId,
+    pub display_name: String,
+    pub installed: bool,
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CliToolsOverview {
+    pub node_version: Option<String>,
+    pub npm_version: Option<String>,
+    pub tools: Vec<CliToolStatus>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InstalledSoftwareId {
+    ChatGpt,
+    ClaudeDesktop,
+    CcSwitch,
+    NodeJsLts,
+    VisualStudioCode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoftwareInstallationStatus {
+    pub id: InstalledSoftwareId,
+    pub installed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DownloadPackageKind {
+    Dmg,
+    ExeBootstrapper,
+    Msi,
+    Msix,
+    Pkg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DownloadCompatibility {
+    Native,
+    VendorBootstrapper,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoftwareArtifactSummary {
+    pub id: String,
+    pub operating_system: OperatingSystem,
+    pub native_architecture: Option<CpuArchitecture>,
+    pub compatibility: DownloadCompatibility,
+    pub package_kind: DownloadPackageKind,
+    pub file_name: String,
+    pub minimum_os: Option<String>,
+    pub available: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoftwareProductSummary {
+    pub id: SoftwareProductId,
+    pub display_name: String,
+    pub publisher: String,
+    pub official_page_url: Url,
+    pub artifacts: Vec<SoftwareArtifactSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadCatalog {
+    pub operating_system: OperatingSystem,
+    pub cpu_architecture: CpuArchitecture,
+    pub products: Vec<SoftwareProductSummary>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DownloadTaskState {
+    Queued,
+    Resolving,
+    Downloading,
+    Ready,
+    Cancelled,
+    Failed,
+    Launching,
+    Launched,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadTaskSnapshot {
+    pub id: Uuid,
+    pub product_id: SoftwareProductId,
+    pub artifact_id: String,
+    pub state: DownloadTaskState,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub resumed_from: u64,
+    pub file_name: String,
+    pub error: Option<CommandError>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopApp {
@@ -56,6 +182,15 @@ pub struct LocaleOverview {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RepairOverview {
+    pub app: Option<DesktopApp>,
+    pub locale: LocaleStatus,
+    pub network_recovery: NetworkRecoveryStatus,
+    pub activation_available: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LocaleActivationResult {
     pub app: DesktopApp,
     pub locale: LocaleStatus,
@@ -77,7 +212,9 @@ pub struct LocaleRestoreResult {
     pub app: Option<DesktopApp>,
     pub locale: LocaleStatus,
     pub restored_files: Vec<String>,
+    pub configuration_restored: bool,
     pub restarted: bool,
+    pub restart_warning: Option<CommandError>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
