@@ -31,10 +31,21 @@ jobs:
           RELEASE_ARCHITECTURE: ${{ matrix.architecture }}
         run: |
           $asset = "Wocao.Hub_$($env:RELEASE_TAG.TrimStart('v'))_$env:RELEASE_ARCHITECTURE-setup.exe"
-          gh release download $env:RELEASE_TAG `
-            --repo $env:GITHUB_REPOSITORY `
-            --pattern $asset `
-            --output installer.exe
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
+          $release = $releases | Where-Object { $_.tag_name -eq $env:RELEASE_TAG } | Select-Object -First 1
+          if (-not $release) {
+            throw "Release $env:RELEASE_TAG was not found"
+          }
+          $releaseAsset = $release.assets | Where-Object { $_.name -eq $asset } | Select-Object -First 1
+          if (-not $releaseAsset) {
+            throw "Release asset $asset was not found"
+          }
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/octet-stream"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          Invoke-WebRequest -Uri $releaseAsset.url -Headers $headers -OutFile installer.exe
           $signature = Get-AuthenticodeSignature installer.exe
           Write-Host "Installer Authenticode status: $($signature.Status)"
 
