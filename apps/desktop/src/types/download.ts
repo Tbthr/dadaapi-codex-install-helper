@@ -2,8 +2,9 @@ import type { CommandError } from "./locale";
 
 export type OperatingSystem = "windows" | "macOs";
 export type CpuArchitecture = "x64" | "arm64";
-export type SoftwareProductId = "chatGptDesktop" | "claudeDesktop" | "ccSwitch" | "nodeJsLts";
-export type DownloadPackageKind = "dmg" | "exeBootstrapper" | "msi" | "msix" | "pkg";
+export type SoftwareProductId =
+  "chatGptDesktop" | "claudeDesktop" | "ccSwitch" | "nodeJsLts" | "visualStudioCode";
+export type DownloadPackageKind = "dmg" | "exeBootstrapper" | "msi" | "msix" | "pkg" | "zip";
 export type DownloadCompatibility = "native" | "vendorBootstrapper" | "unsupported";
 
 export interface SoftwareArtifactSummary {

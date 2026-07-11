@@ -30,6 +30,14 @@ const CC_SWITCH_RELEASES_URL: &str =
 const NODE_OFFICIAL_PAGE: &str = "https://nodejs.org/en/download";
 const NODE_RELEASES_URL: &str = "https://nodejs.org/dist/index.json";
 
+const VSCODE_OFFICIAL_PAGE: &str = "https://code.visualstudio.com/download";
+const VSCODE_MACOS_URL: &str =
+    "https://update.code.visualstudio.com/latest/darwin-universal/stable";
+const VSCODE_WINDOWS_ARM64_URL: &str =
+    "https://update.code.visualstudio.com/latest/win32-arm64-user/stable";
+const VSCODE_WINDOWS_X64_URL: &str =
+    "https://update.code.visualstudio.com/latest/win32-x64-user/stable";
+
 const MAX_REDIRECTS: usize = 5;
 const MAX_INSTALLER_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_METADATA_BYTES: usize = 1024 * 1024;
@@ -159,6 +167,14 @@ pub fn official_download_catalog(
                 operating_system,
                 cpu_architecture,
             )?,
+            product_summary(
+                SoftwareProductId::VisualStudioCode,
+                "Visual Studio Code",
+                "Microsoft",
+                VSCODE_OFFICIAL_PAGE,
+                operating_system,
+                cpu_architecture,
+            )?,
         ],
     })
 }
@@ -174,6 +190,7 @@ pub fn resolve_official_artifact(
         SoftwareProductId::ClaudeDesktop => claude_artifact(operating_system, cpu_architecture)?,
         SoftwareProductId::CcSwitch => cc_switch_artifact(operating_system, cpu_architecture)?,
         SoftwareProductId::NodeJsLts => node_artifact(operating_system, cpu_architecture)?,
+        SoftwareProductId::VisualStudioCode => vscode_artifact(operating_system, cpu_architecture)?,
     };
     if artifact_id.is_some_and(|requested| requested != artifact.summary.id) {
         return Err(CatalogError::UnknownArtifact);
@@ -360,6 +377,52 @@ fn node_artifact(
         NODE_OFFICIAL_PAGE,
         &["nodejs.org"],
     )
+}
+
+fn vscode_artifact(
+    operating_system: OperatingSystem,
+    cpu_architecture: CpuArchitecture,
+) -> Result<TrustedDownloadArtifact, CatalogError> {
+    match operating_system {
+        OperatingSystem::MacOs => fixed_artifact(
+            SoftwareProductId::VisualStudioCode,
+            "vscode-macos-universal",
+            OperatingSystem::MacOs,
+            None,
+            DownloadCompatibility::Native,
+            DownloadPackageKind::Zip,
+            "Visual Studio Code.zip",
+            Some("macOS 11"),
+            VSCODE_MACOS_URL,
+            VSCODE_OFFICIAL_PAGE,
+            &[
+                "update.code.visualstudio.com",
+                "vscode.download.prss.microsoft.com",
+            ],
+        ),
+        OperatingSystem::Windows => fixed_artifact(
+            SoftwareProductId::VisualStudioCode,
+            match cpu_architecture {
+                CpuArchitecture::Arm64 => "vscode-windows-arm64-user",
+                CpuArchitecture::X64 => "vscode-windows-x64-user",
+            },
+            OperatingSystem::Windows,
+            Some(cpu_architecture),
+            DownloadCompatibility::Native,
+            DownloadPackageKind::ExeBootstrapper,
+            "Visual Studio Code Setup.exe",
+            Some("Windows 10"),
+            match cpu_architecture {
+                CpuArchitecture::Arm64 => VSCODE_WINDOWS_ARM64_URL,
+                CpuArchitecture::X64 => VSCODE_WINDOWS_X64_URL,
+            },
+            VSCODE_OFFICIAL_PAGE,
+            &[
+                "update.code.visualstudio.com",
+                "vscode.download.prss.microsoft.com",
+            ],
+        ),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -639,6 +702,7 @@ mod tests {
                 SoftwareProductId::ClaudeDesktop,
                 SoftwareProductId::CcSwitch,
                 SoftwareProductId::NodeJsLts,
+                SoftwareProductId::VisualStudioCode,
             ]
         );
         assert!(catalog
@@ -663,8 +727,16 @@ mod tests {
             CpuArchitecture::X64,
         )
         .expect("node x64");
+        let vscode_arm = resolve_official_artifact(
+            SoftwareProductId::VisualStudioCode,
+            None,
+            OperatingSystem::Windows,
+            CpuArchitecture::Arm64,
+        )
+        .expect("vscode arm");
         assert_eq!(cc_arm.summary.id, "cc-switch-windows-arm64");
         assert_eq!(node_x64.summary.id, "node-lts-windows-x64");
+        assert_eq!(vscode_arm.summary.id, "vscode-windows-arm64-user");
     }
 
     #[tokio::test]
@@ -673,11 +745,33 @@ mod tests {
             SoftwareProductId::ClaudeDesktop,
             SoftwareProductId::CcSwitch,
             SoftwareProductId::NodeJsLts,
+            SoftwareProductId::VisualStudioCode,
         ] {
             let artifact = resolve_official_artifact(
                 product,
                 None,
                 OperatingSystem::MacOs,
+                CpuArchitecture::Arm64,
+            )
+            .expect("artifact");
+            let url = artifact.resolve_source_url().await.expect("official url");
+            assert!(trusted_https_url(&url, &artifact.allowed_redirect_hosts));
+        }
+    }
+
+    #[tokio::test]
+    async fn resolves_windows_arm64_official_metadata() {
+        for product in [
+            SoftwareProductId::ChatGptDesktop,
+            SoftwareProductId::ClaudeDesktop,
+            SoftwareProductId::CcSwitch,
+            SoftwareProductId::NodeJsLts,
+            SoftwareProductId::VisualStudioCode,
+        ] {
+            let artifact = resolve_official_artifact(
+                product,
+                None,
+                OperatingSystem::Windows,
                 CpuArchitecture::Arm64,
             )
             .expect("artifact");

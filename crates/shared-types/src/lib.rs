@@ -31,6 +31,7 @@ pub enum SoftwareProductId {
     ClaudeDesktop,
     CcSwitch,
     NodeJsLts,
+    VisualStudioCode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -82,6 +83,7 @@ pub enum DownloadPackageKind {
     Msi,
     Msix,
     Pkg,
+    Zip,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

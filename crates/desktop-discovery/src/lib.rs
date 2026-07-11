@@ -82,20 +82,7 @@ fn known_software_installed(id: InstalledSoftwareId) -> bool {
 
 #[cfg(target_os = "windows")]
 fn known_software_installed(id: InstalledSoftwareId) -> bool {
-    let relative_paths: &[&str] = match id {
-        InstalledSoftwareId::ClaudeDesktop => {
-            &[r"Programs\Claude\Claude.exe", r"AnthropicClaude\Claude.exe"]
-        }
-        InstalledSoftwareId::CcSwitch => &[
-            r"Programs\CC Switch\CC Switch.exe",
-            r"CC Switch\CC Switch.exe",
-        ],
-        InstalledSoftwareId::VisualStudioCode => &[
-            r"Programs\Microsoft VS Code\Code.exe",
-            r"Microsoft VS Code\Code.exe",
-        ],
-        _ => &[],
-    };
+    let relative_paths = windows_known_relative_paths(id);
     ["LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"]
         .into_iter()
         .filter_map(std::env::var_os)
@@ -105,6 +92,27 @@ fn known_software_installed(id: InstalledSoftwareId) -> bool {
                 .iter()
                 .any(|relative| base.join(relative).is_file())
         })
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn windows_known_relative_paths(id: InstalledSoftwareId) -> &'static [&'static str] {
+    match id {
+        InstalledSoftwareId::ClaudeDesktop => {
+            &[r"Programs\Claude\Claude.exe", r"AnthropicClaude\Claude.exe"]
+        }
+        InstalledSoftwareId::CcSwitch => &[
+            r"Programs\CC Switch\CC Switch.exe",
+            r"Programs\CC Switch\cc-switch.exe",
+            r"Programs\CC-Switch\cc-switch.exe",
+            r"CC Switch\CC Switch.exe",
+            r"CC Switch\cc-switch.exe",
+        ],
+        InstalledSoftwareId::VisualStudioCode => &[
+            r"Programs\Microsoft VS Code\Code.exe",
+            r"Microsoft VS Code\Code.exe",
+        ],
+        _ => &[],
+    }
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -597,6 +605,13 @@ mod tests {
         assert_eq!(apps.len(), 1);
         assert_eq!(apps[0].product, DesktopProduct::ChatGpt);
         assert_eq!(apps[0].display_name, "ChatGPT");
+    }
+
+    #[test]
+    fn detects_current_cc_switch_windows_msi_layout() {
+        let paths = windows_known_relative_paths(InstalledSoftwareId::CcSwitch);
+
+        assert!(paths.contains(&r"Programs\CC Switch\cc-switch.exe"));
     }
 
     #[cfg(target_os = "macos")]
