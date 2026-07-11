@@ -6,11 +6,11 @@ use std::fmt;
 use std::net::SocketAddr;
 #[cfg(target_os = "macos")]
 use std::path::Path;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::time::Duration;
 use thiserror::Error;
 use tokio::process::Command;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use tokio::time::sleep;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -693,6 +693,7 @@ async fn windows_desktop_app_uses_locale(
             ("WCH_APP_INSTALL_PATH", app.install_path.as_str()),
             ("WCH_APP_LOCALE", locale),
         ],
+        "Windows 应用语言检测命令执行失败",
     )
     .await?;
     match output.trim() {
@@ -746,7 +747,12 @@ struct RegistryStringState {
 
 #[cfg(target_os = "windows")]
 async fn save_windows_network_state() -> Result<NetworkState, PlatformError> {
-    let output = windows_powershell_output(WINDOWS_SAVE_PROXY_SCRIPT, &[]).await?;
+    let output = windows_powershell_output(
+        WINDOWS_SAVE_PROXY_SCRIPT,
+        &[],
+        "Windows 系统代理状态读取失败",
+    )
+    .await?;
     let state: WindowsNetworkState =
         serde_json::from_str(output.trim()).map_err(|_| PlatformError::InvalidNetworkState)?;
     let serialized =
@@ -764,14 +770,28 @@ async fn apply_windows_local_proxy(settings: &LocalProxySettings) -> Result<(), 
         }
     }
     let proxy_override = bypass_domains.join(";");
-    windows_powershell_status(
-        WINDOWS_APPLY_PROXY_SCRIPT,
-        &[
-            ("WCH_PROXY_SERVER", proxy_server.as_str()),
-            ("WCH_PROXY_OVERRIDE", proxy_override.as_str()),
-        ],
-    )
-    .await
+    let environment = [
+        ("WCH_PROXY_SERVER", proxy_server.as_str()),
+        ("WCH_PROXY_OVERRIDE", proxy_override.as_str()),
+    ];
+    let mut attempt = 1_u8;
+    loop {
+        let result = windows_powershell_status(
+            WINDOWS_APPLY_PROXY_SCRIPT,
+            &environment,
+            "Windows 系统代理写入失败",
+        )
+        .await;
+        match result {
+            Ok(()) => return Ok(()),
+            Err(error) if attempt < 3 => {
+                tracing::warn!(attempt, error = %error, "retrying Windows proxy apply");
+                sleep(Duration::from_millis(u64::from(attempt) * 350)).await;
+                attempt += 1;
+            }
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -783,6 +803,7 @@ async fn restore_windows_network_state(state: &NetworkState) -> Result<(), Platf
     windows_powershell_status(
         WINDOWS_RESTORE_PROXY_SCRIPT,
         &[("WCH_NETWORK_STATE", serialized.as_str())],
+        "Windows 系统代理恢复失败",
     )
     .await
 }
@@ -791,6 +812,7 @@ async fn restore_windows_network_state(state: &NetworkState) -> Result<(), Platf
 async fn windows_powershell_output(
     script: &str,
     environment: &[(&str, &str)],
+    failure_message: &str,
 ) -> Result<String, PlatformError> {
     let mut command = hidden_windows_command("powershell.exe");
     command.args([
@@ -807,9 +829,16 @@ async fn windows_powershell_output(
         .await
         .map_err(|error| PlatformError::Operation(error.to_string()))?;
     if !output.status.success() {
-        return Err(PlatformError::Operation(
-            "Windows 系统代理命令执行失败".to_owned(),
-        ));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!(
+            exit_code = output.status.code(),
+            stderr = %stderr.trim(),
+            "Windows PowerShell operation failed"
+        );
+        return Err(PlatformError::Operation(windows_failure_message(
+            failure_message,
+            &stderr,
+        )));
     }
     String::from_utf8(output.stdout).map_err(|_| PlatformError::InvalidNetworkState)
 }
@@ -826,10 +855,32 @@ fn hidden_windows_command(program: &str) -> Command {
 async fn windows_powershell_status(
     script: &str,
     environment: &[(&str, &str)],
+    failure_message: &str,
 ) -> Result<(), PlatformError> {
-    windows_powershell_output(script, environment)
+    windows_powershell_output(script, environment, failure_message)
         .await
         .map(|_| ())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_failure_message(fallback: &str, stderr: &str) -> String {
+    let value = stderr.to_ascii_lowercase();
+    let detail = if value.contains("proxy_write_verification_failed") {
+        "写入后校验失败，可能被其他代理软件或系统策略立即覆盖"
+    } else if value.contains("wininet_notify_failed") {
+        "代理值已写入，但 Windows 网络设置刷新失败"
+    } else if value.contains("access is denied")
+        || value.contains("requested registry access is not allowed")
+        || value.contains("unauthorizedaccess")
+        || stderr.contains("拒绝访问")
+    {
+        "注册表访问被系统策略或安全软件拒绝"
+    } else if value.contains("marked for deletion") {
+        "系统代理注册表暂时不可用"
+    } else {
+        return fallback.to_owned();
+    };
+    format!("{fallback}：{detail}")
 }
 
 #[cfg(target_os = "windows")]
@@ -870,6 +921,12 @@ New-ItemProperty -Path $path -Name 'ProxyServer' -PropertyType String -Value $en
 New-ItemProperty -Path $path -Name 'ProxyOverride' -PropertyType String -Value $env:WCH_PROXY_OVERRIDE -Force | Out-Null
 Remove-ItemProperty -Path $path -Name 'AutoConfigURL' -ErrorAction SilentlyContinue
 New-ItemProperty -Path $path -Name 'AutoDetect' -PropertyType DWord -Value 0 -Force | Out-Null
+$actualEnable = [uint32](Get-ItemPropertyValue -Path $path -Name 'ProxyEnable' -ErrorAction Stop)
+$actualServer = [string](Get-ItemPropertyValue -Path $path -Name 'ProxyServer' -ErrorAction Stop)
+$actualOverride = [string](Get-ItemPropertyValue -Path $path -Name 'ProxyOverride' -ErrorAction Stop)
+if ($actualEnable -ne 1 -or $actualServer -ne $env:WCH_PROXY_SERVER -or $actualOverride -ne $env:WCH_PROXY_OVERRIDE) {
+  throw 'proxy_write_verification_failed'
+}
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -878,8 +935,9 @@ public static class WocaoWinInet {
   public static extern bool InternetSetOption(IntPtr internet, int option, IntPtr buffer, int length);
 }
 '@
-[WocaoWinInet]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null
-[WocaoWinInet]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0) | Out-Null
+$settingsChanged = [WocaoWinInet]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
+$settingsRefresh = [WocaoWinInet]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
+if (-not $settingsChanged -or -not $settingsRefresh) { throw 'wininet_notify_failed' }
 "#;
 
 #[cfg(target_os = "windows")]
