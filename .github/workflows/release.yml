@@ -12,6 +12,9 @@ jobs:
   publish:
     strategy:
       fail-fast: false
+      # tauri-action updates the shared latest.json release asset. Keep the
+      # matrix serialized so multiple targets cannot replace it concurrently.
+      max-parallel: 1
       matrix:
         include:
           - platform: macos-14
