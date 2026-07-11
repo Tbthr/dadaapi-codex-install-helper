@@ -109,6 +109,12 @@ async fn network_recovery_status(
 async fn restore_network(
     state: State<'_, DesktopActivationState>,
 ) -> Result<NetworkRecoveryStatus, CommandError> {
+    restore_network_internal(&state).await
+}
+
+async fn restore_network_internal(
+    state: &DesktopActivationState,
+) -> Result<NetworkRecoveryStatus, CommandError> {
     if let Some(runtime) = state.runtime() {
         return runtime
             .coordinator
@@ -130,6 +136,20 @@ async fn restore_network(
         pending,
         local_proxy_active: false,
     })
+}
+
+#[tauri::command]
+async fn prepare_activation_network(
+    state: State<'_, DesktopActivationState>,
+) -> Result<NetworkRecoveryStatus, CommandError> {
+    let status = network_recovery_status(&state).await?;
+    if status.pending {
+        restore_network_internal(&state).await?;
+    }
+    platform::reset_system_proxy()
+        .await
+        .map_err(|error| command_error(ActivationError::Platform(error)))?;
+    network_recovery_status(&state).await
 }
 
 fn activation_unavailable_error() -> CommandError {
@@ -235,6 +255,7 @@ pub fn run() {
             activate_chinese,
             get_network_recovery_status,
             restore_network,
+            prepare_activation_network,
             cli_tools::get_cli_tools_overview,
             cli_tools::install_cli_tool,
             software_status::get_software_installation_statuses,

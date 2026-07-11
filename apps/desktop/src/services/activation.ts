@@ -18,3 +18,7 @@ export function getNetworkRecoveryStatus(): Promise<NetworkRecoveryStatus> {
 export function restoreNetwork(): Promise<NetworkRecoveryStatus> {
   return invoke<NetworkRecoveryStatus>("restore_network");
 }
+
+export function prepareActivationNetwork(): Promise<NetworkRecoveryStatus> {
+  return invoke<NetworkRecoveryStatus>("prepare_activation_network");
+}

@@ -154,8 +154,14 @@ async function refreshPage(): Promise<void> {
 
 async function refreshInstallationStatuses(): Promise<void> {
   try {
-    applyInstallationStatuses(await getSoftwareInstallationStatuses());
-    cliOverview.value = await getCliToolsOverview();
+    const [software, cli, nextTasks] = await Promise.all([
+      getSoftwareInstallationStatuses(),
+      getCliToolsOverview(),
+      listDownloadTasks(),
+    ]);
+    applyInstallationStatuses(software);
+    cliOverview.value = cli;
+    tasks.value = nextTasks;
   } catch {
     // 保留上一次真实检测结果，避免窗口切回时闪回“可安装”。
   }
@@ -293,6 +299,7 @@ async function handleDesktop(tool: DesktopTool): Promise<void> {
   downloadBusy.value = { ...downloadBusy.value, [tool.productId]: true };
   downloadErrors.value = { ...downloadErrors.value, [tool.productId]: "" };
   try {
+    tasks.value = await listDownloadTasks();
     const current = taskFor(tool.productId);
     let next: DownloadTaskSnapshot;
     if (!current) {
@@ -309,6 +316,11 @@ async function handleDesktop(tool: DesktopTool): Promise<void> {
     }
     updateTask(next);
   } catch (error) {
+    try {
+      tasks.value = await listDownloadTasks();
+    } catch {
+      // 保留当前任务状态，错误信息仍以本次操作为准。
+    }
     downloadErrors.value = {
       ...downloadErrors.value,
       [tool.productId]: errorMessage(error, "下载操作失败"),

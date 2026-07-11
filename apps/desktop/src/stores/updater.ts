@@ -1,6 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { reactive } from "vue";
+import packageMetadata from "../../package.json";
 import {
   checkForAppUpdate,
   downloadAndInstallAppUpdate,
@@ -12,7 +13,7 @@ type UpdaterPhase = "idle" | "checking" | "available" | "downloading" | "ready" 
 const state = reactive({
   initialized: false,
   phase: "idle" as UpdaterPhase,
-  currentVersion: "0.1.0",
+  currentVersion: packageMetadata.version,
   update: null as AppUpdateInfo | null,
   downloadedBytes: 0,
   totalBytes: null as number | null,
@@ -39,7 +40,7 @@ async function initialize(): Promise<void> {
     return;
   }
   state.initialized = true;
-  state.currentVersion = await getVersion().catch(() => "0.1.0");
+  state.currentVersion = await getVersion().catch(() => packageMetadata.version);
   await checkNow();
 }
 

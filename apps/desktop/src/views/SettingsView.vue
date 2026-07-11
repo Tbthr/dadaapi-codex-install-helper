@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { PhBell, PhDownloadSimple, PhInfo, PhMoon } from "@phosphor-icons/vue";
-import { computed, ref } from "vue";
+import { PhBell, PhDesktop, PhDownloadSimple, PhInfo, PhMoon, PhSun } from "@phosphor-icons/vue";
+import { computed } from "vue";
+import { useThemeStore, type ThemeMode } from "../stores/theme";
 import { useUpdaterStore } from "../stores/updater";
 
-const followSystemTheme = ref(true);
 const updater = useUpdaterStore();
+const theme = useThemeStore();
+const themeOptions: Array<{ id: ThemeMode; label: string; icon: typeof PhMoon }> = [
+  { id: "system", label: "跟随系统", icon: PhDesktop },
+  { id: "dark", label: "暗黑", icon: PhMoon },
+  { id: "light", label: "明亮", icon: PhSun },
+];
 
 const updateProgress = computed(() => {
   const total = updater.state.totalBytes;
@@ -102,18 +108,21 @@ async function handleUpdateAction(): Promise<void> {
       <div class="setting-row">
         <span class="list-icon"><PhMoon :size="21" /></span>
         <div class="list-copy">
-          <strong>跟随系统主题</strong>
-          <span>根据 Windows 或 macOS 外观自动切换</span>
+          <strong>主题模式</strong>
+          <span>默认跟随系统，也可以固定为暗黑或明亮</span>
         </div>
-        <button
-          type="button"
-          role="switch"
-          :aria-checked="followSystemTheme"
-          :class="['switch-control', { active: followSystemTheme }]"
-          @click="followSystemTheme = !followSystemTheme"
-        >
-          <i />
-        </button>
+        <div class="segmented-control theme-options" aria-label="外观主题">
+          <button
+            v-for="option in themeOptions"
+            :key="option.id"
+            type="button"
+            :class="{ active: theme.mode === option.id }"
+            @click="theme.setMode(option.id)"
+          >
+            <component :is="option.icon" :size="14" />
+            {{ option.label }}
+          </button>
+        </div>
       </div>
     </section>
 

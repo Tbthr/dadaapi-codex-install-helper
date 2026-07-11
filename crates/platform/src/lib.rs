@@ -221,6 +221,26 @@ pub async fn restore_network_state(state: &NetworkState) -> Result<(), PlatformE
     Err(PlatformError::Unsupported("恢复系统代理状态".to_owned()))
 }
 
+pub async fn reset_system_proxy() -> Result<(), PlatformError> {
+    #[cfg(target_os = "windows")]
+    {
+        return windows_powershell_status(
+            WINDOWS_RESET_PROXY_SCRIPT,
+            &[],
+            "Windows 系统代理清理失败",
+        )
+        .await;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return Ok(());
+    }
+
+    #[allow(unreachable_code)]
+    Err(PlatformError::Unsupported("清理系统代理".to_owned()))
+}
+
 #[cfg(target_os = "macos")]
 async fn stop_macos_app(app: &DesktopApp) -> Result<(), PlatformError> {
     let executable_name = Path::new(&app.executable_path)
@@ -975,6 +995,32 @@ public static class WocaoWinInetRestore {
 '@
 [WocaoWinInetRestore]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null
 [WocaoWinInetRestore]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0) | Out-Null
+"#;
+
+#[cfg(target_os = "windows")]
+const WINDOWS_RESET_PROXY_SCRIPT: &str = r#"
+$ErrorActionPreference = 'Stop'
+$path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+New-Item -Path $path -Force | Out-Null
+New-ItemProperty -Path $path -Name 'ProxyEnable' -PropertyType DWord -Value 0 -Force | Out-Null
+Remove-ItemProperty -Path $path -Name 'ProxyServer' -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path $path -Name 'ProxyOverride' -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path $path -Name 'AutoConfigURL' -ErrorAction SilentlyContinue
+New-ItemProperty -Path $path -Name 'AutoDetect' -PropertyType DWord -Value 0 -Force | Out-Null
+& netsh.exe winhttp reset proxy | Out-Null
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class WocaoWinInetReset {
+  [DllImport("wininet.dll", SetLastError = true)]
+  public static extern bool InternetSetOption(IntPtr internet, int option, IntPtr buffer, int length);
+}
+'@
+$settingsChanged = [WocaoWinInetReset]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
+$settingsRefresh = [WocaoWinInetReset]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
+if (-not $settingsChanged -or -not $settingsRefresh) { throw 'wininet_notify_failed' }
+$actualEnable = [uint32](Get-ItemPropertyValue -Path $path -Name 'ProxyEnable' -ErrorAction Stop)
+if ($actualEnable -ne 0) { throw 'proxy_write_verification_failed' }
 "#;
 
 #[cfg(target_os = "windows")]

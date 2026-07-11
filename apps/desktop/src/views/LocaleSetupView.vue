@@ -19,10 +19,18 @@ const emit = defineEmits<{
 }>();
 
 const activation = useActivationStore();
-const { canActivate, running, message, error: activationError, networkPending } =
-  storeToRefs(activation);
+const {
+  canActivate,
+  running,
+  message,
+  error: activationError,
+  networkPending,
+  recoveryRunning,
+  recoveryError,
+} = storeToRefs(activation);
 const app = computed(() => props.overview?.apps[0] ?? null);
 const appInstalled = computed(() => Boolean(app.value));
+const appReady = computed(() => Boolean(app.value?.running));
 
 const appStatusLabel = computed(() => {
   if (props.loading) return "检测中";
@@ -34,7 +42,18 @@ const appStatusLabel = computed(() => {
 const primaryLabel = computed(() => {
   if (!appInstalled.value) return "去安装";
   if (running.value) return "正在设置";
+  if (recoveryRunning.value) return "正在恢复";
+  if (activationError.value || networkPending.value) return "恢复网络";
+  if (!appReady.value) return "请先打开应用";
   return props.overview?.locale.chineseEnabled ? "重新设置" : "开始设置";
+});
+
+const primaryDisabled = computed(() => {
+  if (!appInstalled.value) return false;
+  if (running.value || recoveryRunning.value) return true;
+  if (activationError.value || networkPending.value) return false;
+  if (!appReady.value) return true;
+  return !canActivate.value;
 });
 
 async function handlePrimaryAction(): Promise<void> {
@@ -42,9 +61,17 @@ async function handlePrimaryAction(): Promise<void> {
     emit("navigate", "software");
     return;
   }
-  if (!canActivate.value || running.value) {
+  if (running.value || recoveryRunning.value) {
     return;
   }
+  if (activationError.value || networkPending.value) {
+    if (await activation.prepareNetworkForActivation()) {
+      emit("refresh");
+    }
+    return;
+  }
+  if (!app.value.running || !canActivate.value) return;
+  if (!(await activation.prepareNetworkForActivation())) return;
   if (await activation.activate(app.value.executablePath)) {
     emit("refresh");
   }
@@ -73,12 +100,12 @@ async function handlePrimaryAction(): Promise<void> {
       </div>
 
       <div class="setup-checklist">
-        <div :class="['check-row', { complete: appInstalled }]">
+        <div :class="['check-row', { complete: appReady }]">
           <div>
-            <strong>{{ appInstalled ? "应用已就绪" : "尚未安装应用" }}</strong>
-            <span>{{ appInstalled ? `已找到可启动的 ${app?.displayName ?? "ChatGPT"} 桌面应用` : "请先安装 ChatGPT 或 Codex，再进行中文设置" }}</span>
+            <strong>{{ appReady ? "应用已就绪" : appInstalled ? "应用尚未运行" : "尚未安装应用" }}</strong>
+            <span>{{ appReady ? `已找到正在运行的 ${app?.displayName ?? "ChatGPT"}` : appInstalled ? "请先打开 ChatGPT 或 Codex，再进行中文设置" : "请先安装 ChatGPT 或 Codex，再进行中文设置" }}</span>
           </div>
-          <span :class="['step-state', { pending: !appInstalled }]">{{ appInstalled ? "就绪" : "未安装" }}</span>
+          <span :class="['step-state', { pending: !appReady }]">{{ appReady ? "就绪" : appInstalled ? "未运行" : "未安装" }}</span>
         </div>
         <div :class="['check-row', { complete: !networkPending }]">
           <div>
@@ -107,16 +134,18 @@ async function handlePrimaryAction(): Promise<void> {
         <div class="setup-action-copy">
           <PhTranslate :size="21" />
           <p v-if="!appInstalled">安装完成并打开一次后，返回这里会自动重新检测。</p>
+          <p v-else-if="recoveryError">{{ recoveryError }}</p>
           <p v-else-if="activationError">{{ activationError }}</p>
+          <p v-else-if="!appReady">请先打开 ChatGPT 或 Codex。</p>
           <p v-else>{{ running ? message : "执行期间可能会短暂重启 ChatGPT。" }}</p>
         </div>
         <button
           class="primary-button large"
           type="button"
-          :disabled="appInstalled && (!canActivate || running)"
+          :disabled="primaryDisabled"
           @click="handlePrimaryAction"
         >
-          <PhSpinnerGap v-if="running" class="spinning" :size="17" />
+          <PhSpinnerGap v-if="running || recoveryRunning" class="spinning" :size="17" />
           <PhDownloadSimple v-else-if="!appInstalled" :size="17" />
           <PhPlay v-else :size="17" weight="fill" />
           {{ primaryLabel }}

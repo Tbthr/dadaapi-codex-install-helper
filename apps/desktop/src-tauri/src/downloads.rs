@@ -54,7 +54,7 @@ pub struct DesktopDownloadState {
 impl DesktopDownloadState {
     pub fn new(download_dir: PathBuf, state_path: PathBuf) -> Result<Self, io::Error> {
         ensure_private_directory(&download_dir)?;
-        let tasks = match load_persisted_tasks(
+        let mut tasks = match load_persisted_tasks(
             &state_path,
             &download_dir,
             super::current_operating_system(),
@@ -66,6 +66,9 @@ impl DesktopDownloadState {
                 HashMap::new()
             }
         };
+        if remove_missing_completed_tasks(&mut tasks) {
+            persist_tasks(&state_path, &tasks)?;
+        }
         Ok(Self {
             tasks: Mutex::new(tasks),
             download_dir,
@@ -106,10 +109,11 @@ pub async fn get_official_download_link(
 pub async fn list_download_tasks(
     state: State<'_, DesktopDownloadState>,
 ) -> Result<Vec<DownloadTaskSnapshot>, CommandError> {
-    let mut snapshots = state
-        .tasks
-        .lock()
-        .await
+    let mut tasks = state.tasks.lock().await;
+    if remove_missing_completed_tasks(&mut tasks) {
+        persist_tasks(&state.state_path, &tasks).map_err(persistence_command_error)?;
+    }
+    let mut snapshots = tasks
         .values()
         .map(|record| record.snapshot.clone())
         .collect::<Vec<_>>();
@@ -133,6 +137,9 @@ pub async fn start_download(
     .map_err(catalog_command_error)?;
 
     let mut tasks = state.tasks.lock().await;
+    if remove_missing_completed_tasks(&mut tasks) {
+        persist_tasks(&state.state_path, &tasks).map_err(persistence_command_error)?;
+    }
     if let Some(existing) = tasks.values().find(|record| {
         record.snapshot.product_id == product_id
             && record.snapshot.artifact_id == artifact.summary.id
@@ -274,10 +281,13 @@ pub async fn reveal_download(
     task_id: Uuid,
 ) -> Result<(), CommandError> {
     let target_path = {
-        let tasks = state.tasks.lock().await;
-        let record = tasks
-            .get(&task_id)
-            .ok_or_else(|| task_command_error("download_task_not_found", "下载任务不存在"))?;
+        let mut tasks = state.tasks.lock().await;
+        if remove_missing_completed_tasks(&mut tasks) {
+            persist_tasks(&state.state_path, &tasks).map_err(persistence_command_error)?;
+        }
+        let record = tasks.get(&task_id).ok_or_else(|| {
+            task_command_error("download_file_missing", "安装包已被删除，请重新下载")
+        })?;
         if !matches!(
             record.snapshot.state,
             DownloadTaskState::Ready | DownloadTaskState::Launched
@@ -319,9 +329,12 @@ pub async fn launch_installer(
 ) -> Result<DownloadTaskSnapshot, CommandError> {
     let (target_path, launching_snapshot) = {
         let mut tasks = state.tasks.lock().await;
-        let record = tasks
-            .get_mut(&task_id)
-            .ok_or_else(|| task_command_error("download_task_not_found", "下载任务不存在"))?;
+        if remove_missing_completed_tasks(&mut tasks) {
+            persist_tasks(&state.state_path, &tasks).map_err(persistence_command_error)?;
+        }
+        let record = tasks.get_mut(&task_id).ok_or_else(|| {
+            task_command_error("download_file_missing", "安装包已被删除，请重新下载")
+        })?;
         if !matches!(
             record.snapshot.state,
             DownloadTaskState::Ready | DownloadTaskState::Launched
@@ -667,6 +680,22 @@ fn task_is_cancellable(state: DownloadTaskState) -> bool {
     )
 }
 
+fn remove_missing_completed_tasks(tasks: &mut HashMap<Uuid, DownloadTaskRecord>) -> bool {
+    let previous_len = tasks.len();
+    tasks.retain(|_, record| {
+        !matches!(
+            record.snapshot.state,
+            DownloadTaskState::Ready | DownloadTaskState::Launched
+        ) || owned_download_file_exists(&record.target_path)
+    });
+    tasks.len() != previous_len
+}
+
+fn owned_download_file_exists(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+}
+
 fn load_persisted_tasks(
     state_path: &Path,
     download_dir: &Path,
@@ -792,6 +821,34 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn removes_completed_task_when_installer_was_deleted() {
+        let directory = TempDir::new().expect("temporary directory");
+        let task_id = Uuid::new_v4();
+        let missing_path = directory.path().join("deleted-installer.exe");
+        let mut tasks = HashMap::from([(
+            task_id,
+            DownloadTaskRecord {
+                snapshot: DownloadTaskSnapshot {
+                    id: task_id,
+                    product_id: SoftwareProductId::ChatGptDesktop,
+                    artifact_id: "chatgpt-test".to_owned(),
+                    state: DownloadTaskState::Ready,
+                    downloaded_bytes: 10,
+                    total_bytes: Some(10),
+                    resumed_from: 0,
+                    file_name: "deleted-installer.exe".to_owned(),
+                    error: None,
+                },
+                target_path: missing_path,
+                cancellation: DownloadCancellation::new(),
+            },
+        )]);
+
+        assert!(remove_missing_completed_tasks(&mut tasks));
+        assert!(tasks.is_empty());
+    }
 
     #[test]
     fn persisted_active_task_becomes_retryable_failure() {

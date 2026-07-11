@@ -51,7 +51,7 @@ const navigation: Array<{
       </button>
       <div class="version-line">
         <span>Wocao Hub</span>
-        <span>v0.1.0</span>
+        <span>v{{ updater.state.currentVersion }}</span>
       </div>
     </div>
   </aside>

@@ -6,6 +6,7 @@ import {
   activateChinese,
   getNetworkRecoveryStatus,
   isActivationAvailable,
+  prepareActivationNetwork,
   restoreNetwork,
 } from "../services/activation";
 import type { ActivationEvent, ActivationPhase } from "../types/activation";
@@ -243,6 +244,34 @@ export const useActivationStore = defineStore("activation", () => {
     }
   }
 
+  async function prepareNetworkForActivation(): Promise<boolean> {
+    if (recoveryRunning.value || running.value) {
+      return false;
+    }
+    recoveryRunning.value = true;
+    recoveryError.value = "";
+    networkStatusError.value = "";
+    networkStatusState.value = "loading";
+    networkRequestRevision += 1;
+    try {
+      networkStatus.value = await prepareActivationNetwork();
+      networkStatusState.value = "ready";
+      if (networkStatus.value.pending) {
+        recoveryError.value = "网络仍待恢复，请重试。";
+        return false;
+      }
+      error.value = "";
+      result.value = null;
+      return true;
+    } catch (reason) {
+      recoveryError.value = errorMessage(reason, "恢复和清理系统代理失败，请稍后重试。");
+      await refreshNetworkStatus();
+      return false;
+    } finally {
+      recoveryRunning.value = false;
+    }
+  }
+
   function applyProgressEvent(event: ActivationEvent): void {
     if (!running.value || isTerminalPhase(phase.value)) {
       return;
@@ -291,6 +320,7 @@ export const useActivationStore = defineStore("activation", () => {
     activate,
     refreshNetworkStatus,
     restoreOriginalNetwork,
+    prepareNetworkForActivation,
   };
 });
 
