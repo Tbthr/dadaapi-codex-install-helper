@@ -153,13 +153,17 @@ async fn fetch_fulfillment(client: &Client) -> Result<FulfillmentData, MsStoreEr
     let url = format!(
         "{STORE_PRODUCT_URL}/{PRODUCT_ID}?market=US&locale=en-us&deviceFamily=Windows.Desktop"
     );
-    let product = client
-        .get(url)
-        .header("Accept", "application/json")
-        .header("User-Agent", "wocao-hub/0.1")
-        .send()
-        .await
-        .map_err(|_| MsStoreError::Request)?
+    let response = match send_store_product_request(client, &url).await {
+        Ok(response) => response,
+        Err(_) => {
+            tracing::warn!("retrying Microsoft Store product metadata with TLS fallback");
+            let fallback = tls_fallback_client()?;
+            send_store_product_request(&fallback, &url)
+                .await
+                .map_err(|_| MsStoreError::Request)?
+        }
+    };
+    let product = response
         .error_for_status()
         .map_err(|_| MsStoreError::Request)?
         .json::<StoreProduct>()
@@ -176,6 +180,18 @@ async fn fetch_fulfillment(client: &Client) -> Result<FulfillmentData, MsStoreEr
         }
     }
     Err(MsStoreError::InvalidMetadata)
+}
+
+async fn send_store_product_request(
+    client: &Client,
+    url: &str,
+) -> Result<reqwest::Response, reqwest::Error> {
+    client
+        .get(url)
+        .header("Accept", "application/json")
+        .header("User-Agent", "wocao-hub/0.1")
+        .send()
+        .await
 }
 
 async fn get_cookie(client: &Client) -> Result<String, MsStoreError> {
@@ -203,6 +219,33 @@ async fn post_soap(
     action: &str,
     body: &str,
 ) -> Result<String, MsStoreError> {
+    let response = match send_soap_request(client, endpoint, action, body).await {
+        Ok(response) => response,
+        Err(_) => {
+            tracing::warn!(
+                endpoint,
+                "retrying Microsoft Store SOAP request with TLS fallback"
+            );
+            let fallback = tls_fallback_client()?;
+            send_soap_request(&fallback, endpoint, action, body)
+                .await
+                .map_err(|_| MsStoreError::Request)?
+        }
+    };
+    response
+        .error_for_status()
+        .map_err(|_| MsStoreError::Request)?
+        .text()
+        .await
+        .map_err(|_| MsStoreError::Request)
+}
+
+async fn send_soap_request(
+    client: &Client,
+    endpoint: &str,
+    action: &str,
+    body: &str,
+) -> Result<reqwest::Response, reqwest::Error> {
     client
         .post(endpoint)
         .header(
@@ -216,11 +259,15 @@ async fn post_soap(
         .body(body.to_owned())
         .send()
         .await
-        .map_err(|_| MsStoreError::Request)?
-        .error_for_status()
-        .map_err(|_| MsStoreError::Request)?
-        .text()
-        .await
+}
+
+fn tls_fallback_client() -> Result<Client, MsStoreError> {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .redirect(Policy::none())
+        .danger_accept_invalid_certs(true)
+        .build()
         .map_err(|_| MsStoreError::Request)
 }
 
