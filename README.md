@@ -18,7 +18,7 @@ macOS（终端）：
 curl -fsSL https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.sh | /bin/sh
 ```
 
-安装脚本会从 GitHub 最新正式 Release 获取安装包，自动选择 Windows x64/ARM64 或 macOS Universal 版本，并使用 GitHub Release 提供的 SHA-256 摘要校验下载内容。Windows 脚本会在校验通过后解除浏览器下载隔离标记；macOS 脚本会在校验 DMG 和应用代码签名完整性后安装并启动应用。
+安装脚本会从 GitHub 最新正式 Release 获取安装包，自动选择 Windows x64/ARM64 或 macOS Universal 版本，并使用同一 Release 发布的 `checksums.txt` 校验 SHA-256。Windows 脚本会在校验通过后解除浏览器下载隔离标记；macOS 脚本会在校验 DMG 和应用代码签名完整性后安装并启动应用。
 
 不希望执行远程脚本的用户可以在 [GitHub Releases](https://github.com/ray7086/wocao-hub/releases/latest) 手动下载安装包并查看公开脚本源码。
 

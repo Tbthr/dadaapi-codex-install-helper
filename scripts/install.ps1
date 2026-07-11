@@ -2,8 +2,8 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $Repository = "ray7086/wocao-hub"
-$ReleaseApi = "https://api.github.com/repos/$Repository/releases/latest"
-$ExpectedReleasePrefix = "/$Repository/releases/download/"
+$LatestReleaseBase = "https://github.com/$Repository/releases/latest/download"
+$ChecksumsUrl = "$LatestReleaseBase/checksums.txt"
 
 function Get-NativeWindowsArchitecture {
     $architecture = if ($env:WOCAO_HUB_INSTALL_ARCH) {
@@ -42,37 +42,32 @@ if ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]
 }
 
 $assetArchitecture = Get-NativeWindowsArchitecture
-$assetNamePattern = "^Wocao\.Hub_[0-9]+\.[0-9]+\.[0-9]+_${assetArchitecture}-setup\.exe$"
-$headers = @{
-    Accept = "application/vnd.github+json"
-    "User-Agent" = "wocao-hub-installer"
-    "X-GitHub-Api-Version" = "2022-11-28"
-}
+$checksumPattern = "^(?<hash>[0-9a-fA-F]{64})\s+(?<name>Wocao\.Hub_(?<version>[0-9]+\.[0-9]+\.[0-9]+)_${assetArchitecture}-setup\.exe)\s*$"
 
 Write-Host "正在获取 Wocao Hub 最新版本信息……"
-$release = Invoke-RestMethod -Uri $ReleaseApi -Headers $headers -Method Get
-$matchingAssets = @($release.assets | Where-Object { $_.name -match $assetNamePattern })
+$checksums = Invoke-RestMethod -Uri $ChecksumsUrl -Headers @{ "User-Agent" = "wocao-hub-installer" } -Method Get
+$matchingAssets = @(
+    foreach ($line in ($checksums -split "`r?`n")) {
+        if ($line -match $checksumPattern) {
+            [PSCustomObject]@{
+                Hash = $Matches["hash"].ToLowerInvariant()
+                Name = $Matches["name"]
+                Version = $Matches["version"]
+            }
+        }
+    }
+)
 
 if ($matchingAssets.Count -ne 1) {
     throw "没有找到唯一的 Windows $assetArchitecture 安装包。"
 }
 
 $asset = $matchingAssets[0]
-$downloadUri = [Uri]$asset.browser_download_url
-if ($downloadUri.Scheme -ne "https" -or
-    $downloadUri.Host -ne "github.com" -or
-    -not $downloadUri.AbsolutePath.StartsWith($ExpectedReleasePrefix, [StringComparison]::Ordinal)) {
-    throw "GitHub 返回了不可信的安装包地址。"
-}
-
-$digest = [string]$asset.digest
-if ($digest -notmatch "^sha256:([0-9a-fA-F]{64})$") {
-    throw "GitHub Release 没有提供有效的 SHA-256 摘要。"
-}
-$expectedHash = $Matches[1].ToLowerInvariant()
+$downloadUri = [Uri]("$LatestReleaseBase/$($asset.Name)")
+$expectedHash = $asset.Hash
 
 $downloadDirectory = Join-Path ([IO.Path]::GetTempPath()) "WocaoHubInstaller"
-$installerPath = Join-Path $downloadDirectory ([string]$asset.name)
+$installerPath = Join-Path $downloadDirectory ([string]$asset.Name)
 $partialPath = "$installerPath.part"
 
 New-Item -ItemType Directory -Path $downloadDirectory -Force | Out-Null
@@ -80,7 +75,7 @@ Remove-InstallerFile -Path $installerPath
 Remove-InstallerFile -Path $partialPath
 
 try {
-    Write-Host "正在下载 $($asset.name)……"
+    Write-Host "正在下载 $($asset.Name)……"
     Invoke-WebRequest -Uri $downloadUri.AbsoluteUri -Headers @{ "User-Agent" = "wocao-hub-installer" } -OutFile $partialPath -UseBasicParsing
 
     $actualHash = (Get-FileHash -LiteralPath $partialPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -91,7 +86,7 @@ try {
     Move-Item -LiteralPath $partialPath -Destination $installerPath -Force
     Unblock-File -LiteralPath $installerPath
 
-    Write-Host "下载与校验完成：$($release.tag_name) / Windows $assetArchitecture"
+    Write-Host "下载与校验完成：v$($asset.Version) / Windows $assetArchitecture"
 
     if ($env:WOCAO_HUB_INSTALL_DRY_RUN -eq "1") {
         Write-Host "Dry-run 验证成功，未启动安装器。"

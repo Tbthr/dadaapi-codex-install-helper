@@ -3,8 +3,8 @@
 set -eu
 
 repository="ray7086/wocao-hub"
-release_api="https://api.github.com/repos/${repository}/releases/latest"
-expected_release_prefix="https://github.com/${repository}/releases/download/"
+latest_release_base="https://github.com/${repository}/releases/latest/download"
+checksums_url="${latest_release_base}/checksums.txt"
 temporary_directory=""
 mount_point=""
 mounted="0"
@@ -35,7 +35,7 @@ case "$architecture" in
 esac
 
 temporary_directory="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/wocao-hub-install.XXXXXX")"
-release_file="$temporary_directory/release.plist"
+checksums_file="$temporary_directory/checksums.txt"
 dmg_file="$temporary_directory/Wocao.Hub_universal.dmg"
 mount_point="$temporary_directory/mount"
 /bin/mkdir -p "$mount_point"
@@ -49,38 +49,19 @@ printf '%s\n' "正在获取 Wocao Hub 最新版本信息……"
   --retry 3 \
   --proto '=https' \
   --tlsv1.2 \
-  --header 'Accept: application/vnd.github+json' \
-  --header 'X-GitHub-Api-Version: 2022-11-28' \
   --user-agent 'wocao-hub-installer' \
-  "$release_api" \
-  --output "$release_file"
+  "$checksums_url" \
+  --output "$checksums_file"
 
-/usr/bin/plutil -convert xml1 "$release_file" >/dev/null
-release_tag="$(/usr/libexec/PlistBuddy -c 'Print :tag_name' "$release_file" 2>/dev/null)"
+checksum_matches="$(/usr/bin/grep -E '^[0-9a-fA-F]{64}[[:space:]]+Wocao\.Hub_[0-9]+\.[0-9]+\.[0-9]+_universal\.dmg$' "$checksums_file" || true)"
+match_count="$(printf '%s\n' "$checksum_matches" | /usr/bin/grep -c . || true)"
+[ "$match_count" = "1" ] || fail "没有找到唯一的 macOS Universal 安装包校验记录。"
 
-asset_name=""
-asset_url=""
-asset_digest=""
-asset_index="0"
-
-while candidate_name="$(/usr/libexec/PlistBuddy -c "Print :assets:${asset_index}:name" "$release_file" 2>/dev/null)"; do
-  if printf '%s\n' "$candidate_name" | /usr/bin/grep -Eq '^Wocao\.Hub_[0-9]+\.[0-9]+\.[0-9]+_universal\.dmg$'; then
-    [ -z "$asset_name" ] || fail "GitHub Release 中存在多个 macOS Universal 安装包。"
-    asset_name="$candidate_name"
-    asset_url="$(/usr/libexec/PlistBuddy -c "Print :assets:${asset_index}:browser_download_url" "$release_file")"
-    asset_digest="$(/usr/libexec/PlistBuddy -c "Print :assets:${asset_index}:digest" "$release_file")"
-  fi
-  asset_index=$((asset_index + 1))
-done
-
-[ -n "$asset_name" ] || fail "没有找到 macOS Universal 安装包。"
-case "$asset_url" in
-  "${expected_release_prefix}"*) ;;
-  *) fail "GitHub 返回了不可信的安装包地址。" ;;
-esac
-
-expected_hash="$(printf '%s\n' "$asset_digest" | /usr/bin/sed -nE 's/^sha256:([0-9a-fA-F]{64})$/\1/p' | /usr/bin/tr '[:upper:]' '[:lower:]')"
-[ -n "$expected_hash" ] || fail "GitHub Release 没有提供有效的 SHA-256 摘要。"
+expected_hash="$(printf '%s\n' "$checksum_matches" | /usr/bin/awk '{ print tolower($1) }')"
+asset_name="$(printf '%s\n' "$checksum_matches" | /usr/bin/awk '{ print $2 }')"
+release_version="$(printf '%s\n' "$asset_name" | /usr/bin/sed -nE 's/^Wocao\.Hub_([0-9]+\.[0-9]+\.[0-9]+)_universal\.dmg$/\1/p')"
+[ -n "$release_version" ] || fail "无法解析 macOS 安装包版本。"
+asset_url="${latest_release_base}/${asset_name}"
 
 printf '%s\n' "正在下载 ${asset_name}……"
 /usr/bin/curl \
@@ -98,7 +79,7 @@ printf '%s\n' "正在下载 ${asset_name}……"
 actual_hash="$(/usr/bin/shasum -a 256 "$dmg_file" | /usr/bin/awk '{ print $1 }')"
 [ "$actual_hash" = "$expected_hash" ] || fail "安装包 SHA-256 校验失败，已停止安装。"
 
-printf '%s\n' "下载与校验完成：$release_tag / macOS Universal ($architecture)"
+printf '%s\n' "下载与校验完成：v$release_version / macOS Universal ($architecture)"
 
 if [ "${WOCAO_HUB_INSTALL_DRY_RUN:-0}" = "1" ]; then
   printf '%s\n' "Dry-run 验证成功，未安装应用。"

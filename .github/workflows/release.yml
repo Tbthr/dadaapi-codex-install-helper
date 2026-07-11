@@ -71,3 +71,33 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+  checksums:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download released installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir release-assets
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "Wocao.Hub_*_arm64-setup.exe" \
+            --pattern "Wocao.Hub_*_x64-setup.exe" \
+            --pattern "Wocao.Hub_*_universal.dmg" \
+            --dir release-assets
+
+      - name: Publish SHA-256 checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd release-assets
+          sha256sum \
+            Wocao.Hub_*_arm64-setup.exe \
+            Wocao.Hub_*_x64-setup.exe \
+            Wocao.Hub_*_universal.dmg \
+            > checksums.txt
+          gh release upload "$GITHUB_REF_NAME" checksums.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
