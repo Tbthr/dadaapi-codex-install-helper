@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Wocao Hub",
-  "version": "0.1.8",
+  "version": "1.0.0",
   "identifier": "ai.wocao.hub",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -53,9 +53,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU3RjI1MEM4QkYxNDkyMEYKUldRUGtoUy95RkR5NXlvTmQxd3hFVW43dnRmb3g0QjhobmZwbU5zaXNIRmNqMHI3U25oUXlJMngK",
-      "endpoints": [
-        "https://github.com/ray7086/wocao-hub/releases/latest/download/latest.json"
-      ]
+      "endpoints": ["https://github.com/ray7086/wocao-hub/releases/latest/download/latest.json"]
     }
   }
 }

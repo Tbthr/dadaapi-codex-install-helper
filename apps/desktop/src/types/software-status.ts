@@ -1,9 +1,5 @@
 export type InstalledSoftwareId =
-  | "chatGpt"
-  | "claudeDesktop"
-  | "ccSwitch"
-  | "nodeJsLts"
-  | "visualStudioCode";
+  "chatGpt" | "claudeDesktop" | "ccSwitch" | "nodeJsLts" | "visualStudioCode";
 
 export interface SoftwareInstallationStatus {
   id: InstalledSoftwareId;

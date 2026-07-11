@@ -66,7 +66,7 @@ jobs:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
           releaseName: Wocao Hub ${{ github.ref_name }}
-          releaseBody: See the assets below to install or update Wocao Hub.
+          releaseBody: Wocao Hub 1.0 正式版。请根据设备平台下载对应安装包。
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true

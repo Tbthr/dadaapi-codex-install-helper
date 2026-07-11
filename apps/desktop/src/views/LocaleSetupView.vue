@@ -91,7 +91,9 @@ async function handlePrimaryAction(): Promise<void> {
         <span class="app-symbol brand-openai"><BrandIcon brand="openai" :size="28" /></span>
         <div>
           <strong>ChatGPT</strong>
-          <span v-if="app">版本 {{ app.version ?? "未知" }} · {{ app.running ? "正在运行" : "未运行" }}</span>
+          <span v-if="app"
+            >版本 {{ app.version ?? "未知" }} · {{ app.running ? "正在运行" : "未运行" }}</span
+          >
           <span v-else-if="loading">正在检测本机应用</span>
           <span v-else-if="error">{{ error }}</span>
           <span v-else>未检测到 ChatGPT 或 Codex 桌面应用</span>
@@ -102,10 +104,20 @@ async function handlePrimaryAction(): Promise<void> {
       <div class="setup-checklist">
         <div :class="['check-row', { complete: appReady }]">
           <div>
-            <strong>{{ appReady ? "应用已就绪" : appInstalled ? "应用尚未运行" : "尚未安装应用" }}</strong>
-            <span>{{ appReady ? `已找到正在运行的 ${app?.displayName ?? "ChatGPT"}` : appInstalled ? "请先打开 ChatGPT 或 Codex，再进行中文设置" : "请先安装 ChatGPT 或 Codex，再进行中文设置" }}</span>
+            <strong>{{
+              appReady ? "应用已就绪" : appInstalled ? "应用尚未运行" : "尚未安装应用"
+            }}</strong>
+            <span>{{
+              appReady
+                ? `已找到正在运行的 ${app?.displayName ?? "ChatGPT"}`
+                : appInstalled
+                  ? "请先打开 ChatGPT 或 Codex，再进行中文设置"
+                  : "请先安装 ChatGPT 或 Codex，再进行中文设置"
+            }}</span>
           </div>
-          <span :class="['step-state', { pending: !appReady }]">{{ appReady ? "就绪" : appInstalled ? "未运行" : "未安装" }}</span>
+          <span :class="['step-state', { pending: !appReady }]">{{
+            appReady ? "就绪" : appInstalled ? "未运行" : "未安装"
+          }}</span>
         </div>
         <div :class="['check-row', { complete: !networkPending }]">
           <div>
@@ -117,9 +129,13 @@ async function handlePrimaryAction(): Promise<void> {
         <div class="check-row complete">
           <div>
             <strong>{{ networkPending ? "系统网络待恢复" : "系统网络正常" }}</strong>
-            <span>{{ networkPending ? "请先在恢复与诊断中恢复原网络" : "当前没有待恢复的代理状态" }}</span>
+            <span>{{
+              networkPending ? "请先在恢复与诊断中恢复原网络" : "当前没有待恢复的代理状态"
+            }}</span>
           </div>
-          <span :class="['step-state', { pending: networkPending }]">{{ networkPending ? "待恢复" : "正常" }}</span>
+          <span :class="['step-state', { pending: networkPending }]">{{
+            networkPending ? "待恢复" : "正常"
+          }}</span>
         </div>
         <div class="check-row">
           <div>

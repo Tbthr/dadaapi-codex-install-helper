@@ -75,7 +75,9 @@ function errorMessage(error: unknown, fallback: string): string {
           <strong>恢复原网络</strong>
           <span v-if="networkStatusState === 'error'">{{ networkStatusError }}</span>
           <span v-else-if="recoveryError">{{ recoveryError }}</span>
-          <span v-else-if="networkPending && localProxyActive">临时代理正在使用，恢复后会关闭本地代理</span>
+          <span v-else-if="networkPending && localProxyActive"
+            >临时代理正在使用，恢复后会关闭本地代理</span
+          >
           <span v-else-if="networkPending">检测到待恢复的系统代理状态</span>
           <span v-else>当前没有 Wocao Hub 遗留的代理状态</span>
         </div>
@@ -106,7 +108,12 @@ function errorMessage(error: unknown, fallback: string): string {
           <span v-else-if="diagnosticExport">诊断文件已生成并完成脱敏</span>
           <span v-else>生成经过脱敏处理的日志与状态摘要</span>
         </div>
-        <button type="button" class="row-button" :disabled="exportRunning" @click="handleDiagnostics">
+        <button
+          type="button"
+          class="row-button"
+          :disabled="exportRunning"
+          @click="handleDiagnostics"
+        >
           <PhSpinnerGap v-if="exportRunning" class="spinning" :size="15" />
           {{ exportRunning ? "正在导出" : diagnosticExport ? "打开文件" : "导出文件" }}
         </button>

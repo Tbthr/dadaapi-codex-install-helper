@@ -8,7 +8,8 @@ import {
   type AppUpdateInfo,
 } from "../services/updater";
 
-type UpdaterPhase = "idle" | "checking" | "available" | "downloading" | "ready" | "current" | "error";
+type UpdaterPhase =
+  "idle" | "checking" | "available" | "downloading" | "ready" | "current" | "error";
 
 const state = reactive({
   initialized: false,

@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import {
   PhArrowRight,
+  PhArrowUpRight,
+  PhBookOpenText,
   PhCheckCircle,
   PhGlobeHemisphereWest,
+  PhGlobeSimple,
+  PhHeadset,
+  PhImageSquare,
   PhPackage,
   PhTranslate,
+  PhWallet,
 } from "@phosphor-icons/vue";
 import BrandIcon from "../components/BrandIcon.vue";
 import { computed } from "vue";
+import { openExternalLink, WOCAO_LINKS } from "../services/external-links";
 import type { LocaleOverview } from "../types/locale";
 import type { WorkspacePage } from "../types/ui";
 
@@ -63,6 +70,50 @@ const shortcuts: Array<{
     icon: PhGlobeHemisphereWest,
   },
 ];
+
+const serviceLinks: Array<{
+  title: string;
+  description: string;
+  url: string;
+  icon: typeof PhWallet;
+  tone: string;
+}> = [
+  {
+    title: "账户充值",
+    description: "余额与账单",
+    url: WOCAO_LINKS.wallet,
+    icon: PhWallet,
+    tone: "wallet",
+  },
+  {
+    title: "官方网站",
+    description: "产品与服务",
+    url: WOCAO_LINKS.home,
+    icon: PhGlobeSimple,
+    tone: "website",
+  },
+  {
+    title: "快捷生图",
+    description: "立即开始创作",
+    url: WOCAO_LINKS.imageGenerator,
+    icon: PhImageSquare,
+    tone: "image",
+  },
+  {
+    title: "使用文档",
+    description: "指南与说明",
+    url: WOCAO_LINKS.docs,
+    icon: PhBookOpenText,
+    tone: "docs",
+  },
+  {
+    title: "技术支持",
+    description: "在线咨询",
+    url: WOCAO_LINKS.support,
+    icon: PhHeadset,
+    tone: "support",
+  },
+];
 </script>
 
 <template>
@@ -116,9 +167,45 @@ const shortcuts: Array<{
           <span>运行状态</span>
           <strong :class="{ 'success-text': Boolean(app) }">
             <PhCheckCircle v-if="app" :size="16" weight="fill" />
-            {{ loading ? "检测中" : error ? "检测失败" : app ? (app.running ? "正在运行" : "已安装") : "未安装" }}
+            {{
+              loading
+                ? "检测中"
+                : error
+                  ? "检测失败"
+                  : app
+                    ? app.running
+                      ? "正在运行"
+                      : "已安装"
+                    : "未安装"
+            }}
           </strong>
         </div>
+      </div>
+    </section>
+
+    <section class="section-block service-section">
+      <div class="section-heading service-heading">
+        <h2>快捷服务</h2>
+        <span>wocao.ai</span>
+      </div>
+
+      <div class="service-links">
+        <button
+          v-for="service in serviceLinks"
+          :key="service.url"
+          type="button"
+          :class="['service-link', `service-${service.tone}`]"
+          @click="openExternalLink(service.url)"
+        >
+          <span class="service-icon">
+            <component :is="service.icon" :size="20" weight="regular" />
+          </span>
+          <span class="service-copy">
+            <strong>{{ service.title }}</strong>
+            <small>{{ service.description }}</small>
+          </span>
+          <PhArrowUpRight class="service-arrow" :size="15" />
+        </button>
       </div>
     </section>
   </div>

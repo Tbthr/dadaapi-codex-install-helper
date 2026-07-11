@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { PhGearSix, PhHouse, PhLifebuoy, PhPackage, PhTranslate } from "@phosphor-icons/vue";
 import brandLogo from "../assets/brand/wocao-text.png";
+import { openExternalLink, WOCAO_LINKS } from "../services/external-links";
 import { useUpdaterStore } from "../stores/updater";
 import type { WorkspacePage } from "../types/ui";
 
@@ -23,7 +24,15 @@ const navigation: Array<{
 <template>
   <aside class="sidebar">
     <div class="brand">
-      <img :src="brandLogo" alt="wocao.ai" />
+      <button
+        type="button"
+        class="brand-link"
+        title="访问 wocao.ai 官网"
+        aria-label="访问 wocao.ai 官网"
+        @click="openExternalLink(WOCAO_LINKS.home)"
+      >
+        <img :src="brandLogo" alt="wocao.ai" />
+      </button>
     </div>
 
     <nav class="sidebar-nav" aria-label="主要导航">

@@ -350,8 +350,8 @@ function errorMessage(error: unknown, fallback: string): string {
           type="button"
           :disabled="
             !artifactFor(product) ||
-              downloadBusy[product.id] ||
-              taskFor(product)?.state === 'launching'
+            downloadBusy[product.id] ||
+            taskFor(product)?.state === 'launching'
           "
           @click="handleDownload(product)"
         >

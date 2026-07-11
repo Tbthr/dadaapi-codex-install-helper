@@ -6,7 +6,7 @@ on:
       tag:
         description: Release tag to test
         required: true
-        default: v0.1.0
+        default: v1.0.0
 
 permissions:
   contents: write

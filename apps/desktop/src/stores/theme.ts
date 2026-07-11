@@ -31,7 +31,8 @@ export const useThemeStore = defineStore("theme", () => {
   }
 
   function applyTheme(): void {
-    const resolved = mode.value === "system" ? (systemTheme?.matches ? "dark" : "light") : mode.value;
+    const resolved =
+      mode.value === "system" ? (systemTheme?.matches ? "dark" : "light") : mode.value;
     document.documentElement.dataset.theme = resolved;
     document.documentElement.style.colorScheme = resolved;
   }

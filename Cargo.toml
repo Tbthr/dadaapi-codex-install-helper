@@ -22,7 +22,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.8"
+version = "1.0.0"
 edition = "2021"
 license = "UNLICENSED"
 repository = "https://github.com/ray7086/wocao-hub"
