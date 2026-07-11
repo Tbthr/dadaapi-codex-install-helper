@@ -12,15 +12,24 @@ permissions:
   contents: read
 
 jobs:
-  windows-x64:
-    runs-on: windows-latest
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            architecture: x64
+          - runner: windows-11-arm
+            architecture: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Download released installer
         shell: pwsh
         env:
           RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_ARCHITECTURE: ${{ matrix.architecture }}
         run: |
-          $asset = "Wocao.Hub_$($env:RELEASE_TAG.TrimStart('v'))_x64-setup.exe"
+          $asset = "Wocao.Hub_$($env:RELEASE_TAG.TrimStart('v'))_$env:RELEASE_ARCHITECTURE-setup.exe"
           $url = "https://github.com/${{ github.repository }}/releases/download/$env:RELEASE_TAG/$asset"
           Invoke-WebRequest -Uri $url -OutFile installer.exe
           $signature = Get-AuthenticodeSignature installer.exe
