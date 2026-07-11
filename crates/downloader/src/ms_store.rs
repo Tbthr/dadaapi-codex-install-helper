@@ -20,6 +20,8 @@ const WU_ENDPOINT: &str = "https://fe3.delivery.mp.microsoft.com/ClientWebServic
 const WU_SECURED_ENDPOINT: &str =
     "https://fe3cr.delivery.mp.microsoft.com/ClientWebService/client.asmx/secured";
 const WU_NS: &str = "http://www.microsoft.com/SoftwareDistribution/Server/ClientWebService";
+const REMOTE_MANIFEST_URL: &str =
+    "https://raw.githubusercontent.com/ray7086/wocao-hub/msix-links/msix-links.json";
 
 const INSTALLED_NON_LEAF_IDS: &str = "1,2,3,11,19,544,549,2359974,2359977,5169044,8788830,23110993,23110994,54341900,54343656,59830006,59830007,59830008,60484010,62450018,62450019,62450020,66027979,66053150,97657898,98822896,98959022,98959023,98959024,98959025,98959026,104433538,104900364,105489019,117765322,129905029,130040031,132387090,132393049,133399034,138537048,140377312,143747671,158941041,158941042,158941043,158941044,159123858,159130928,164836897,164847386,164848327,164852241,164852246,164852252,164852253";
 
@@ -80,6 +82,18 @@ struct Candidate {
 }
 
 pub async fn resolve_chatgpt_msix_url(architecture: CpuArchitecture) -> Result<Url, MsStoreError> {
+    match resolve_chatgpt_msix_url_direct(architecture).await {
+        Ok(url) => Ok(url),
+        Err(error) => {
+            tracing::warn!(error = %error, "local Microsoft Store resolution failed; using refreshed GitHub metadata");
+            resolve_remote_msix_url(architecture).await
+        }
+    }
+}
+
+pub async fn resolve_chatgpt_msix_url_direct(
+    architecture: CpuArchitecture,
+) -> Result<Url, MsStoreError> {
     let client = metadata_client()?;
     let fulfillment = fetch_fulfillment(&client).await?;
     let cookie = get_cookie(&client).await?;
@@ -135,6 +149,60 @@ pub async fn resolve_chatgpt_msix_url(architecture: CpuArchitecture) -> Result<U
         })
         .map(|candidate| candidate.url.clone())
         .ok_or(MsStoreError::ArchitectureNotFound)
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteManifest {
+    packages: RemotePackages,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemotePackages {
+    arm64: RemotePackage,
+    x64: RemotePackage,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RemotePackage {
+    url: String,
+    expires_at: chrono::DateTime<Utc>,
+}
+
+async fn resolve_remote_msix_url(architecture: CpuArchitecture) -> Result<Url, MsStoreError> {
+    let client = Client::builder()
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(15))
+        .redirect(Policy::none())
+        .build()
+        .map_err(|_| MsStoreError::Request)?;
+    let manifest = client
+        .get(REMOTE_MANIFEST_URL)
+        .header("Accept", "application/json")
+        .header("User-Agent", "wocao-hub/0.1")
+        .send()
+        .await
+        .map_err(|_| MsStoreError::Request)?
+        .error_for_status()
+        .map_err(|_| MsStoreError::Request)?
+        .json::<RemoteManifest>()
+        .await
+        .map_err(|_| MsStoreError::InvalidMetadata)?;
+    let package = match architecture {
+        CpuArchitecture::Arm64 => manifest.packages.arm64,
+        CpuArchitecture::X64 => manifest.packages.x64,
+    };
+    if package.expires_at <= Utc::now() + chrono::Duration::minutes(5) {
+        return Err(MsStoreError::InvalidMetadata);
+    }
+    let url = Url::parse(&package.url).map_err(|_| MsStoreError::InvalidMetadata)?;
+    if !url
+        .host_str()
+        .is_some_and(|host| host.ends_with("dl.delivery.mp.microsoft.com"))
+    {
+        return Err(MsStoreError::InvalidMetadata);
+    }
+    Ok(url)
 }
 
 fn metadata_client() -> Result<Client, MsStoreError> {
@@ -644,7 +712,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "live Microsoft Store integration"]
     async fn resolves_live_arm64_msix() {
-        let url = resolve_chatgpt_msix_url(CpuArchitecture::Arm64)
+        let url = resolve_chatgpt_msix_url_direct(CpuArchitecture::Arm64)
             .await
             .expect("arm64 msix");
         assert!(url

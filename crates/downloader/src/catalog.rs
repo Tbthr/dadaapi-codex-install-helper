@@ -767,6 +767,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "live vendor metadata integration"]
     async fn resolves_live_official_metadata() {
         for product in [
             SoftwareProductId::ClaudeDesktop,
@@ -787,6 +788,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "live vendor metadata integration"]
     async fn resolves_windows_arm64_official_metadata() {
         for product in [
             SoftwareProductId::ClaudeDesktop,

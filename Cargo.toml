@@ -16,12 +16,13 @@ members = [
   "services/config-server",
   "services/subscription-relay",
   "tools/local-e2e",
+  "tools/msix-links",
   "tools/route-e2e",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 license = "UNLICENSED"
 repository = "https://github.com/ray7086/wocao-hub"
