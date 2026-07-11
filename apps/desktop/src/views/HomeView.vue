@@ -7,9 +7,36 @@ import {
   PhTranslate,
 } from "@phosphor-icons/vue";
 import BrandIcon from "../components/BrandIcon.vue";
+import { computed } from "vue";
+import type { LocaleOverview } from "../types/locale";
 import type { WorkspacePage } from "../types/ui";
 
+const props = defineProps<{
+  overview: LocaleOverview | null;
+  loading: boolean;
+  error: string;
+}>();
 const emit = defineEmits<{ navigate: [page: WorkspacePage] }>();
+const app = computed(() => props.overview?.apps[0] ?? null);
+
+const appHeading = computed(() => {
+  if (props.loading) {
+    return "正在检测应用";
+  }
+  if (props.error) {
+    return "应用检测失败";
+  }
+  if (!app.value) {
+    return "ChatGPT 尚未安装";
+  }
+  return `${app.value.displayName} 已就绪`;
+});
+
+const actionLabel = computed(() => (app.value ? "配置中文" : "安装 ChatGPT"));
+
+function handlePrimaryAction(): void {
+  emit("navigate", app.value ? "locale" : "software");
+}
 
 const shortcuts: Array<{
   page: WorkspacePage;
@@ -71,11 +98,11 @@ const shortcuts: Array<{
           <span class="app-symbol brand-openai"><BrandIcon brand="openai" :size="32" /></span>
           <div>
             <span class="eyebrow">当前应用</span>
-            <h2>ChatGPT 已就绪</h2>
+            <h2>{{ appHeading }}</h2>
           </div>
         </div>
-        <button class="primary-button large" type="button" @click="emit('navigate', 'locale')">
-          配置中文
+        <button class="primary-button large" type="button" @click="handlePrimaryAction">
+          {{ actionLabel }}
           <PhArrowRight :size="18" weight="bold" />
         </button>
       </div>
@@ -83,11 +110,14 @@ const shortcuts: Array<{
       <div class="hero-status-grid">
         <div>
           <span>版本</span>
-          <strong>26.707.31428</strong>
+          <strong>{{ app?.version ?? (loading ? "检测中" : "—") }}</strong>
         </div>
         <div>
           <span>运行状态</span>
-          <strong class="success-text"><PhCheckCircle :size="16" weight="fill" />正常</strong>
+          <strong :class="{ 'success-text': Boolean(app) }">
+            <PhCheckCircle v-if="app" :size="16" weight="fill" />
+            {{ loading ? "检测中" : error ? "检测失败" : app ? (app.running ? "正在运行" : "已安装") : "未安装" }}
+          </strong>
         </div>
       </div>
     </section>

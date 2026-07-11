@@ -865,15 +865,15 @@ mod tests {
                 snapshot: DownloadTaskSnapshot {
                     id: task_id,
                     product_id: SoftwareProductId::ChatGptDesktop,
-                    artifact_id: "chatgpt-windows-installer".to_owned(),
+                    artifact_id: "chatgpt-windows-arm64-msix".to_owned(),
                     state: DownloadTaskState::Queued,
                     downloaded_bytes: 0,
                     total_bytes: None,
                     resumed_from: 0,
-                    file_name: "ChatGPT Installer.exe".to_owned(),
+                    file_name: "ChatGPT.msix".to_owned(),
                     error: None,
                 },
-                target_path: directory.path().join("ChatGPT Installer.exe"),
+                target_path: directory.path().join("ChatGPT.msix"),
                 cancellation: DownloadCancellation::new(),
             },
         );

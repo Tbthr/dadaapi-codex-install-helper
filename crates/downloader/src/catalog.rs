@@ -13,9 +13,6 @@ const CHATGPT_OFFICIAL_PAGE: &str = "https://chatgpt.com/download/";
 const CHATGPT_MACOS_ARM64_URL: &str = "https://persistent.oaistatic.com/codex-app-prod/Codex.dmg";
 const CHATGPT_MACOS_X64_URL: &str =
     "https://persistent.oaistatic.com/codex-app-prod/Codex-latest-x64.dmg";
-const CHATGPT_WINDOWS_INSTALLER_URL: &str =
-    "https://get.microsoft.com/installer/download/9PLM9XGG6VKS?cid=website_cta_psi";
-
 const CLAUDE_OFFICIAL_PAGE: &str = "https://claude.ai/download";
 const CLAUDE_MAC_RELEASES_URL: &str =
     "https://downloads.claude.ai/releases/darwin/universal/RELEASES.json";
@@ -65,6 +62,7 @@ pub enum CatalogError {
 #[derive(Debug, Clone)]
 enum ArtifactSource {
     Fixed(Url),
+    MicrosoftStore(CpuArchitecture),
     ClaudeMac,
     CcSwitch,
     NodeLts,
@@ -90,7 +88,7 @@ impl TrustedDownloadArtifact {
                 if attempt.previous().len() >= MAX_REDIRECTS {
                     return attempt.error("too many download redirects");
                 }
-                if trusted_https_url(attempt.url(), &allowed_hosts) {
+                if trusted_download_url(attempt.url(), &allowed_hosts) {
                     attempt.follow()
                 } else {
                     attempt.error("download redirect is not trusted")
@@ -103,6 +101,14 @@ impl TrustedDownloadArtifact {
     pub async fn resolve_source_url(&self) -> Result<Url, CatalogError> {
         let url = match &self.source {
             ArtifactSource::Fixed(url) => Ok(url.clone()),
+            ArtifactSource::MicrosoftStore(architecture) => {
+                super::ms_store::resolve_chatgpt_msix_url(*architecture)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(error = %error, "could not resolve ChatGPT MSIX");
+                        CatalogError::Request
+                    })
+            }
             ArtifactSource::ClaudeMac => resolve_claude_mac_url().await,
             ArtifactSource::CcSwitch => {
                 resolve_cc_switch_url(
@@ -119,7 +125,7 @@ impl TrustedDownloadArtifact {
                 .await
             }
         }?;
-        if trusted_https_url(&url, &self.allowed_redirect_hosts) {
+        if trusted_download_url(&url, &self.allowed_redirect_hosts) {
             Ok(url)
         } else {
             Err(CatalogError::InvalidUrl)
@@ -248,18 +254,21 @@ fn chatgpt_artifact(
             CHATGPT_OFFICIAL_PAGE,
             &["persistent.oaistatic.com"],
         ),
-        (OperatingSystem::Windows, _) => fixed_artifact(
+        (OperatingSystem::Windows, architecture) => dynamic_artifact(
             SoftwareProductId::ChatGptDesktop,
-            "chatgpt-windows-installer",
+            match architecture {
+                CpuArchitecture::Arm64 => "chatgpt-windows-arm64-msix",
+                CpuArchitecture::X64 => "chatgpt-windows-x64-msix",
+            },
             OperatingSystem::Windows,
-            None,
-            DownloadCompatibility::VendorBootstrapper,
-            DownloadPackageKind::ExeBootstrapper,
-            "ChatGPT Installer.exe",
+            Some(architecture),
+            DownloadCompatibility::Native,
+            DownloadPackageKind::Msix,
+            "ChatGPT.msix",
             Some("Windows 10 19041"),
-            CHATGPT_WINDOWS_INSTALLER_URL,
+            ArtifactSource::MicrosoftStore(architecture),
             CHATGPT_OFFICIAL_PAGE,
-            &["get.microsoft.com"],
+            &["dl.delivery.mp.microsoft.com"],
         ),
     }
 }
@@ -655,7 +664,7 @@ fn parse_trusted_url(value: &str, allowed_hosts: &[&str]) -> Result<Url, Catalog
         .iter()
         .map(|host| (*host).to_owned())
         .collect::<Vec<_>>();
-    if trusted_https_url(&url, &allowed_hosts) {
+    if trusted_download_url(&url, &allowed_hosts) {
         Ok(url)
     } else {
         Err(CatalogError::InvalidUrl)
@@ -665,21 +674,30 @@ fn parse_trusted_url(value: &str, allowed_hosts: &[&str]) -> Result<Url, Catalog
 fn parse_official_page(value: &str) -> Result<Url, CatalogError> {
     let url = Url::parse(value).map_err(|_| CatalogError::InvalidUrl)?;
     let host = url.host_str().ok_or(CatalogError::InvalidUrl)?.to_owned();
-    if trusted_https_url(&url, &[host]) {
+    if trusted_download_url(&url, &[host]) {
         Ok(url)
     } else {
         Err(CatalogError::InvalidUrl)
     }
 }
 
-fn trusted_https_url(url: &Url, allowed_hosts: &[String]) -> bool {
-    url.scheme() == "https"
+fn trusted_download_url(url: &Url, allowed_hosts: &[String]) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let host_allowed = allowed_hosts.iter().any(|allowed| {
+        host == allowed
+            || host.strip_suffix(allowed).is_some_and(|prefix| {
+                prefix.ends_with('.') && !prefix[..prefix.len() - 1].is_empty()
+            })
+    });
+    let scheme_allowed = url.scheme() == "https"
+        || (url.scheme() == "http" && host.ends_with("dl.delivery.mp.microsoft.com"));
+    scheme_allowed
         && url.username().is_empty()
         && url.password().is_none()
         && url.fragment().is_none()
-        && url
-            .host_str()
-            .is_some_and(|host| allowed_hosts.iter().any(|allowed| host == allowed))
+        && host_allowed
 }
 
 #[cfg(test)]
@@ -734,6 +752,15 @@ mod tests {
             CpuArchitecture::Arm64,
         )
         .expect("vscode arm");
+        let chatgpt_arm = resolve_official_artifact(
+            SoftwareProductId::ChatGptDesktop,
+            None,
+            OperatingSystem::Windows,
+            CpuArchitecture::Arm64,
+        )
+        .expect("chatgpt arm");
+        assert_eq!(chatgpt_arm.summary.id, "chatgpt-windows-arm64-msix");
+        assert_eq!(chatgpt_arm.summary.package_kind, DownloadPackageKind::Msix);
         assert_eq!(cc_arm.summary.id, "cc-switch-windows-arm64");
         assert_eq!(node_x64.summary.id, "node-lts-windows-x64");
         assert_eq!(vscode_arm.summary.id, "vscode-windows-arm64-user");
@@ -755,14 +782,13 @@ mod tests {
             )
             .expect("artifact");
             let url = artifact.resolve_source_url().await.expect("official url");
-            assert!(trusted_https_url(&url, &artifact.allowed_redirect_hosts));
+            assert!(trusted_download_url(&url, &artifact.allowed_redirect_hosts));
         }
     }
 
     #[tokio::test]
     async fn resolves_windows_arm64_official_metadata() {
         for product in [
-            SoftwareProductId::ChatGptDesktop,
             SoftwareProductId::ClaudeDesktop,
             SoftwareProductId::CcSwitch,
             SoftwareProductId::NodeJsLts,
@@ -776,7 +802,21 @@ mod tests {
             )
             .expect("artifact");
             let url = artifact.resolve_source_url().await.expect("official url");
-            assert!(trusted_https_url(&url, &artifact.allowed_redirect_hosts));
+            assert!(trusted_download_url(&url, &artifact.allowed_redirect_hosts));
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "live Microsoft Store SOAP integration"]
+    async fn resolves_windows_arm64_chatgpt_msix() {
+        let artifact = resolve_official_artifact(
+            SoftwareProductId::ChatGptDesktop,
+            None,
+            OperatingSystem::Windows,
+            CpuArchitecture::Arm64,
+        )
+        .expect("artifact");
+        let url = artifact.resolve_source_url().await.expect("official url");
+        assert!(trusted_download_url(&url, &artifact.allowed_redirect_hosts));
     }
 }

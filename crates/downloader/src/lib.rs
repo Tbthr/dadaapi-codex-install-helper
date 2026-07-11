@@ -1,4 +1,5 @@
 pub mod catalog;
+mod ms_store;
 
 use std::{
     ffi::OsString,
