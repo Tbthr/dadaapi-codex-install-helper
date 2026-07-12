@@ -40,6 +40,7 @@ esac
 temporary_directory="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/wocao-hub-install.XXXXXX")"
 checksums_file="$temporary_directory/checksums.txt"
 dmg_file="$temporary_directory/Wocao.Hub_universal.dmg"
+download_file=""
 mount_point="$temporary_directory/mount"
 /bin/mkdir -p "$mount_point"
 
@@ -74,18 +75,31 @@ else
   metadata_source="GitHub"
 fi
 
-checksum_matches="$(/usr/bin/grep -E '^[0-9a-fA-F]{64}[[:space:]]+Wocao\.Hub_[0-9]+\.[0-9]+\.[0-9]+_universal\.dmg$' "$checksums_file" || true)"
+if [ "$metadata_source" = "Gitee" ]; then
+  asset_pattern='^[0-9a-fA-F]{64}[[:space:]]+Wocao\.Hub_[0-9]+\.[0-9]+\.[0-9]+_universal\.dmg\.zip$'
+  version_pattern='s/^Wocao\.Hub_([0-9]+\.[0-9]+\.[0-9]+)_universal\.dmg\.zip$/\1/p'
+else
+  asset_pattern='^[0-9a-fA-F]{64}[[:space:]]+Wocao\.Hub_[0-9]+\.[0-9]+\.[0-9]+_universal\.dmg$'
+  version_pattern='s/^Wocao\.Hub_([0-9]+\.[0-9]+\.[0-9]+)_universal\.dmg$/\1/p'
+fi
+
+checksum_matches="$(/usr/bin/grep -E "$asset_pattern" "$checksums_file" || true)"
 match_count="$(printf '%s\n' "$checksum_matches" | /usr/bin/grep -c . || true)"
 [ "$match_count" = "1" ] || fail "没有找到唯一的 macOS Universal 安装包校验记录。"
 
 expected_hash="$(printf '%s\n' "$checksum_matches" | /usr/bin/awk '{ print tolower($1) }')"
 asset_name="$(printf '%s\n' "$checksum_matches" | /usr/bin/awk '{ print $2 }')"
-release_version="$(printf '%s\n' "$asset_name" | /usr/bin/sed -nE 's/^Wocao\.Hub_([0-9]+\.[0-9]+\.[0-9]+)_universal\.dmg$/\1/p')"
+release_version="$(printf '%s\n' "$asset_name" | /usr/bin/sed -nE "$version_pattern")"
 [ -n "$release_version" ] || fail "无法解析 macOS 安装包版本。"
-gitee_asset_url="${gitee_release_base}/v${release_version}/${asset_name}"
-github_asset_url="${github_release_base}/${asset_name}"
+download_file="$temporary_directory/$asset_name"
 
 printf '%s\n' "正在下载 ${asset_name}（版本信息来源：${metadata_source}）……"
+if [ "$metadata_source" = "Gitee" ]; then
+  asset_url="${gitee_release_base}/v${release_version}/${asset_name}"
+else
+  asset_url="${github_release_base}/${asset_name}"
+fi
+
 if ! /usr/bin/curl \
   --fail \
   --silent \
@@ -96,10 +110,34 @@ if ! /usr/bin/curl \
   --tlsv1.2 \
   --user-agent 'wocao-hub-installer' \
   --max-time 180 \
-  "$gitee_asset_url" \
-  --output "$dmg_file"; then
-  /bin/rm -f "$dmg_file"
+  "$asset_url" \
+  --output "$download_file"; then
+  /bin/rm -f "$download_file"
+  [ "$metadata_source" = "Gitee" ] || fail "GitHub 安装包下载失败。"
   printf '%s\n' "国内安装包下载暂时不可用，正在切换 GitHub……"
+
+  /usr/bin/curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --retry 3 \
+    --proto '=https' \
+    --tlsv1.2 \
+    --user-agent 'wocao-hub-installer' \
+    --max-time 20 \
+    "$github_checksums_url" \
+    --output "$checksums_file"
+
+  checksum_matches="$(/usr/bin/grep -E '^[0-9a-fA-F]{64}[[:space:]]+Wocao\.Hub_[0-9]+\.[0-9]+\.[0-9]+_universal\.dmg$' "$checksums_file" || true)"
+  match_count="$(printf '%s\n' "$checksum_matches" | /usr/bin/grep -c . || true)"
+  [ "$match_count" = "1" ] || fail "GitHub 没有找到唯一的 macOS Universal 安装包校验记录。"
+  expected_hash="$(printf '%s\n' "$checksum_matches" | /usr/bin/awk '{ print tolower($1) }')"
+  asset_name="$(printf '%s\n' "$checksum_matches" | /usr/bin/awk '{ print $2 }')"
+  release_version="$(printf '%s\n' "$asset_name" | /usr/bin/sed -nE 's/^Wocao\.Hub_([0-9]+\.[0-9]+\.[0-9]+)_universal\.dmg$/\1/p')"
+  [ -n "$release_version" ] || fail "无法解析 GitHub macOS 安装包版本。"
+  download_file="$dmg_file"
+
   /usr/bin/curl \
     --fail \
     --silent \
@@ -110,12 +148,24 @@ if ! /usr/bin/curl \
     --tlsv1.2 \
     --user-agent 'wocao-hub-installer' \
     --max-time 180 \
-    "$github_asset_url" \
-    --output "$dmg_file"
+    "${github_release_base}/${asset_name}" \
+    --output "$download_file"
 fi
 
-actual_hash="$(/usr/bin/shasum -a 256 "$dmg_file" | /usr/bin/awk '{ print $1 }')"
+actual_hash="$(/usr/bin/shasum -a 256 "$download_file" | /usr/bin/awk '{ print $1 }')"
 [ "$actual_hash" = "$expected_hash" ] || fail "安装包 SHA-256 校验失败，已停止安装。"
+
+if [ "${download_file##*.}" = "zip" ]; then
+  extracted_directory="$temporary_directory/extracted"
+  /bin/mkdir -p "$extracted_directory"
+  /usr/bin/unzip -q "$download_file" -d "$extracted_directory"
+  extracted_dmg="$(/usr/bin/find "$extracted_directory" -maxdepth 1 -type f \
+    -name 'Wocao.Hub_*_universal.dmg' -print -quit)"
+  [ -n "$extracted_dmg" ] || fail "国内安装包压缩文件中没有找到 DMG。"
+  /bin/mv "$extracted_dmg" "$dmg_file"
+elif [ "$download_file" != "$dmg_file" ]; then
+  /bin/mv "$download_file" "$dmg_file"
+fi
 
 printf '%s\n' "下载与校验完成：v$release_version / macOS Universal ($architecture)"
 

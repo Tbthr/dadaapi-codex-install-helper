@@ -40,6 +40,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
+          set -euo pipefail
           prefix="https://gitee.com/codeTrees/wocao-hub/releases/download/$RELEASE_TAG/"
           jq --arg prefix "$prefix" '
             .platforms |= with_entries(
@@ -47,6 +48,23 @@ jobs:
             )
           ' release-assets/latest.json > release-assets/latest.gitee.json
           mv release-assets/latest.gitee.json release-assets/latest.json
+
+          dmg_file=$(find release-assets -maxdepth 1 -type f \
+            -name 'Wocao.Hub_*_universal.dmg' -print -quit)
+          test -n "$dmg_file"
+          dmg_name=$(basename "$dmg_file")
+          zip_name="$dmg_name.zip"
+          (
+            cd release-assets
+            zip -q "$zip_name" "$dmg_name"
+          )
+          zip_checksum=$(sha256sum "release-assets/$zip_name" | awk '{print $1}')
+          grep -v 'Wocao\.Hub_.*_universal\.dmg$' \
+            release-assets/checksums.txt > release-assets/checksums.gitee.txt
+          printf '%s  %s\n' "$zip_checksum" "$zip_name" \
+            >> release-assets/checksums.gitee.txt
+          mv release-assets/checksums.gitee.txt release-assets/checksums.txt
+          rm "$dmg_file"
 
       - name: Replace Gitee release
         id: gitee_release
@@ -68,7 +86,7 @@ jobs:
             --arg token "$GITEE_TOKEN" \
             --arg tag "$RELEASE_TAG" \
             --arg name "Wocao Hub $RELEASE_TAG" \
-            --arg body "Wocao Hub 1.0 国内发行版。安装包与 GitHub Release 内容一致。" \
+            --arg body "Wocao Hub 1.0 国内发行版。Windows 可直接下载安装；macOS DMG 使用 ZIP 封装，建议执行仓库首页的一键安装命令。" \
             '{access_token:$token,tag_name:$tag,name:$name,body:$body,target_commitish:"main",prerelease:false}')
           response=$(curl -fsS --connect-timeout 20 --max-time 60 \
             -X POST \
