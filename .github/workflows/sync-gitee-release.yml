@@ -147,10 +147,9 @@ jobs:
         run: |
           mkdir -p release
           cp release-assets/latest.json release/latest.json
-          cp release-assets/checksums.txt release/checksums.sha256
           git config user.name "wocao-hub-release[bot]"
           git config user.email "wocao-hub-release[bot]@users.noreply.github.com"
-          git add release/latest.json release/checksums.sha256
+          git add release/latest.json
           if ! git diff --cached --quiet; then
             git commit -m "Update domestic release metadata"
             git push origin main
