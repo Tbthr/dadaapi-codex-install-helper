@@ -1,0 +1,158 @@
+name: Sync Gitee release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: GitHub release tag to sync
+        required: true
+        default: v1.0.0
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-gitee-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Download complete GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          mkdir release-assets
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir release-assets \
+            --clobber
+
+      - name: Prepare Gitee updater metadata
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          prefix="https://gitee.com/codeTrees/wocao-hub/releases/download/$RELEASE_TAG/"
+          jq --arg prefix "$prefix" '
+            .platforms |= with_entries(
+              .value.url = ($prefix + (.value.url | split("/") | last))
+            )
+          ' release-assets/latest.json > release-assets/latest.gitee.json
+          mv release-assets/latest.gitee.json release-assets/latest.json
+
+      - name: Replace Gitee release
+        id: gitee_release
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          api="https://gitee.com/api/v5/repos/codeTrees/wocao-hub/releases"
+          existing=$(curl -fsS --connect-timeout 20 --max-time 60 \
+            "$api/tags/$RELEASE_TAG?access_token=$GITEE_TOKEN" || true)
+          existing_id=$(printf '%s' "$existing" | jq -r '.id // empty')
+          if [ -n "$existing_id" ]; then
+            curl -fsS --connect-timeout 20 --max-time 60 \
+              -X DELETE "$api/$existing_id?access_token=$GITEE_TOKEN" >/dev/null
+          fi
+
+          payload=$(jq -n \
+            --arg token "$GITEE_TOKEN" \
+            --arg tag "$RELEASE_TAG" \
+            --arg name "Wocao Hub $RELEASE_TAG" \
+            --arg body "Wocao Hub 1.0 国内发行版。安装包与 GitHub Release 内容一致。" \
+            '{access_token:$token,tag_name:$tag,name:$name,body:$body,target_commitish:"main",prerelease:false}')
+          response=$(curl -fsS --connect-timeout 20 --max-time 60 \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "$api")
+          release_id=$(printf '%s' "$response" | jq -r '.id')
+          test -n "$release_id"
+          test "$release_id" != "null"
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Gitee release assets in parallel
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          api="https://gitee.com/api/v5/repos/codeTrees/wocao-hub/releases/$RELEASE_ID/attach_files"
+          export api GITEE_TOKEN
+
+          find release-assets -maxdepth 1 -type f -print0 | \
+            xargs -0 -n 1 -P 4 bash -c '
+              set -euo pipefail
+              file="$1"
+              for attempt in 1 2 3 4; do
+                if curl -fsS \
+                  --connect-timeout 30 \
+                  --max-time 900 \
+                  -X POST \
+                  -F "access_token=$GITEE_TOKEN" \
+                  -F "file=@$file" \
+                  "$api" >/dev/null; then
+                  printf "Uploaded %s\n" "$(basename "$file")"
+                  exit 0
+                fi
+                printf "Retrying %s (%s/4)\n" "$(basename "$file")" "$attempt" >&2
+                sleep $((attempt * 5))
+              done
+              printf "Upload failed: %s\n" "$(basename "$file")" >&2
+              exit 1
+            ' _
+
+      - name: Verify uploaded asset list
+        env:
+          RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          expected=$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')
+          actual=$(curl -fsS --connect-timeout 20 --max-time 60 \
+            "https://gitee.com/api/v5/repos/codeTrees/wocao-hub/releases/$RELEASE_ID/attach_files?per_page=100" \
+            | jq 'length')
+          test "$actual" -eq "$expected"
+
+      - name: Publish domestic release metadata
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p release
+          cp release-assets/latest.json release/latest.json
+          cp release-assets/checksums.txt release/checksums.txt
+          git config user.name "wocao-hub-release[bot]"
+          git config user.email "wocao-hub-release[bot]@users.noreply.github.com"
+          git add release/latest.json release/checksums.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Update domestic release metadata"
+            git push origin main
+          fi
+          git remote add gitee "https://codeTrees:${GITEE_TOKEN}@gitee.com/codeTrees/wocao-hub.git"
+          git push gitee main
+          git push gitee "$RELEASE_TAG" --force
+
+      - name: Verify Gitee release downloads
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          while read -r checksum name; do
+            url="https://gitee.com/codeTrees/wocao-hub/releases/download/$RELEASE_TAG/$name"
+            curl -fsSL \
+              --connect-timeout 30 \
+              --max-time 900 \
+              --retry 3 \
+              --retry-all-errors \
+              "$url" \
+              -o "/tmp/$name"
+            printf '%s  %s\n' "$checksum" "/tmp/$name" | sha256sum --check
+          done < release-assets/checksums.txt
