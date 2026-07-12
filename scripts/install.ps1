@@ -6,7 +6,7 @@ $GitHubReleaseBase = "https://github.com/$GitHubRepository/releases/latest/downl
 $GitHubChecksumsUrl = "$GitHubReleaseBase/checksums.txt"
 $GiteeRepository = "codeTrees/wocao-hub"
 $GiteeReleaseBase = "https://gitee.com/$GiteeRepository/releases/download"
-$GiteeChecksumsUrl = "https://gitee.com/$GiteeRepository/raw/main/release/checksums.txt"
+$GiteeChecksumsUrl = "https://gitee.com/$GiteeRepository/raw/main/release/checksums.sha256"
 
 function Get-NativeWindowsArchitecture {
     $architecture = if ($env:WOCAO_HUB_INSTALL_ARCH) {
