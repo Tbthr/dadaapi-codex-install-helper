@@ -1,0 +1,39 @@
+{
+  "version": "1.0.0",
+  "notes": "Wocao Hub 1.0 正式版。请根据设备平台下载对应安装包。",
+  "pub_date": "2026-07-12T03:45:50.099Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRUGtoUy95RkR5NThpWHloTnRkSTVPc3ZxWnZiU0YyVDF6a0ptcTF3MTlEQ2ZkMEp5WmhIRFd4bUpCYkhtTkRsbWRsZUg5Q1c1YTRFYTg5d2RVaHhqWWU3cHE5cWNpcUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzc3NjIzCWZpbGU6V29jYW8gSHViLmFwcC50YXIuZ3oKQXhUakdXYUVKZFhCUGI5cWd4bXhab0RaMlhCMTRJTUtteXpicDdSOWNleGUrclRXV2FIRWpsSmI5dFlyYnVUR1pyWWwzbkV2RGV4NU90eHhKT0dqQlE9PQo=",
+      "url": "https://gitee.com/codeTrees/wocao-hub/releases/download/v1.0.0/Wocao.Hub_universal.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRUGtoUy95RkR5NThpWHloTnRkSTVPc3ZxWnZiU0YyVDF6a0ptcTF3MTlEQ2ZkMEp5WmhIRFd4bUpCYkhtTkRsbWRsZUg5Q1c1YTRFYTg5d2RVaHhqWWU3cHE5cWNpcUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzc3NjIzCWZpbGU6V29jYW8gSHViLmFwcC50YXIuZ3oKQXhUakdXYUVKZFhCUGI5cWd4bXhab0RaMlhCMTRJTUtteXpicDdSOWNleGUrclRXV2FIRWpsSmI5dFlyYnVUR1pyWWwzbkV2RGV4NU90eHhKT0dqQlE9PQo=",
+      "url": "https://gitee.com/codeTrees/wocao-hub/releases/download/v1.0.0/Wocao.Hub_universal.app.tar.gz"
+    },
+    "darwin-aarch64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRUGtoUy95RkR5NThpWHloTnRkSTVPc3ZxWnZiU0YyVDF6a0ptcTF3MTlEQ2ZkMEp5WmhIRFd4bUpCYkhtTkRsbWRsZUg5Q1c1YTRFYTg5d2RVaHhqWWU3cHE5cWNpcUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzc3NjIzCWZpbGU6V29jYW8gSHViLmFwcC50YXIuZ3oKQXhUakdXYUVKZFhCUGI5cWd4bXhab0RaMlhCMTRJTUtteXpicDdSOWNleGUrclRXV2FIRWpsSmI5dFlyYnVUR1pyWWwzbkV2RGV4NU90eHhKT0dqQlE9PQo=",
+      "url": "https://gitee.com/codeTrees/wocao-hub/releases/download/v1.0.0/Wocao.Hub_universal.app.tar.gz"
+    },
+    "darwin-x86_64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRUGtoUy95RkR5NThpWHloTnRkSTVPc3ZxWnZiU0YyVDF6a0ptcTF3MTlEQ2ZkMEp5WmhIRFd4bUpCYkhtTkRsbWRsZUg5Q1c1YTRFYTg5d2RVaHhqWWU3cHE5cWNpcUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzc3NjIzCWZpbGU6V29jYW8gSHViLmFwcC50YXIuZ3oKQXhUakdXYUVKZFhCUGI5cWd4bXhab0RaMlhCMTRJTUtteXpicDdSOWNleGUrclRXV2FIRWpsSmI5dFlyYnVUR1pyWWwzbkV2RGV4NU90eHhKT0dqQlE9PQo=",
+      "url": "https://gitee.com/codeTrees/wocao-hub/releases/download/v1.0.0/Wocao.Hub_universal.app.tar.gz"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRUGtoUy95RkR5NXdVdFNaMTFGemdjcnE2WU5FVENzdmhSeDVJeE5xb2ZnOEltcEpCaW80TTl0Z1hYV1pkWEpzUWtzVjkwVHRSNEhhTzZZV0xvempaa0RpNFBCemYxVWdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzODI3NjIzCWZpbGU6V29jYW8gSHViXzEuMC4wX3g2NC1zZXR1cC5leGUKT2g1TW8rV1pFZllkK0ZEWEMxdmdRalZhZjRsZWJlRkpkcU1kY1RLSWRtK1BIeEtxZWFoREI5QTJCL0RpbWtCQnQwVTlaRHpXVm8wNGpGbkRzWmdoQ1E9PQo=",
+      "url": "https://gitee.com/codeTrees/wocao-hub/releases/download/v1.0.0/Wocao.Hub_1.0.0_x64-setup.exe"
+    },
+    "windows-x86_64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRUGtoUy95RkR5NXdVdFNaMTFGemdjcnE2WU5FVENzdmhSeDVJeE5xb2ZnOEltcEpCaW80TTl0Z1hYV1pkWEpzUWtzVjkwVHRSNEhhTzZZV0xvempaa0RpNFBCemYxVWdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzODI3NjIzCWZpbGU6V29jYW8gSHViXzEuMC4wX3g2NC1zZXR1cC5leGUKT2g1TW8rV1pFZllkK0ZEWEMxdmdRalZhZjRsZWJlRkpkcU1kY1RLSWRtK1BIeEtxZWFoREI5QTJCL0RpbWtCQnQwVTlaRHpXVm8wNGpGbkRzWmdoQ1E9PQo=",
+      "url": "https://gitee.com/codeTrees/wocao-hub/releases/download/v1.0.0/Wocao.Hub_1.0.0_x64-setup.exe"
+    },
+    "windows-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRUGtoUy95RkR5NStyZEN5cDlrM2JQL1ZXWGhBdzRJNVRZTVg0WWlRSW5POFNlMHd6bHFtdlJNaEZYbTA4YWdOQlRocTZMcmFmbTYyb3NZQ29tRHliUGRUaXVWSTFKb0FnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzODI3OTQ3CWZpbGU6V29jYW8gSHViXzEuMC4wX2FybTY0LXNldHVwLmV4ZQpacDB4Qms1cko4MVlHMldDUURWVUw1N1czMld5dkhVSjJSLzVHaGV6eUF1OFJoQWhOMGFrcHRpSmVoeWkzN3VZRzVka2dwNTlxZ29EVTJtaVpweWdCdz09Cg==",
+      "url": "https://gitee.com/codeTrees/wocao-hub/releases/download/v1.0.0/Wocao.Hub_1.0.0_arm64-setup.exe"
+    },
+    "windows-aarch64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRUGtoUy95RkR5NStyZEN5cDlrM2JQL1ZXWGhBdzRJNVRZTVg0WWlRSW5POFNlMHd6bHFtdlJNaEZYbTA4YWdOQlRocTZMcmFmbTYyb3NZQ29tRHliUGRUaXVWSTFKb0FnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzODI3OTQ3CWZpbGU6V29jYW8gSHViXzEuMC4wX2FybTY0LXNldHVwLmV4ZQpacDB4Qms1cko4MVlHMldDUURWVUw1N1czMld5dkhVSjJSLzVHaGV6eUF1OFJoQWhOMGFrcHRpSmVoeWkzN3VZRzVka2dwNTlxZ29EVTJtaVpweWdCdz09Cg==",
+      "url": "https://gitee.com/codeTrees/wocao-hub/releases/download/v1.0.0/Wocao.Hub_1.0.0_arm64-setup.exe"
+    }
+  }
+}

@@ -6,21 +6,33 @@ Wocao Hub 是 wocao.ai 推出的开源跨平台 AI 桌面工具。首个版本�
 
 ## 快速安装
 
-Windows 11（PowerShell）：
+国内网络推荐使用 Gitee。Windows 11 请打开 PowerShell：
 
 ```powershell
 irm https://gitee.com/codeTrees/wocao-hub/raw/main/scripts/install.ps1 | iex
 ```
 
-macOS（终端）：
+macOS 请打开“终端”：
 
 ```bash
 curl -fsSL https://gitee.com/codeTrees/wocao-hub/raw/main/scripts/install.sh | /bin/sh
 ```
 
-安装脚本会从 GitHub 最新正式 Release 获取安装包，自动选择 Windows x64/ARM64 或 macOS Universal 版本，并使用同一 Release 发布的 `checksums.txt` 校验 SHA-256。Windows 脚本会在校验通过后解除浏览器下载隔离标记；macOS 脚本会在校验 DMG 和应用代码签名完整性后安装并启动应用。
+如果 Gitee 无法访问，可以改用 GitHub 备用入口。Windows 11 PowerShell：
 
-安装脚本和应用内更新默认使用 Gitee 国内源，网络失败时自动回退 GitHub。不希望执行远程脚本的用户可以在 [Gitee Releases](https://gitee.com/codeTrees/wocao-hub/releases) 或 [GitHub Releases](https://github.com/ray7086/wocao-hub/releases/latest) 手动下载安装包并查看公开脚本源码。
+```powershell
+irm https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.ps1 | iex
+```
+
+macOS 终端：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.sh | /bin/sh
+```
+
+无论从哪个入口启动，安装脚本都会优先从 Gitee 获取版本信息和安装包，仅在网络请求失败时切换 GitHub。脚本会自动选择 Windows x64/ARM64 或 macOS Universal 版本，并使用 `checksums.txt` 校验 SHA-256。Windows 脚本会在校验通过后解除浏览器下载隔离标记；macOS 脚本会校验国内 ZIP、解压 DMG、验证应用代码签名完整性后安装并启动应用。
+
+不希望执行远程脚本的用户可以在 [Gitee Releases](https://gitee.com/codeTrees/wocao-hub/releases) 或 [GitHub Releases](https://github.com/ray7086/wocao-hub/releases/latest) 手动下载安装包并查看公开脚本源码。
 
 ## 技术栈
 
