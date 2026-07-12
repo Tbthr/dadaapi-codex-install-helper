@@ -16,7 +16,7 @@ GitHub Actions Route Publisher
     ↓ HTTPS upstream subscription
 XChaCha20-Poly1305 + Ed25519 + SHA-256
     ↓ commits static artifacts
-GitHub Raw: manifest.json | routes.sig | routes.enc
+Gitee Raw (primary) / GitHub Raw (fallback): manifest.json | routes.sig | routes.enc
     ↓ HTTPS download, verify, decrypt in memory
 Desktop Client
 
@@ -154,16 +154,20 @@ diagnostics-exports/ 仅包含白名单摘要和二次脱敏日志的诊断包
 ## Public Route Artifacts
 
 ```text
+https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/manifest.json
+https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/routes.sig
+https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/routes.enc
+
 https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/manifest.json
 https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/routes.sig
 https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/routes.enc
 ```
 
-公开文件不得包含上游订阅地址、Token、签名私钥或明文节点。GitHub Actions 每四小时更新一次，默认有效期为 72 小时。
+公开文件不得包含上游订阅地址、Token、签名私钥或明文节点。GitHub Actions 每四小时更新一次并同步到 Gitee，默认有效期为 72 小时。客户端仅在 Gitee 网络错误、超时或 `5xx` 时切换 GitHub；签名、格式、哈希或解密错误必须直接失败。
 
 ## Route End-To-End Harness
 
-- `tools/route-e2e` 默认连接正式 GitHub Raw 清单，并从当前用户私有配置文件读取验签公钥和解密 key。
+- `tools/route-e2e` 默认按 Gitee、GitHub 顺序连接正式清单，并从当前用户私有配置文件读取验签公钥和解密 key。
 - `--quick` 使用 4 个候选、2 次尝试和较短超时；默认模式使用 8 个候选、3 次尝试和生产超时。
 - 工具必须完成下载、验签、有效期验证、SHA-256 校验、解密、订阅解析、香港及国内排除和真实 ChatGPT/OpenAI 多目标测速。
 - 输出只包含节点名称、协议、出口地区、覆盖率和延迟等脱敏指标，不输出路由 URI、密码、订阅正文或解密 key。
@@ -171,7 +175,7 @@ https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/routes.en
 
 ### Desktop Build Configuration
 
-- `WOCAO_HUB_ROUTE_MANIFEST_URL`：固定 HTTPS `manifest.json` 地址。
+- `WOCAO_HUB_ROUTE_MANIFEST_URLS`：按优先级排列、逗号分隔的固定 HTTPS `manifest.json` 地址；兼容旧的单地址变量 `WOCAO_HUB_ROUTE_MANIFEST_URL`。
 - `WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM`：Ed25519 公钥 PEM。
 - `WOCAO_HUB_ROUTE_KEY_B64`：32 字节 XChaCha20-Poly1305 key 的 Base64。
 - `WOCAO_HUB_ROUTE_KEY_ID`：预期密钥标识。
@@ -180,8 +184,8 @@ https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/routes.en
 
 ### Desktop Updates
 
-- 客户端通过 Tauri Updater 检查 `ray7086/wocao-hub` GitHub Releases 中的 `latest.json`，不依赖自建版本服务器。
+- 客户端通过 Tauri Updater 优先检查 Gitee Raw 中的 `release/latest.json`，失败后检查 GitHub Releases 中的 `latest.json`，不依赖自建版本服务器。
 - 应用启动后后台检查一次；发现新版本后只提示，不自动安装或强制重启。
 - 更新包下载完成并通过 Tauri 更新签名验证后，由用户确认重启。
 - 更新签名私钥与密码只存在于 GitHub Actions Secrets 和发布者私有环境；客户端仅内置更新公钥。
-- GitHub Actions 对 macOS Intel/Apple Silicon 与 Windows x64/ARM64 分别构建并发布更新资产。
+- GitHub Actions 对 macOS Intel/Apple Silicon 与 Windows x64/ARM64 分别构建，并将同一批更新资产同步到 Gitee Release。

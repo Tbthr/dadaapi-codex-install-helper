@@ -32,7 +32,7 @@ async function checkNow(): Promise<void> {
     state.phase = state.update ? "available" : "current";
   } catch {
     state.phase = "error";
-    state.message = "检查更新失败，请确认能够访问 GitHub";
+    state.message = "检查更新失败，请检查网络连接后重试";
   }
 }
 

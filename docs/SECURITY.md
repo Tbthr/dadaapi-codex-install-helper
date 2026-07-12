@@ -1,8 +1,8 @@
 # Security Rules
 
 - 开源客户端中的固定密钥不能视为秘密。
-- 订阅数据只通过 GitHub Raw HTTPS 静态文件传递，不得通过 HTTP、URL 查询参数或日志传递。
-- 客户端不得跳过 GitHub TLS 验证，也不得在验证失败后降级到 HTTP。
+- 订阅数据只通过 Gitee/GitHub Raw HTTPS 静态文件传递，不得通过 HTTP、URL 查询参数或日志传递。
+- 客户端不得跳过 Gitee 或 GitHub TLS 验证，也不得在验证失败后降级到 HTTP。
 - Ed25519 签名和 SHA-256 用于确认来源及完整性，XChaCha20-Poly1305 用于避免在公开仓库中直接浏览节点正文。
 - 客户端缓存只保存原始签名清单、签名和加密路由，每次读取必须重新验签、重新校验、重新解密并检查有效期。
 - 路由签名私钥和原始上游订阅地址只能存在于独立路由仓库的 GitHub Actions Secrets。

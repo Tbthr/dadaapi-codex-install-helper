@@ -14,7 +14,7 @@ use url::Url;
 
 use activation_core::NetworkRecoveryStore;
 
-const ROUTE_MANIFEST_URL_ENV: &str = "WOCAO_HUB_ROUTE_MANIFEST_URL";
+const ROUTE_MANIFEST_URLS_ENV: &str = "WOCAO_HUB_ROUTE_MANIFEST_URLS";
 const ROUTE_PUBLIC_KEY_ENV: &str = "WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM";
 const ROUTE_KEY_ENV: &str = "WOCAO_HUB_ROUTE_KEY_B64";
 const ROUTE_KEY_ID_ENV: &str = "WOCAO_HUB_ROUTE_KEY_ID";
@@ -82,15 +82,24 @@ impl DesktopActivationRuntime {
     pub fn from_build_environment(
         app_data_dir: PathBuf,
     ) -> Result<Option<Self>, ActivationRuntimeError> {
+        let manifest_urls = option_env!("WOCAO_HUB_ROUTE_MANIFEST_URLS")
+            .or(option_env!("WOCAO_HUB_ROUTE_MANIFEST_URL"));
         match (
-            option_env!("WOCAO_HUB_ROUTE_MANIFEST_URL"),
+            manifest_urls,
             option_env!("WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM"),
             option_env!("WOCAO_HUB_ROUTE_KEY_B64"),
             option_env!("WOCAO_HUB_ROUTE_KEY_ID"),
         ) {
             (None, None, None, None) => Ok(None),
-            (Some(manifest_url), Some(public_key_pem), Some(key_b64), Some(key_id)) => {
-                Self::new(manifest_url, public_key_pem, key_b64, key_id, app_data_dir).map(Some)
+            (Some(manifest_urls), Some(public_key_pem), Some(key_b64), Some(key_id)) => {
+                Self::new_with_manifest_urls(
+                    manifest_urls,
+                    public_key_pem,
+                    key_b64,
+                    key_id,
+                    app_data_dir,
+                )
+                .map(Some)
             }
             _ => Err(ActivationRuntimeError::IncompleteBuildConfiguration),
         }
@@ -103,11 +112,34 @@ impl DesktopActivationRuntime {
         key_id: &str,
         app_data_dir: PathBuf,
     ) -> Result<Self, ActivationRuntimeError> {
-        let manifest_url =
-            Url::parse(manifest_url).map_err(|_| ActivationRuntimeError::InvalidManifestUrl)?;
-        let normalized_public_key = public_key_pem.replace("\\n", "\n");
-        let route_client = RouteBundleClient::new(
+        Self::new_with_manifest_urls(
             manifest_url,
+            public_key_pem,
+            encryption_key_b64,
+            key_id,
+            app_data_dir,
+        )
+    }
+
+    pub fn new_with_manifest_urls(
+        manifest_urls: &str,
+        public_key_pem: &str,
+        encryption_key_b64: &str,
+        key_id: &str,
+        app_data_dir: PathBuf,
+    ) -> Result<Self, ActivationRuntimeError> {
+        let manifest_urls = manifest_urls
+            .split([',', ';', '\n'])
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| Url::parse(value).map_err(|_| ActivationRuntimeError::InvalidManifestUrl))
+            .collect::<Result<Vec<_>, _>>()?;
+        if manifest_urls.is_empty() {
+            return Err(ActivationRuntimeError::InvalidManifestUrl);
+        }
+        let normalized_public_key = public_key_pem.replace("\\n", "\n");
+        let route_client = RouteBundleClient::new_with_fallbacks(
+            manifest_urls,
             &normalized_public_key,
             decode_encryption_key(encryption_key_b64)?,
             key_id.to_owned(),
@@ -142,7 +174,7 @@ impl DesktopActivationRuntime {
 #[must_use]
 pub fn build_configuration_names() -> [&'static str; 4] {
     [
-        ROUTE_MANIFEST_URL_ENV,
+        ROUTE_MANIFEST_URLS_ENV,
         ROUTE_PUBLIC_KEY_ENV,
         ROUTE_KEY_ENV,
         ROUTE_KEY_ID_ENV,
@@ -162,6 +194,20 @@ mod tests {
         let directory = tempfile::tempdir().expect("temporary directory");
         let runtime = DesktopActivationRuntime::new(
             "https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/manifest.json",
+            &public_key_pem(),
+            &encryption_key_b64(),
+            "v1",
+            directory.path().to_path_buf(),
+        );
+
+        assert!(runtime.is_ok());
+    }
+
+    #[test]
+    fn accepts_gitee_primary_and_github_fallback_configuration() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let runtime = DesktopActivationRuntime::new_with_manifest_urls(
+            "https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/manifest.json,https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/manifest.json",
             &public_key_pem(),
             &encryption_key_b64(),
             "v1",

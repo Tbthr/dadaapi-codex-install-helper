@@ -1,9 +1,12 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$Repository = "ray7086/wocao-hub"
-$LatestReleaseBase = "https://github.com/$Repository/releases/latest/download"
-$ChecksumsUrl = "$LatestReleaseBase/checksums.txt"
+$GitHubRepository = "ray7086/wocao-hub"
+$GitHubReleaseBase = "https://github.com/$GitHubRepository/releases/latest/download"
+$GitHubChecksumsUrl = "$GitHubReleaseBase/checksums.txt"
+$GiteeRepository = "codeTrees/wocao-hub"
+$GiteeReleaseBase = "https://gitee.com/$GiteeRepository/releases/download"
+$GiteeChecksumsUrl = "https://gitee.com/$GiteeRepository/raw/main/release/checksums.txt"
 
 function Get-NativeWindowsArchitecture {
     $architecture = if ($env:WOCAO_HUB_INSTALL_ARCH) {
@@ -45,7 +48,14 @@ $assetArchitecture = Get-NativeWindowsArchitecture
 $checksumPattern = "^(?<hash>[0-9a-fA-F]{64})\s+(?<name>Wocao\.Hub_(?<version>[0-9]+\.[0-9]+\.[0-9]+)_${assetArchitecture}-setup\.exe)\s*$"
 
 Write-Host "正在获取 Wocao Hub 最新版本信息……"
-$checksums = Invoke-RestMethod -Uri $ChecksumsUrl -Headers @{ "User-Agent" = "wocao-hub-installer" } -Method Get
+try {
+    $checksums = Invoke-RestMethod -Uri $GiteeChecksumsUrl -Headers @{ "User-Agent" = "wocao-hub-installer" } -Method Get -TimeoutSec 20
+    $metadataSource = "Gitee"
+} catch {
+    Write-Host "国内版本源暂时不可用，正在切换 GitHub……"
+    $checksums = Invoke-RestMethod -Uri $GitHubChecksumsUrl -Headers @{ "User-Agent" = "wocao-hub-installer" } -Method Get -TimeoutSec 20
+    $metadataSource = "GitHub"
+}
 $matchingAssets = @(
     foreach ($line in ($checksums -split "`r?`n")) {
         if ($line -match $checksumPattern) {
@@ -63,8 +73,11 @@ if ($matchingAssets.Count -ne 1) {
 }
 
 $asset = $matchingAssets[0]
-$downloadUri = [Uri]("$LatestReleaseBase/$($asset.Name)")
 $expectedHash = $asset.Hash
+$downloadUris = @(
+    [Uri]("$GiteeReleaseBase/v$($asset.Version)/$($asset.Name)"),
+    [Uri]("$GitHubReleaseBase/$($asset.Name)")
+)
 
 $downloadDirectory = Join-Path ([IO.Path]::GetTempPath()) "WocaoHubInstaller"
 $installerPath = Join-Path $downloadDirectory ([string]$asset.Name)
@@ -75,8 +88,23 @@ Remove-InstallerFile -Path $installerPath
 Remove-InstallerFile -Path $partialPath
 
 try {
-    Write-Host "正在下载 $($asset.Name)……"
-    Invoke-WebRequest -Uri $downloadUri.AbsoluteUri -Headers @{ "User-Agent" = "wocao-hub-installer" } -OutFile $partialPath -UseBasicParsing
+    Write-Host "正在下载 $($asset.Name)（版本信息来源：$metadataSource）……"
+    $downloaded = $false
+    foreach ($downloadUri in $downloadUris) {
+        try {
+            Invoke-WebRequest -Uri $downloadUri.AbsoluteUri -Headers @{ "User-Agent" = "wocao-hub-installer" } -OutFile $partialPath -UseBasicParsing -TimeoutSec 90
+            $downloaded = $true
+            break
+        } catch {
+            Remove-InstallerFile -Path $partialPath
+            if ($downloadUri.Host -eq "gitee.com") {
+                Write-Host "国内安装包下载暂时不可用，正在切换 GitHub……"
+            }
+        }
+    }
+    if (-not $downloaded) {
+        throw "Gitee 和 GitHub 安装包均下载失败。"
+    }
 
     $actualHash = (Get-FileHash -LiteralPath $partialPath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualHash -ne $expectedHash) {

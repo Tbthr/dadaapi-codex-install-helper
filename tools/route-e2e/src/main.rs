@@ -12,7 +12,9 @@ use std::time::Duration;
 use url::Url;
 use zeroize::Zeroizing;
 
-const DEFAULT_MANIFEST_URL: &str =
+const DEFAULT_GITEE_MANIFEST_URL: &str =
+    "https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/manifest.json";
+const DEFAULT_GITHUB_MANIFEST_URL: &str =
     "https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/manifest.json";
 
 #[tokio::main]
@@ -21,8 +23,9 @@ async fn main() -> anyhow::Result<()> {
     let quick = env::args().any(|argument| argument == "--quick");
     let single = env::args().any(|argument| argument == "--single");
     let config_directory = default_route_config_directory()?;
-    let manifest_url = env::var("WOCAO_HUB_ROUTE_MANIFEST_URL")
-        .unwrap_or_else(|_| DEFAULT_MANIFEST_URL.to_owned());
+    let manifest_urls = env::var("WOCAO_HUB_ROUTE_MANIFEST_URLS")
+        .or_else(|_| env::var("WOCAO_HUB_ROUTE_MANIFEST_URL"))
+        .unwrap_or_else(|_| format!("{DEFAULT_GITEE_MANIFEST_URL},{DEFAULT_GITHUB_MANIFEST_URL}"));
     let public_key_path = environment_path(
         "WOCAO_HUB_ROUTE_PUBLIC_KEY_FILE",
         config_directory.join("route-signing-public.pem"),
@@ -42,11 +45,16 @@ async fn main() -> anyhow::Result<()> {
         .as_slice()
         .try_into()
         .map_err(|_| anyhow::anyhow!("the local route decryption key must contain 32 bytes"))?;
-    let manifest_url = Url::parse(&manifest_url).context("invalid route manifest URL")?;
+    let manifest_urls = manifest_urls
+        .split([',', ';', '\n'])
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| Url::parse(value).context("invalid route manifest URL"))
+        .collect::<anyhow::Result<Vec<_>>>()?;
 
     let cache_directory = tempfile::tempdir().context("cannot create temporary route cache")?;
-    let route_client = RouteBundleClient::new(
-        manifest_url,
+    let route_client = RouteBundleClient::new_with_fallbacks(
+        manifest_urls,
         &public_key,
         Zeroizing::new(encryption_key),
         key_id,
@@ -82,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
         .filter(|node| connector.supports_node(node))
         .count();
 
-    println!("GitHub 静态路由下载、验签、校验和解密已通过");
+    println!("静态路由下载、验签、校验和解密已通过");
     println!("解析后的海外候选节点：{}", nodes.len());
     println!("已排除香港、国内或无效条目：{}", parsed.rejected.len());
     println!("当前内置协议可检测节点：{}", supported);

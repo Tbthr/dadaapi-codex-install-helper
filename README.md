@@ -2,25 +2,25 @@
 
 Wocao Hub 是 wocao.ai 推出的开源跨平台 AI 桌面工具。首个版本面向 Windows 和 macOS，提供 ChatGPT/Codex 中文配置、安全路由更新、网络修复和官方软件下载能力。
 
-当前仓库已完成桌面激活核心链路：检测新版 ChatGPT/旧版 Codex、从 GitHub Raw 下载加密路由包、验证 Ed25519 签名和 SHA-256、使用 XChaCha20-Poly1305 解密、筛选和测试海外节点、启动本地代理、安全修改并由用户手动恢复系统网络、写入中文配置、重启应用并验证 Renderer 运行语言。生产激活 Command 已稳定注册，未注入完整构建配置时保持只读模式。
+当前仓库已完成桌面激活核心链路：检测新版 ChatGPT/旧版 Codex、优先从 Gitee 并备用从 GitHub Raw 下载加密路由包、验证 Ed25519 签名和 SHA-256、使用 XChaCha20-Poly1305 解密、筛选和测试海外节点、启动本地代理、安全修改并由用户手动恢复系统网络、写入中文配置、重启应用并验证 Renderer 运行语言。生产激活 Command 已稳定注册，未注入完整构建配置时保持只读模式。
 
 ## 快速安装
 
 Windows 11（PowerShell）：
 
 ```powershell
-irm https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.ps1 | iex
+irm https://gitee.com/codeTrees/wocao-hub/raw/main/scripts/install.ps1 | iex
 ```
 
 macOS（终端）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.sh | /bin/sh
+curl -fsSL https://gitee.com/codeTrees/wocao-hub/raw/main/scripts/install.sh | /bin/sh
 ```
 
 安装脚本会从 GitHub 最新正式 Release 获取安装包，自动选择 Windows x64/ARM64 或 macOS Universal 版本，并使用同一 Release 发布的 `checksums.txt` 校验 SHA-256。Windows 脚本会在校验通过后解除浏览器下载隔离标记；macOS 脚本会在校验 DMG 和应用代码签名完整性后安装并启动应用。
 
-不希望执行远程脚本的用户可以在 [GitHub Releases](https://github.com/ray7086/wocao-hub/releases/latest) 手动下载安装包并查看公开脚本源码。
+安装脚本和应用内更新默认使用 Gitee 国内源，网络失败时自动回退 GitHub。不希望执行远程脚本的用户可以在 [Gitee Releases](https://gitee.com/codeTrees/wocao-hub/releases) 或 [GitHub Releases](https://github.com/ray7086/wocao-hub/releases/latest) 手动下载安装包并查看公开脚本源码。
 
 ## 技术栈
 
@@ -70,12 +70,12 @@ cargo run -p route-e2e
 
 - `WOCAO_HUB_ROUTE_PUBLIC_KEY_FILE`
 - `WOCAO_HUB_ROUTE_KEY_FILE`
-- `WOCAO_HUB_ROUTE_MANIFEST_URL`
+- `WOCAO_HUB_ROUTE_MANIFEST_URLS`
 - `WOCAO_HUB_ROUTE_KEY_ID`
 
 桌面激活运行时通过构建环境注入四项配置：
 
-- `WOCAO_HUB_ROUTE_MANIFEST_URL`：无凭据、无查询参数的 HTTPS `manifest.json` 地址。
+- `WOCAO_HUB_ROUTE_MANIFEST_URLS`：按优先级排列、逗号分隔且无凭据、无查询参数的 HTTPS `manifest.json` 地址；兼容旧的单地址变量 `WOCAO_HUB_ROUTE_MANIFEST_URL`。
 - `WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM`：验证路由清单签名的 Ed25519 公钥 PEM，可使用真实换行或转义的 `\n`。
 - `WOCAO_HUB_ROUTE_KEY_B64`：32 字节 XChaCha20-Poly1305 解密 key 的 Base64。它会进入官方客户端，只能用于避免直接浏览，不能视为不可提取秘密。
 - `WOCAO_HUB_ROUTE_KEY_ID`：必须与签名清单中的 `keyId` 一致。
@@ -88,7 +88,7 @@ cargo run -p route-e2e
 - 不使用卡密、激活码、IP 绑定或次数限制
 - 不使用七牛或自建软件下载镜像
 - 软件安装包通过用户本地网络从官方地址下载
-- 中文订阅由独立 GitHub 仓库定时发布为签名加密路由包，客户端在本机验签、解密、解析和筛选
+- 中文订阅由独立仓库定时发布为签名加密路由包并同步到 Gitee，客户端优先访问 Gitee、备用访问 GitHub，在本机验签、解密、解析和筛选
 - ChatGPT/Codex 代理流量由客户端直接连接选中的订阅节点，不经过 wocao.ai 服务器
 
 ## 当前可用能力

@@ -183,11 +183,33 @@ struct RawRouteBundle {
     routes: Vec<u8>,
 }
 
-pub struct RouteBundleClient {
-    client: Client,
+#[derive(Clone)]
+struct RouteBundleSource {
     manifest_url: Url,
     signature_url: Url,
     routes_url: Url,
+}
+
+impl RouteBundleSource {
+    fn new(manifest_url: Url) -> Result<Self, RouteBundleError> {
+        validate_manifest_url(&manifest_url)?;
+        let signature_url = manifest_url
+            .join(SIGNATURE_FILE_NAME)
+            .map_err(|_| RouteBundleError::InvalidManifestUrl)?;
+        let routes_url = manifest_url
+            .join(ROUTE_FILE_NAME)
+            .map_err(|_| RouteBundleError::InvalidManifestUrl)?;
+        Ok(Self {
+            manifest_url,
+            signature_url,
+            routes_url,
+        })
+    }
+}
+
+pub struct RouteBundleClient {
+    client: Client,
+    sources: Vec<RouteBundleSource>,
     verifier: RouteBundleVerifier,
     cache_directory: PathBuf,
     request_timeout: Duration,
@@ -197,7 +219,14 @@ impl fmt::Debug for RouteBundleClient {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("RouteBundleClient")
-            .field("manifest_url", &self.manifest_url)
+            .field(
+                "manifest_urls",
+                &self
+                    .sources
+                    .iter()
+                    .map(|source| &source.manifest_url)
+                    .collect::<Vec<_>>(),
+            )
             .field("expected_key_id", &self.verifier.expected_key_id)
             .field("encryption_key", &"[REDACTED]")
             .field("cache_directory", &self.cache_directory)
@@ -213,18 +242,34 @@ impl RouteBundleClient {
         expected_key_id: String,
         cache_directory: PathBuf,
     ) -> Result<Self, RouteBundleError> {
-        validate_manifest_url(&manifest_url)?;
+        Self::new_with_fallbacks(
+            vec![manifest_url],
+            public_key_pem,
+            encryption_key,
+            expected_key_id,
+            cache_directory,
+        )
+    }
+
+    pub fn new_with_fallbacks(
+        manifest_urls: Vec<Url>,
+        public_key_pem: &str,
+        encryption_key: Zeroizing<[u8; 32]>,
+        expected_key_id: String,
+        cache_directory: PathBuf,
+    ) -> Result<Self, RouteBundleError> {
+        if manifest_urls.is_empty() {
+            return Err(RouteBundleError::InvalidManifestUrl);
+        }
         if expected_key_id.trim().is_empty() {
             return Err(RouteBundleError::InvalidKeyId);
         }
         let public_key = VerifyingKey::from_public_key_pem(public_key_pem)
             .map_err(|_| RouteBundleError::InvalidPublicKey)?;
-        let signature_url = manifest_url
-            .join(SIGNATURE_FILE_NAME)
-            .map_err(|_| RouteBundleError::InvalidManifestUrl)?;
-        let routes_url = manifest_url
-            .join(ROUTE_FILE_NAME)
-            .map_err(|_| RouteBundleError::InvalidManifestUrl)?;
+        let sources = manifest_urls
+            .into_iter()
+            .map(RouteBundleSource::new)
+            .collect::<Result<Vec<_>, _>>()?;
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .redirect(Policy::custom(|attempt| {
@@ -238,9 +283,7 @@ impl RouteBundleClient {
             .map_err(|_| RouteBundleError::ClientBuild)?;
         Ok(Self {
             client,
-            manifest_url,
-            signature_url,
-            routes_url,
+            sources,
             verifier: RouteBundleVerifier {
                 public_key,
                 encryption_key,
@@ -258,17 +301,9 @@ impl RouteBundleClient {
     }
 
     pub async fn fetch_payload(&self) -> Result<SubscriptionPayload, RouteBundleError> {
-        let remote = self.fetch_remote_bundle().await;
+        let remote = self.fetch_verified_remote_payload().await;
         match remote {
-            Ok(bundle) => {
-                let verifier = self.verifier.clone();
-                let (bundle, payload) = tokio::task::spawn_blocking(move || {
-                    let payload = verifier.verify(&bundle, Utc::now())?;
-                    Ok::<_, RouteBundleError>((bundle, payload))
-                })
-                .await
-                .map_err(|_| RouteBundleError::BackgroundTask)??;
-
+            Ok((bundle, payload)) => {
                 let cache_directory = self.cache_directory.clone();
                 let cache_result = tokio::task::spawn_blocking(move || {
                     save_cached_bundle(&cache_directory, &bundle)
@@ -299,10 +334,38 @@ impl RouteBundleClient {
         }
     }
 
-    async fn fetch_remote_bundle(&self) -> Result<RawRouteBundle, RouteBundleError> {
+    async fn fetch_verified_remote_payload(
+        &self,
+    ) -> Result<(RawRouteBundle, SubscriptionPayload), RouteBundleError> {
+        let mut last_error = None;
+        for (source_index, source) in self.sources.iter().enumerate() {
+            let bundle = match self.fetch_remote_bundle(source).await {
+                Ok(bundle) => bundle,
+                Err(error) if error.permits_cache_fallback() => {
+                    tracing::warn!(source_index, "route source temporarily unavailable");
+                    last_error = Some(error);
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            let verifier = self.verifier.clone();
+            return tokio::task::spawn_blocking(move || {
+                let payload = verifier.verify(&bundle, Utc::now())?;
+                Ok::<_, RouteBundleError>((bundle, payload))
+            })
+            .await
+            .map_err(|_| RouteBundleError::BackgroundTask)?;
+        }
+        Err(last_error.unwrap_or(RouteBundleError::InvalidManifestUrl))
+    }
+
+    async fn fetch_remote_bundle(
+        &self,
+        source: &RouteBundleSource,
+    ) -> Result<RawRouteBundle, RouteBundleError> {
         let manifest = fetch_bounded(
             &self.client,
-            self.manifest_url.clone(),
+            source.manifest_url.clone(),
             BundleResource::Manifest,
             self.request_timeout,
             MAX_MANIFEST_BYTES,
@@ -310,7 +373,7 @@ impl RouteBundleClient {
         .await?;
         let signature = fetch_bounded(
             &self.client,
-            self.signature_url.clone(),
+            source.signature_url.clone(),
             BundleResource::Signature,
             self.request_timeout,
             MAX_SIGNATURE_BYTES,
@@ -324,7 +387,7 @@ impl RouteBundleClient {
 
         let routes = fetch_bounded(
             &self.client,
-            self.routes_url.clone(),
+            source.routes_url.clone(),
             BundleResource::Routes,
             self.request_timeout,
             MAX_ROUTE_BYTES,
@@ -772,6 +835,36 @@ mod tests {
         assert_eq!(payload.as_bytes(), plaintext);
     }
 
+    #[tokio::test]
+    async fn tries_multiple_remote_sources_before_verified_cache() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let cache_directory = directory.path().join("routes");
+        let plaintext = b"hysteria2://secret@example.com:443#US-test";
+        let (bundle, _) = test_bundle(plaintext, Utc::now());
+        save_cached_bundle(&cache_directory, &bundle).expect("encrypted cache");
+        let client = RouteBundleClient::new_with_fallbacks(
+            vec![
+                Url::parse("https://127.0.0.1:1/public/manifest.json")
+                    .expect("primary manifest URL"),
+                Url::parse("https://127.0.0.1:2/public/manifest.json")
+                    .expect("fallback manifest URL"),
+            ],
+            &test_public_key_pem(),
+            Zeroizing::new([29_u8; 32]),
+            "v1".to_owned(),
+            cache_directory,
+        )
+        .expect("route client")
+        .with_timeout(Duration::from_millis(100));
+
+        let payload = client
+            .fetch_payload()
+            .await
+            .expect("verified cache fallback");
+
+        assert_eq!(payload.as_bytes(), plaintext);
+    }
+
     #[test]
     fn rejects_manifest_tampering_hash_mismatch_and_wrong_key() {
         let (mut bundle, verifier) = test_bundle(b"route payload", Utc::now());
@@ -839,6 +932,38 @@ mod tests {
                 .expect("manifest URL")
         )
         .is_ok());
+    }
+
+    #[test]
+    fn rejects_empty_or_invalid_fallback_source_lists() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        assert!(matches!(
+            RouteBundleClient::new_with_fallbacks(
+                Vec::new(),
+                &test_public_key_pem(),
+                Zeroizing::new([29_u8; 32]),
+                "v1".to_owned(),
+                directory.path().join("empty"),
+            ),
+            Err(RouteBundleError::InvalidManifestUrl)
+        ));
+        assert!(matches!(
+            RouteBundleClient::new_with_fallbacks(
+                vec![
+                    Url::parse(
+                        "https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/manifest.json",
+                    )
+                    .expect("Gitee URL"),
+                    Url::parse("http://example.com/public/manifest.json")
+                        .expect("invalid fallback URL"),
+                ],
+                &test_public_key_pem(),
+                Zeroizing::new([29_u8; 32]),
+                "v1".to_owned(),
+                directory.path().join("invalid"),
+            ),
+            Err(RouteBundleError::InvalidManifestUrl)
+        ));
     }
 
     #[test]

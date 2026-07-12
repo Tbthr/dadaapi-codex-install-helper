@@ -58,7 +58,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          WOCAO_HUB_ROUTE_MANIFEST_URL: https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/manifest.json
+          WOCAO_HUB_ROUTE_MANIFEST_URLS: https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/manifest.json,https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/manifest.json
           WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM }}
           WOCAO_HUB_ROUTE_KEY_B64: ${{ secrets.WOCAO_HUB_ROUTE_KEY_B64 }}
           WOCAO_HUB_ROUTE_KEY_ID: v1
@@ -101,3 +101,94 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" checksums.txt \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+  gitee-release:
+    needs: checksums
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Download complete GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir release-assets
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir release-assets \
+            --clobber
+
+      - name: Prepare Gitee updater metadata
+        run: |
+          prefix="https://gitee.com/codeTrees/wocao-hub/releases/download/$GITHUB_REF_NAME/"
+          jq --arg prefix "$prefix" '
+            .platforms |= with_entries(
+              .value.url = ($prefix + (.value.url | split("/") | last))
+            )
+          ' release-assets/latest.json > release-assets/latest.gitee.json
+          mv release-assets/latest.gitee.json release-assets/latest.json
+
+      - name: Replace Gitee release and upload assets
+        id: gitee_release
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -euo pipefail
+          api="https://gitee.com/api/v5/repos/codeTrees/wocao-hub/releases"
+          existing=$(curl -fsS "$api/tags/$GITHUB_REF_NAME?access_token=$GITEE_TOKEN" || true)
+          existing_id=$(printf '%s' "$existing" | jq -r '.id // empty')
+          if [ -n "$existing_id" ]; then
+            curl -fsS -X DELETE "$api/$existing_id?access_token=$GITEE_TOKEN" >/dev/null
+          fi
+
+          payload=$(jq -n \
+            --arg token "$GITEE_TOKEN" \
+            --arg tag "$GITHUB_REF_NAME" \
+            --arg name "Wocao Hub $GITHUB_REF_NAME" \
+            --arg body "Wocao Hub 1.0 国内发行版。安装包与 GitHub Release 内容一致。" \
+            '{access_token:$token,tag_name:$tag,name:$name,body:$body,target_commitish:"main",prerelease:false}')
+          response=$(curl -fsS -X POST \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "$api")
+          release_id=$(printf '%s' "$response" | jq -r '.id')
+          test -n "$release_id"
+          test "$release_id" != "null"
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+
+          for file in release-assets/*; do
+            curl -fsS --retry 3 --retry-all-errors \
+              -X POST \
+              -F "access_token=$GITEE_TOKEN" \
+              -F "file=@$file" \
+              "$api/$release_id/attach_files" >/dev/null
+          done
+
+      - name: Publish domestic release metadata
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          mkdir -p release
+          cp release-assets/latest.json release/latest.json
+          cp release-assets/checksums.txt release/checksums.txt
+          git config user.name "wocao-hub-release[bot]"
+          git config user.email "wocao-hub-release[bot]@users.noreply.github.com"
+          git add release/latest.json release/checksums.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Update domestic release metadata"
+            git push origin main
+          fi
+          git remote add gitee "https://codeTrees:${GITEE_TOKEN}@gitee.com/codeTrees/wocao-hub.git"
+          git push gitee main
+          git push gitee "$GITHUB_REF_NAME" --force
+
+      - name: Verify Gitee release downloads
+        run: |
+          while read -r checksum name; do
+            url="https://gitee.com/codeTrees/wocao-hub/releases/download/$GITHUB_REF_NAME/$name"
+            curl -fsSL --retry 3 --retry-all-errors "$url" -o "/tmp/$name"
+            printf '%s  %s\n' "$checksum" "/tmp/$name" | sha256sum --check
+          done < release-assets/checksums.txt

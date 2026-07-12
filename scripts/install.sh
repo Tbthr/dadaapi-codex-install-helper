@@ -2,9 +2,12 @@
 
 set -eu
 
-repository="ray7086/wocao-hub"
-latest_release_base="https://github.com/${repository}/releases/latest/download"
-checksums_url="${latest_release_base}/checksums.txt"
+github_repository="ray7086/wocao-hub"
+github_release_base="https://github.com/${github_repository}/releases/latest/download"
+github_checksums_url="${github_release_base}/checksums.txt"
+gitee_repository="codeTrees/wocao-hub"
+gitee_release_base="https://gitee.com/${gitee_repository}/releases/download"
+gitee_checksums_url="https://gitee.com/${gitee_repository}/raw/main/release/checksums.txt"
 temporary_directory=""
 mount_point=""
 mounted="0"
@@ -41,7 +44,7 @@ mount_point="$temporary_directory/mount"
 /bin/mkdir -p "$mount_point"
 
 printf '%s\n' "正在获取 Wocao Hub 最新版本信息……"
-/usr/bin/curl \
+if /usr/bin/curl \
   --fail \
   --silent \
   --show-error \
@@ -50,8 +53,26 @@ printf '%s\n' "正在获取 Wocao Hub 最新版本信息……"
   --proto '=https' \
   --tlsv1.2 \
   --user-agent 'wocao-hub-installer' \
-  "$checksums_url" \
-  --output "$checksums_file"
+  --max-time 20 \
+  "$gitee_checksums_url" \
+  --output "$checksums_file"; then
+  metadata_source="Gitee"
+else
+  printf '%s\n' "国内版本源暂时不可用，正在切换 GitHub……"
+  /usr/bin/curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --retry 3 \
+    --proto '=https' \
+    --tlsv1.2 \
+    --user-agent 'wocao-hub-installer' \
+    --max-time 20 \
+    "$github_checksums_url" \
+    --output "$checksums_file"
+  metadata_source="GitHub"
+fi
 
 checksum_matches="$(/usr/bin/grep -E '^[0-9a-fA-F]{64}[[:space:]]+Wocao\.Hub_[0-9]+\.[0-9]+\.[0-9]+_universal\.dmg$' "$checksums_file" || true)"
 match_count="$(printf '%s\n' "$checksum_matches" | /usr/bin/grep -c . || true)"
@@ -61,10 +82,11 @@ expected_hash="$(printf '%s\n' "$checksum_matches" | /usr/bin/awk '{ print tolow
 asset_name="$(printf '%s\n' "$checksum_matches" | /usr/bin/awk '{ print $2 }')"
 release_version="$(printf '%s\n' "$asset_name" | /usr/bin/sed -nE 's/^Wocao\.Hub_([0-9]+\.[0-9]+\.[0-9]+)_universal\.dmg$/\1/p')"
 [ -n "$release_version" ] || fail "无法解析 macOS 安装包版本。"
-asset_url="${latest_release_base}/${asset_name}"
+gitee_asset_url="${gitee_release_base}/v${release_version}/${asset_name}"
+github_asset_url="${github_release_base}/${asset_name}"
 
-printf '%s\n' "正在下载 ${asset_name}……"
-/usr/bin/curl \
+printf '%s\n' "正在下载 ${asset_name}（版本信息来源：${metadata_source}）……"
+if ! /usr/bin/curl \
   --fail \
   --silent \
   --show-error \
@@ -73,8 +95,24 @@ printf '%s\n' "正在下载 ${asset_name}……"
   --proto '=https' \
   --tlsv1.2 \
   --user-agent 'wocao-hub-installer' \
-  "$asset_url" \
-  --output "$dmg_file"
+  --max-time 180 \
+  "$gitee_asset_url" \
+  --output "$dmg_file"; then
+  /bin/rm -f "$dmg_file"
+  printf '%s\n' "国内安装包下载暂时不可用，正在切换 GitHub……"
+  /usr/bin/curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --retry 3 \
+    --proto '=https' \
+    --tlsv1.2 \
+    --user-agent 'wocao-hub-installer' \
+    --max-time 180 \
+    "$github_asset_url" \
+    --output "$dmg_file"
+fi
 
 actual_hash="$(/usr/bin/shasum -a 256 "$dmg_file" | /usr/bin/awk '{ print $1 }')"
 [ "$actual_hash" = "$expected_hash" ] || fail "安装包 SHA-256 校验失败，已停止安装。"
