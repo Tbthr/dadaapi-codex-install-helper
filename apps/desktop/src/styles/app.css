@@ -27,6 +27,8 @@
   --radius-sm: 6px;
   --radius-md: 8px;
   --transition: 150ms ease;
+  --content-max-width: 1280px;
+  --content-gutter: 34px;
 }
 
 * {
@@ -82,7 +84,8 @@ a:focus-visible,
 .brand-bar {
   display: flex;
   min-width: 0;
-  padding: 0 34px;
+  padding: 0
+    max(var(--content-gutter), calc((100vw - var(--content-max-width)) / 2 + var(--content-gutter)));
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border);
@@ -139,12 +142,24 @@ a:focus-visible,
 }
 
 .page {
-  width: min(1120px, 100%);
+  width: min(var(--content-max-width), 100%);
   height: 100%;
   margin: 0 auto;
-  padding: 29px 40px 36px;
+  padding: 29px var(--content-gutter) 36px;
   overflow: auto;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.page::-webkit-scrollbar,
+.locale-drawer::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.locale-drawer {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .software-heading {
@@ -714,8 +729,8 @@ a:focus-visible,
   }
 
   .page {
-    padding-right: 32px;
-    padding-left: 32px;
+    padding-right: 28px;
+    padding-left: 28px;
   }
 
   .software-grid {
