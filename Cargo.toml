@@ -4,7 +4,6 @@ members = [
   "crates/activation-core",
   "crates/cli-tools",
   "crates/desktop-discovery",
-  "crates/diagnostics",
   "crates/downloader",
   "crates/locale-config",
   "crates/platform",

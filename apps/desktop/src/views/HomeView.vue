@@ -10,7 +10,6 @@ import {
   PhPackage,
   PhTranslate,
   PhWallet,
-  PhWrench,
 } from "@phosphor-icons/vue";
 import { computed } from "vue";
 import welcomeMascot from "../assets/brand/mascot/welcome.png";
@@ -68,12 +67,6 @@ const shortcuts: Array<{
     title: "安装软件",
     description: "从官方来源下载桌面应用和命令行工具",
     icon: PhPackage,
-  },
-  {
-    page: "repair",
-    title: "恢复与诊断",
-    description: "恢复原网络并导出经过脱敏的诊断信息",
-    icon: PhWrench,
   },
 ];
 

@@ -1,4 +1,4 @@
-name: Windows ARM64 preview
+name: 哒哒助手 v1.0 Windows ARM64 预览
 
 on:
   workflow_dispatch:
@@ -26,15 +26,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: windows-arm64-preview
+          key: dada-assistant-windows-arm64-preview
 
       - run: pnpm install --frozen-lockfile
 
       - name: Build Windows ARM64 installer
         shell: pwsh
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           DADAAPI_ROUTE_MANIFEST_URLS: https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/manifest.json,https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/manifest.json
           DADAAPI_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.DADAAPI_ROUTE_PUBLIC_KEY_PEM }}
           DADAAPI_ROUTE_KEY_B64: ${{ secrets.DADAAPI_ROUTE_KEY_B64 }}
@@ -43,6 +41,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wocao-hub-windows-arm64-preview
+          name: dada-assistant-windows-arm64-preview
           path: target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
           if-no-files-found: error

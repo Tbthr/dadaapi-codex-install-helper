@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
-  Archive,
   Check,
   CircleAlert,
   Download,
@@ -11,10 +10,8 @@ import {
   Terminal,
   X,
 } from "lucide-vue-next";
-import { storeToRefs } from "pinia";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { getCliToolsOverview, installCliTool } from "../services/cli-tools";
-import { exportDiagnostics, revealDiagnosticsExport } from "../services/diagnostics";
 import {
   DOWNLOAD_TASK_UPDATED_EVENT,
   cancelDownload,
@@ -25,9 +22,7 @@ import {
   startDownload,
 } from "../services/downloads";
 import { getRepairOverview, restoreLocaleConfiguration } from "../services/locale";
-import { useActivationStore } from "../stores/activation";
 import type { CliToolId, CliToolsOverview } from "../types/cli-tools";
-import type { DiagnosticExportResult } from "../types/diagnostics";
 import type {
   DownloadCatalog,
   DownloadTaskSnapshot,
@@ -36,9 +31,6 @@ import type {
   SoftwareProductSummary,
 } from "../types/download";
 import { isCommandError, type RepairOverview } from "../types/locale";
-
-const activation = useActivationStore();
-const { networkPending, recoveryRunning } = storeToRefs(activation);
 
 const catalog = ref<DownloadCatalog | null>(null);
 const tasks = ref<DownloadTaskSnapshot[]>([]);
@@ -50,11 +42,8 @@ const downloadErrors = ref<Partial<Record<SoftwareProductId, string>>>({});
 const cliBusy = ref<Partial<Record<CliToolId, boolean>>>({});
 const cliErrors = ref<Partial<Record<CliToolId, string>>>({});
 const localeBusy = ref(false);
-const diagnosticsBusy = ref(false);
 const pageError = ref("");
 const localeMessage = ref("");
-const diagnosticsMessage = ref("");
-const diagnosticExport = ref<DiagnosticExportResult | null>(null);
 let stopDownloadListener: UnlistenFn | null = null;
 
 const products = computed(() => catalog.value?.products ?? []);
@@ -269,39 +258,6 @@ async function restoreLocale(): Promise<void> {
   }
 }
 
-async function restoreNetwork(): Promise<void> {
-  const restored = await activation.restoreOriginalNetwork();
-  localeMessage.value = restored ? "网络已恢复" : activation.recoveryError || "网络恢复失败";
-  repair.value = await getRepairOverview().catch(() => repair.value);
-}
-
-async function createDiagnosticExport(): Promise<void> {
-  if (diagnosticsBusy.value) {
-    return;
-  }
-  diagnosticsBusy.value = true;
-  diagnosticsMessage.value = "";
-  try {
-    diagnosticExport.value = await exportDiagnostics();
-    diagnosticsMessage.value = "诊断文件已生成";
-  } catch (error) {
-    diagnosticsMessage.value = errorMessage(error, "诊断导出失败");
-  } finally {
-    diagnosticsBusy.value = false;
-  }
-}
-
-async function revealDiagnosticExport(): Promise<void> {
-  if (!diagnosticExport.value) {
-    return;
-  }
-  try {
-    await revealDiagnosticsExport(diagnosticExport.value.fileName);
-  } catch (error) {
-    diagnosticsMessage.value = errorMessage(error, "无法打开诊断文件目录");
-  }
-}
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) {
     return `${Math.max(0, Math.round(bytes / 1024))} KB`;
@@ -412,7 +368,7 @@ function errorMessage(error: unknown, fallback: string): string {
               error: localeMessage.includes('失败'),
             }"
           >
-            {{ localeMessage || (networkPending ? "网络待恢复" : "配置与网络") }}
+            {{ localeMessage || "中文配置" }}
           </span>
         </div>
         <div class="tool-actions-inline">
@@ -426,53 +382,6 @@ function errorMessage(error: unknown, fallback: string): string {
           >
             <LoaderCircle v-if="localeBusy" class="spinning" :size="16" />
             <RotateCcw v-else :size="16" />
-          </button>
-          <button
-            class="tool-button"
-            type="button"
-            :disabled="recoveryRunning || !networkPending"
-            @click="restoreNetwork"
-          >
-            <LoaderCircle v-if="recoveryRunning" class="spinning" :size="15" />
-            <Check v-else :size="15" />
-            恢复网络
-          </button>
-        </div>
-      </div>
-
-      <div class="tool-row">
-        <span class="tool-icon"><Archive :size="20" /></span>
-        <div class="tool-copy">
-          <strong>诊断</strong>
-          <span
-            :class="{
-              success: Boolean(diagnosticExport),
-              error: diagnosticsMessage.includes('失败'),
-            }"
-          >
-            {{ diagnosticsMessage || "日志与状态" }}
-          </span>
-        </div>
-        <div class="tool-actions-inline">
-          <button
-            v-if="diagnosticExport"
-            class="tool-icon-button"
-            type="button"
-            title="打开诊断文件"
-            aria-label="打开诊断文件"
-            @click="revealDiagnosticExport"
-          >
-            <Play :size="16" />
-          </button>
-          <button
-            class="tool-button"
-            type="button"
-            :disabled="diagnosticsBusy"
-            @click="createDiagnosticExport"
-          >
-            <LoaderCircle v-if="diagnosticsBusy" class="spinning" :size="15" />
-            <Archive v-else :size="15" />
-            导出
           </button>
         </div>
       </div>

@@ -1,6 +1,5 @@
 pub mod activation_runtime;
 pub mod cli_tools;
-pub mod desktop_diagnostics;
 pub mod downloads;
 pub mod software_status;
 
@@ -43,11 +42,9 @@ async fn get_repair_overview(
         .overview()
         .await
         .map_err(command_error)?;
-    let network_recovery = network_recovery_status(&state).await?;
     Ok(RepairOverview {
         app: overview.apps.into_iter().next(),
         locale: overview.locale,
-        network_recovery,
         activation_available: state.is_available(),
     })
 }
@@ -210,10 +207,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
-            let diagnostics_state =
-                desktop_diagnostics::DesktopDiagnosticsState::new(&app_data_dir)?;
-            diagnostics_state.initialize_tracing()?;
-            app.manage(diagnostics_state);
             let activation_runtime =
                 activation_runtime::DesktopActivationRuntime::from_build_environment(
                     app_data_dir.clone(),
@@ -265,10 +258,7 @@ pub fn run() {
             downloads::retry_download,
             downloads::reveal_download,
             downloads::launch_installer,
-            downloads::open_official_product_page,
-            desktop_diagnostics::get_diagnostic_summary,
-            desktop_diagnostics::export_diagnostics,
-            desktop_diagnostics::reveal_diagnostics_export
+            downloads::open_official_product_page
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Dada Assistant desktop application");

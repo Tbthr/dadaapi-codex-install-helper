@@ -1,6 +1,6 @@
 # 哒哒助手
 
-哒哒助手是哒哒 API 品牌下的开源跨平台 AI 桌面工具。首个版本面向 Windows 和 macOS，提供 ChatGPT/Codex 中文配置、安全路由更新、网络修复和官方软件下载能力。
+哒哒助手是哒哒 API 品牌下的开源跨平台 AI 桌面工具。首个版本面向 Windows 和 macOS，提供 ChatGPT/Codex 中文配置、安全路由更新、中文流程内的手动网络恢复和官方软件下载能力。
 
 当前仓库已完成桌面激活核心链路：检测新版 ChatGPT/旧版 Codex、优先从 Gitee 并备用从 GitHub Raw 下载加密路由包、验证 Ed25519 签名和 SHA-256、使用 XChaCha20-Poly1305 解密、筛选和测试海外节点、启动本地代理、安全修改并由用户手动恢复系统网络、写入中文配置、重启应用并验证 Renderer 运行语言。生产激活 Command 已稳定注册，未注入完整构建配置时保持只读模式。
 
@@ -39,6 +39,38 @@ pnpm dev
 
 ```bash
 pnpm verify
+```
+
+本地打包：
+
+```bash
+pnpm --dir apps/desktop tauri build
+```
+
+## 安装哒哒助手 v1.0
+
+`v1.0.0` Release 仅用于分发 Windows/macOS 安装包和 `checksums.txt`，客户端不会检查或下载在线更新。Release 必须包含唯一的 `*_x64-setup.exe`、`*_arm64-setup.exe` 和 `*_universal.dmg` 资产；Gitee 发布会将 macOS DMG 包装为 ZIP，安装脚本会自动处理。
+
+Windows（Gitee 脚本入口）：
+
+```powershell
+irm https://gitee.com/codeTrees/wocao-hub/raw/main/scripts/install.ps1 | iex
+```
+
+macOS（Gitee 脚本入口）：
+
+```sh
+curl -fsSL https://gitee.com/codeTrees/wocao-hub/raw/main/scripts/install.sh | sh
+```
+
+脚本优先从 Gitee 获取校验和和安装包，失败时回退 GitHub；也可直接使用 GitHub 脚本入口：
+
+```powershell
+irm https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.ps1 | iex
+```
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.sh | sh
 ```
 
 GitHub 静态路由真实联调：
@@ -95,7 +127,7 @@ cargo run -p route-e2e
 - 持久化下载任务、真实进度事件和官方下载目录打开能力
 - 下载完成后通过系统默认图形界面直接打开 DMG 或 EXE 安装包
 - 路由配置不可用时仍可检测并由用户手动恢复遗留系统代理
-- 中文配置跨文件事务撤销、部分成功结果和修复状态聚合 Command
-- 私有滚动日志、双重脱敏诊断摘要与安全 ZIP 导出
+- 中文配置跨文件事务撤销、部分成功结果和恢复状态聚合 Command
+- 中文验证成功后在第五步手动恢复原网络，并在失败时保留状态以便重试
 
 详细需求见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。

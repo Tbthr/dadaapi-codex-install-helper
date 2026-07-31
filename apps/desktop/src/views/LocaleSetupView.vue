@@ -30,6 +30,8 @@ const {
   message,
   error: activationError,
   result,
+  networkStatusState,
+  networkStatusError,
   networkPending,
   recoveryRunning,
   recoveryError,
@@ -49,6 +51,9 @@ const primaryLabel = computed(() => {
   if (!appInstalled.value) return "去安装";
   if (running.value) return "正在设置";
   if (recoveryRunning.value) return "正在恢复";
+  if (result.value) {
+    return networkPending.value ? "恢复原网络" : "重新设置";
+  }
   if (activationError.value || networkPending.value) return "恢复网络";
   if (!appReady.value) return "等待应用运行";
   return props.overview?.locale.chineseEnabled ? "重新设置" : "开始设置";
@@ -57,10 +62,18 @@ const primaryLabel = computed(() => {
 const primaryDisabled = computed(() => {
   if (!appInstalled.value) return false;
   if (running.value || recoveryRunning.value) return true;
+  if (networkStatusState.value !== "ready") return true;
+  if (result.value) return networkPending.value === false && !canActivate.value;
   if (activationError.value || networkPending.value) return false;
   if (!appReady.value) return true;
   return !canActivate.value;
 });
+
+const routeConfirmed = computed(() => availabilityState.value === "available");
+const staleRecoveryHandled = computed(
+  () => networkPending.value === false || Boolean(result.value),
+);
+const networkRestored = computed(() => Boolean(result.value) && networkPending.value === false);
 
 const mascot = computed(() => {
   if (running.value || recoveryRunning.value) return thinkingMascot;
@@ -78,6 +91,7 @@ const actionMessage = computed(() => {
   if (!appInstalled.value) return "安装并打开 ChatGPT 后，哒哒助手会自动重新检测。";
   if (recoveryError.value) return recoveryError.value;
   if (activationError.value) return activationError.value;
+  if (networkStatusState.value === "error") return networkStatusError.value;
   if (availabilityState.value === "error") return availabilityError.value;
   if (availabilityState.value === "unavailable") return "当前构建未配置中文路由服务。";
   if (!appReady.value) return "请先打开 ChatGPT 或 Codex，再开始设置。";
@@ -91,6 +105,10 @@ async function handlePrimaryAction(): Promise<void> {
     return;
   }
   if (running.value || recoveryRunning.value) return;
+  if (result.value) {
+    if (networkPending.value && (await activation.restoreOriginalNetwork())) emit("refresh");
+    return;
+  }
   if (activationError.value || networkPending.value) {
     if (await activation.prepareNetworkForActivation()) emit("refresh");
     return;
@@ -136,25 +154,27 @@ async function handlePrimaryAction(): Promise<void> {
               }}</span>
             </div>
           </li>
-          <li :class="{ complete: canActivate }">
+          <li :class="{ complete: routeConfirmed }">
             <span class="step-index">
-              <PhCheck v-if="canActivate" :size="14" weight="bold" />
+              <PhCheck v-if="routeConfirmed" :size="14" weight="bold" />
               <b v-else>2</b>
             </span>
             <div>
-              <strong>确认中文路由</strong>
-              <span>{{ canActivate ? "配置可用，执行时会再次验签" : "正在确认当前构建配置" }}</span>
+              <strong>路由确认</strong>
+              <span>{{
+                routeConfirmed ? "配置可用，执行时会再次验签" : "正在确认当前构建配置"
+              }}</span>
             </div>
           </li>
-          <li :class="{ complete: networkPending === false }">
+          <li :class="{ complete: staleRecoveryHandled }">
             <span class="step-index">
-              <PhCheck v-if="networkPending === false" :size="14" weight="bold" />
+              <PhCheck v-if="staleRecoveryHandled" :size="14" weight="bold" />
               <b v-else>3</b>
             </span>
             <div>
-              <strong>{{ networkPending ? "恢复原网络" : "检查系统网络" }}</strong>
+              <strong>处理旧恢复记录</strong>
               <span>{{
-                networkPending ? "检测到上次遗留的代理状态" : "当前没有待恢复的代理状态"
+                staleRecoveryHandled ? "当前没有阻断设置的遗留代理状态" : "检测到上次遗留的代理状态"
               }}</span>
             </div>
           </li>
@@ -164,8 +184,24 @@ async function handlePrimaryAction(): Promise<void> {
               <b v-else>4</b>
             </span>
             <div>
-              <strong>{{ result ? "中文已经生效" : "执行并验证" }}</strong>
+              <strong>{{ result ? "中文已经生效" : "中文设置验证" }}</strong>
               <span>{{ result ? "应用已使用 zh-CN 启动" : "设置完成后验证应用进程语言" }}</span>
+            </div>
+          </li>
+          <li :class="{ complete: networkRestored }">
+            <span class="step-index">
+              <PhCheck v-if="networkRestored" :size="14" weight="bold" />
+              <b v-else>5</b>
+            </span>
+            <div>
+              <strong>{{ networkRestored ? "网络已恢复" : "恢复原网络" }}</strong>
+              <span>{{
+                networkRestored
+                  ? "已恢复原网络配置并关闭临时代理"
+                  : result
+                    ? "中文验证成功后，请手动恢复原网络"
+                    : "完成中文设置后可恢复原网络"
+              }}</span>
             </div>
           </li>
         </ol>
@@ -191,7 +227,11 @@ async function handlePrimaryAction(): Promise<void> {
         <img :src="mascot" :alt="mascotAlt" />
         <strong>{{ result ? "设置完成" : running ? "正在处理" : "准备就绪后开始" }}</strong>
         <span>{{
-          result ? "需要时可前往修复诊断恢复原网络。" : "整个过程会显示真实进度与结果。"
+          result
+            ? networkRestored
+              ? "中文已生效，网络已恢复。"
+              : "中文已生效，请完成最后一步恢复原网络。"
+            : "整个过程会显示真实进度与结果。"
         }}</span>
       </aside>
     </section>

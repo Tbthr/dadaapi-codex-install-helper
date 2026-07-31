@@ -1,4 +1,4 @@
-name: Release smoke test
+name: 哒哒助手 v1.0 发布冒烟
 
 on:
   workflow_dispatch:
@@ -23,33 +23,33 @@ jobs:
             architecture: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - name: Download released installer
+      - name: 下载已发布安装包
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
           RELEASE_ARCHITECTURE: ${{ matrix.architecture }}
         run: |
-          $asset = "Wocao.Hub_$($env:RELEASE_TAG.TrimStart('v'))_$env:RELEASE_ARCHITECTURE-setup.exe"
+          $suffix = "_$($env:RELEASE_ARCHITECTURE)-setup.exe"
           $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
           $release = $releases | Where-Object { $_.tag_name -eq $env:RELEASE_TAG } | Select-Object -First 1
           if (-not $release) {
             throw "Release $env:RELEASE_TAG was not found"
           }
-          $releaseAsset = $release.assets | Where-Object { $_.name -eq $asset } | Select-Object -First 1
-          if (-not $releaseAsset) {
-            throw "Release asset $asset was not found"
+          $releaseAssets = @($release.assets | Where-Object { $_.name.EndsWith($suffix) })
+          if ($releaseAssets.Count -ne 1) {
+            throw "Expected one Windows $env:RELEASE_ARCHITECTURE installer, found $($releaseAssets.Count)"
           }
           $headers = @{
             Authorization = "Bearer $env:GH_TOKEN"
             Accept = "application/octet-stream"
             "X-GitHub-Api-Version" = "2022-11-28"
           }
-          Invoke-WebRequest -Uri $releaseAsset.url -Headers $headers -OutFile installer.exe
+          Invoke-WebRequest -Uri $releaseAssets[0].url -Headers $headers -OutFile installer.exe
           $signature = Get-AuthenticodeSignature installer.exe
           Write-Host "Installer Authenticode status: $($signature.Status)"
 
-      - name: Install and launch released application
+      - name: 安装并启动已发布应用
         shell: pwsh
         run: |
           $installer = Start-Process -FilePath "$PWD\installer.exe" -ArgumentList "/S" -Wait -PassThru
@@ -59,35 +59,23 @@ jobs:
 
           $roots = @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)}) |
             Where-Object { $_ -and (Test-Path $_) }
-          $executable = $roots |
-            ForEach-Object {
-              Get-ChildItem -Path $_ -Filter "wocao-hub-desktop.exe" -File -Recurse -ErrorAction SilentlyContinue
-            } |
-            Select-Object -First 1
+          $executables = @(
+            $roots |
+              ForEach-Object {
+                Get-ChildItem -Path $_ -Filter "dada-assistant-desktop.exe" -File -Recurse -ErrorAction SilentlyContinue
+              }
+          )
+          $executable = $executables | Select-Object -First 1
           if (-not $executable) {
-            throw "Installed application executable was not found"
+            throw "Installed Dada Assistant executable was not found"
           }
 
           Write-Host "Launching $($executable.FullName)"
           $application = Start-Process -FilePath $executable.FullName -PassThru
           Start-Sleep -Seconds 15
           if ($application.HasExited) {
-            Write-Host "Application exited with code $($application.ExitCode)"
-            $logRoots = @(
-              "$env:APPDATA\ai.wocao.hub",
-              "$env:LOCALAPPDATA\ai.wocao.hub"
-            )
-            foreach ($root in $logRoots) {
-              if (Test-Path $root) {
-                Get-ChildItem -Path $root -File -Recurse -ErrorAction SilentlyContinue |
-                  ForEach-Object {
-                    Write-Host "--- $($_.FullName)"
-                    Get-Content $_.FullName -Tail 100 -ErrorAction SilentlyContinue
-                  }
-              }
-            }
-            throw "Released application exited during startup smoke test"
+            throw "Released Dada Assistant exited during startup smoke test"
           }
 
           Stop-Process -Id $application.Id -Force
-          Write-Host "Released application remained alive for 15 seconds"
+          Write-Host "哒哒助手 remained alive for 15 seconds"

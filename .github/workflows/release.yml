@@ -1,4 +1,4 @@
-name: Release desktop apps
+name: 发布哒哒助手 v1.0
 
 on:
   push:
@@ -12,8 +12,7 @@ jobs:
   publish:
     strategy:
       fail-fast: false
-      # tauri-action updates the shared latest.json release asset. Keep the
-      # matrix serialized so multiple targets cannot replace it concurrently.
+      # Each target writes assets to the same draft release.
       max-parallel: 1
       matrix:
         include:
@@ -56,8 +55,6 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           DADAAPI_ROUTE_MANIFEST_URLS: https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/manifest.json,https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/manifest.json
           DADAAPI_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.DADAAPI_ROUTE_PUBLIC_KEY_PEM }}
           DADAAPI_ROUTE_KEY_B64: ${{ secrets.DADAAPI_ROUTE_KEY_B64 }}
@@ -65,38 +62,46 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
-          releaseName: Wocao Hub ${{ github.ref_name }}
-          releaseBody: Wocao Hub 1.0 正式版。请根据设备平台下载对应安装包。
+          releaseName: 哒哒助手 v1.0
+          releaseBody: 哒哒助手 v1.0 正式版。请根据设备平台下载对应安装包。
           releaseDraft: true
           prerelease: false
-          includeUpdaterJson: true
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
   checksums:
     needs: publish
     runs-on: ubuntu-latest
     steps:
-      - name: Download released installers
+      - name: 下载已发布安装包
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           mkdir release-assets
           gh release download "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern "Wocao.Hub_*_arm64-setup.exe" \
-            --pattern "Wocao.Hub_*_x64-setup.exe" \
-            --pattern "Wocao.Hub_*_universal.dmg" \
+            --pattern "*_arm64-setup.exe" \
+            --pattern "*_x64-setup.exe" \
+            --pattern "*_universal.dmg" \
             --dir release-assets
 
-      - name: Publish SHA-256 checksums
+      - name: 发布 SHA-256 校验和
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           cd release-assets
+          shopt -s nullglob
+          arm64_installers=(*_arm64-setup.exe)
+          x64_installers=(*_x64-setup.exe)
+          universal_dmgs=(*_universal.dmg)
+          test "${#arm64_installers[@]}" -eq 1
+          test "${#x64_installers[@]}" -eq 1
+          test "${#universal_dmgs[@]}" -eq 1
           sha256sum \
-            Wocao.Hub_*_arm64-setup.exe \
-            Wocao.Hub_*_x64-setup.exe \
-            Wocao.Hub_*_universal.dmg \
+            "${arm64_installers[0]}" \
+            "${x64_installers[0]}" \
+            "${universal_dmgs[0]}" \
             > checksums.txt
           gh release upload "$GITHUB_REF_NAME" checksums.txt \
             --repo "$GITHUB_REPOSITORY" \
@@ -112,7 +117,7 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Download complete GitHub release
+      - name: 下载完整 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -122,35 +127,23 @@ jobs:
             --dir release-assets \
             --clobber
 
-      - name: Prepare Gitee updater metadata
+      - name: 准备 Gitee macOS 安装包
         run: |
           set -euo pipefail
-          prefix="https://gitee.com/codeTrees/wocao-hub/releases/download/$GITHUB_REF_NAME/"
-          jq --arg prefix "$prefix" '
-            .platforms |= with_entries(
-              .value.url = ($prefix + (.value.url | split("/") | last))
-            )
-          ' release-assets/latest.json > release-assets/latest.gitee.json
-          mv release-assets/latest.gitee.json release-assets/latest.json
-
-          dmg_file=$(find release-assets -maxdepth 1 -type f \
-            -name 'Wocao.Hub_*_universal.dmg' -print -quit)
-          test -n "$dmg_file"
-          dmg_name=$(basename "$dmg_file")
+          cd release-assets
+          shopt -s nullglob
+          universal_dmgs=(*_universal.dmg)
+          test "${#universal_dmgs[@]}" -eq 1
+          dmg_name="${universal_dmgs[0]}"
           zip_name="$dmg_name.zip"
-          (
-            cd release-assets
-            zip -q "$zip_name" "$dmg_name"
-          )
-          zip_checksum=$(sha256sum "release-assets/$zip_name" | awk '{print $1}')
-          grep -v 'Wocao\.Hub_.*_universal\.dmg$' \
-            release-assets/checksums.txt > release-assets/checksums.gitee.txt
-          printf '%s  %s\n' "$zip_checksum" "$zip_name" \
-            >> release-assets/checksums.gitee.txt
-          mv release-assets/checksums.gitee.txt release-assets/checksums.txt
-          rm "$dmg_file"
+          zip -q "$zip_name" "$dmg_name"
+          zip_checksum=$(sha256sum "$zip_name" | awk '{print $1}')
+          grep -F -v "  $dmg_name" checksums.txt > checksums.gitee.txt
+          printf '%s  %s\n' "$zip_checksum" "$zip_name" >> checksums.gitee.txt
+          mv checksums.gitee.txt checksums.txt
+          rm "$dmg_name"
 
-      - name: Replace Gitee release
+      - name: 创建或替换 Gitee Release
         id: gitee_release
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -168,8 +161,8 @@ jobs:
           payload=$(jq -n \
             --arg token "$GITEE_TOKEN" \
             --arg tag "$GITHUB_REF_NAME" \
-            --arg name "Wocao Hub $GITHUB_REF_NAME" \
-            --arg body "Wocao Hub 1.0 国内发行版。Windows 可直接下载安装；macOS DMG 使用 ZIP 封装，建议执行仓库首页的一键安装命令。" \
+            --arg name "哒哒助手 v1.0" \
+            --arg body "哒哒助手 v1.0 国内发行版。Windows 可直接下载安装；macOS 使用 ZIP 封装的 DMG，可执行仓库首页的一键安装命令。" \
             '{access_token:$token,tag_name:$tag,name:$name,body:$body,target_commitish:"main",prerelease:false}')
           response=$(curl -fsS --connect-timeout 20 --max-time 60 \
             -X POST \
@@ -181,7 +174,7 @@ jobs:
           test "$release_id" != "null"
           echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Gitee release assets in parallel
+      - name: 并行上传 Gitee Release 资产
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
@@ -212,7 +205,7 @@ jobs:
               exit 1
             ' _
 
-      - name: Verify uploaded asset list
+      - name: 验证 Gitee Release 资产列表
         env:
           RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
         run: |
@@ -223,25 +216,18 @@ jobs:
             | jq 'length')
           test "$actual" -eq "$expected"
 
-      - name: Publish domestic release metadata
+      - name: 同步 Release 引用至 Gitee
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
-          mkdir -p release
-          cp release-assets/latest.json release/latest.json
-          git config user.name "wocao-hub-release[bot]"
-          git config user.email "wocao-hub-release[bot]@users.noreply.github.com"
-          git add release/latest.json
-          if ! git diff --cached --quiet; then
-            git commit -m "Update domestic release metadata"
-            git push origin main
-          fi
+          set -euo pipefail
           git remote add gitee "https://codeTrees:${GITEE_TOKEN}@gitee.com/codeTrees/wocao-hub.git"
           git push gitee main
           git push gitee "$GITHUB_REF_NAME" --force
 
-      - name: Verify Gitee release downloads
+      - name: 验证 Gitee Release 下载
         run: |
+          set -euo pipefail
           while read -r checksum name; do
             url="https://gitee.com/codeTrees/wocao-hub/releases/download/$GITHUB_REF_NAME/$name"
             curl -fsSL \

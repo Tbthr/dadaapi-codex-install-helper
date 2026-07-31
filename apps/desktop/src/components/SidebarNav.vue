@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PhArrowSquareOut, PhHouse, PhLifebuoy, PhPackage, PhTranslate } from "@phosphor-icons/vue";
+import { PhArrowSquareOut, PhHouse, PhPackage, PhTranslate } from "@phosphor-icons/vue";
 import brandLogo from "../assets/brand/dada-logo.svg";
 import { DADA_LINKS, openExternalLink } from "../services/external-links";
 import type { WorkspacePage } from "../types/ui";
@@ -15,7 +15,6 @@ const navigation: Array<{
   { id: "home", label: "首页", icon: PhHouse },
   { id: "locale", label: "配置中文", icon: PhTranslate },
   { id: "software", label: "安装软件", icon: PhPackage },
-  { id: "repair", label: "恢复与诊断", icon: PhLifebuoy },
 ];
 </script>
 

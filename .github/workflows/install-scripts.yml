@@ -1,4 +1,4 @@
-name: Verify install scripts
+name: 验证哒哒助手 v1.0 安装脚本
 
 on:
   workflow_dispatch:
@@ -29,17 +29,17 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - name: Download and verify the released installer
+      - name: 下载并校验 Windows 安装包
         shell: pwsh
         env:
-          WOCAO_HUB_INSTALL_DRY_RUN: "1"
+          DADA_ASSISTANT_INSTALL_DRY_RUN: "1"
         run: ./scripts/install.ps1
 
   macos:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - name: Download and verify the released DMG
+      - name: 下载并校验 macOS 安装包
         env:
-          WOCAO_HUB_INSTALL_DRY_RUN: "1"
+          DADA_ASSISTANT_INSTALL_DRY_RUN: "1"
         run: /bin/sh scripts/install.sh

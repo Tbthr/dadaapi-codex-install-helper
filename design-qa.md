@@ -12,7 +12,6 @@
   - `/tmp/dada-assistant-locale-final-1240x780.jpg`
   - `/tmp/dada-assistant-software-final-1240x780.jpg`
   - `/tmp/dada-assistant-cli-final-1240x780.jpg`
-  - `/tmp/dada-assistant-repair-final-1240x780.jpg`
 - CSS viewports: 1240 x 780 and 900 x 640 at device scale factor 1.
 - Implementation pixels match the corresponding CSS viewport dimensions.
 - State: fixed light theme; Tauri APIs unavailable in browser preview, so the captured app state intentionally exercises detection and loading-error fallbacks.
@@ -25,7 +24,7 @@ At 1240 x 780, the 210 px navigation rail, task header, mascot, quick actions, a
 
 ## Focused-region Comparison
 
-Separate focused crops were not required because the original-density full screenshots keep the logo, typography, icons, status labels, borders, and mascots readable. The additional locale, desktop software, CLI, and repair screenshots provide focused evidence for the denser operational areas that are not represented by the marketing source.
+Separate focused crops were not required because the original-density full screenshots keep the logo, typography, icons, status labels, borders, and mascots readable. The additional locale, desktop software, and CLI screenshots provide focused evidence for the denser operational areas that are not represented by the marketing source.
 
 ## Fidelity Surfaces
 
@@ -33,7 +32,7 @@ Separate focused crops were not required because the original-density full scree
 - Spacing and layout rhythm: full-width task sections, 8 px-or-less container radii, stable controls, light dividers, and compact cards create a consistent operational rhythm. No nested decorative cards, oversized hero typography, or layout jumps remain.
 - Colors and tokens: `#080D14`, `#0B8A83`, and `#12CFC3` map directly to the source brand. Surfaces remain white/light gray, with semantic error and status colors expressed through text, icons, and color together. No gradients or dark-theme tokens remain.
 - Image quality and asset fidelity: official SVG logo/favicon assets and supplied transparent Little D poses are used directly. Mascots preserve their aspect ratio and transparency without crop or halo artifacts. Product icons use their real supplied assets or the selected icon library; no emoji, CSS illustration, or approximate mascot was introduced.
-- Copy and content: navigation and home shortcuts consistently use the task-oriented names `配置中文`, `安装软件`, and `恢复与诊断`. User-facing fallbacks are Simplified Chinese and no implementation notes, roadmap copy, version label, or settings content appears in the product UI.
+- Copy and content: navigation and home shortcuts consistently use the task-oriented names `配置中文` and `安装软件`. User-facing fallbacks are Simplified Chinese; detected ChatGPT/Codex versions remain visible, while 哒哒助手 has no user-facing version field.
 - Accessibility and interaction: navigation and segmented controls are semantic buttons with visible selected/focus states and image alternative text. Status is not communicated by color alone. Primary navigation and the desktop/CLI segmented control were exercised in the in-app browser.
 
 ## Comparison History
@@ -41,15 +40,15 @@ Separate focused crops were not required because the original-density full scree
 ### Pass 1 - blocked
 
 - [P2] Raw runtime error leaked into user-facing status.
-  - Evidence: browser-only preview surfaced `Cannot read properties of undefined (reading 'invoke')` on home, software, and repair views when Tauri APIs were unavailable.
+  - Evidence: browser-only preview surfaced `Cannot read properties of undefined (reading 'invoke')` on home and software views when Tauri APIs were unavailable.
   - Impact: an English JavaScript implementation error replaced the intended Simplified Chinese operational message.
   - Fix: added a shared `isCommandError` guard that accepts only structured errors with string `code` and `message`; all other values now use the page-specific Chinese fallback.
 
 ### Pass 2 - passed
 
-- Post-fix evidence: the final home capture shows `无法检测 ChatGPT/Codex`, software shows `无法读取下载任务`, and repair shows `无法读取当前网络恢复状态。`.
+- Post-fix evidence: the final home capture shows `无法检测 ChatGPT/Codex`, and software shows `无法读取下载任务`.
 - Navigation labels were then aligned with the home shortcuts and all screenshots were recaptured.
-- Browser interactions tested: home, locale, software, CLI segment, repair, sidebar collapse, and page reload.
+- Browser interactions tested: home, locale, software, CLI segment, sidebar collapse, and page reload.
 - Browser console errors/warnings checked after reload and primary navigation: none observed.
 - External destinations checked on 2026-07-31: home, pricing, console, referral, top-up, and docs all returned HTTP 200 after redirects.
 - No actionable P0, P1, or P2 findings remain.

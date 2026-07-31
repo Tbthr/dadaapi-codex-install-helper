@@ -187,7 +187,6 @@ pub struct LocaleOverview {
 pub struct RepairOverview {
     pub app: Option<DesktopApp>,
     pub locale: LocaleStatus,
-    pub network_recovery: NetworkRecoveryStatus,
     pub activation_available: bool,
 }
 

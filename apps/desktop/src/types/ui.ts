@@ -1,1 +1,1 @@
-export type WorkspacePage = "home" | "locale" | "software" | "repair";
+export type WorkspacePage = "home" | "locale" | "software";

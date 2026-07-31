@@ -1,4 +1,4 @@
-name: Sync main to Gitee
+name: 同步哒哒助手 v1.0 代码至 Gitee
 
 on:
   push:

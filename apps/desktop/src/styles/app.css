@@ -935,64 +935,6 @@ a:focus-visible {
   color: var(--accent);
 }
 
-/* Repair */
-.list-panel {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-}
-
-.repair-list {
-  border-top: 3px solid var(--accent-bright);
-}
-
-.repair-row {
-  display: grid;
-  min-height: 84px;
-  padding: 13px 17px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-}
-
-.repair-row:last-child {
-  border-bottom: 0;
-}
-
-.list-icon {
-  width: 40px;
-  height: 40px;
-  border-color: #cbe5e1;
-  border-radius: var(--radius-md);
-  color: var(--accent-hover);
-  background: var(--accent-soft);
-}
-
-.list-copy {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}
-
-.list-copy strong {
-  overflow: hidden;
-  font-size: 14px;
-  font-weight: 670;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.list-copy span {
-  overflow: hidden;
-  color: var(--ink-muted);
-  font-size: 11px;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .spinning {
   animation: interface-spin 0.8s linear infinite;
 }

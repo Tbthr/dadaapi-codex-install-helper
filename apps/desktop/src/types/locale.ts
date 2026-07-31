@@ -27,7 +27,6 @@ export interface LocaleOverview {
 export interface RepairOverview {
   app: DesktopApp | null;
   locale: LocaleStatus;
-  networkRecovery: NetworkRecoveryStatus;
   activationAvailable: boolean;
 }
 

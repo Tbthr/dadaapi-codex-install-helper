@@ -7,7 +7,6 @@ import { isCommandError, type LocaleOverview } from "./types/locale";
 import { useActivationStore } from "./stores/activation";
 import HomeView from "./views/HomeView.vue";
 import LocaleSetupView from "./views/LocaleSetupView.vue";
-import RepairView from "./views/RepairView.vue";
 import SoftwareView from "./views/SoftwareView.vue";
 
 const activePage = ref<WorkspacePage>("home");
@@ -32,8 +31,6 @@ const activeView = computed(() => {
       return LocaleSetupView;
     case "software":
       return SoftwareView;
-    case "repair":
-      return RepairView;
     default:
       return HomeView;
   }

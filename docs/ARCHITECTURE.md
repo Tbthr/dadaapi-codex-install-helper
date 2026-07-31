@@ -9,7 +9,7 @@ Tauri Command Layer
     ↓
 Rust Application Services
     ↓
-Discovery | Platform | Proxy | Locale | Route Bundle | Downloader | Diagnostics
+Discovery | Platform | Proxy | Locale | Route Bundle | Downloader
                                              | CLI Tools
 
 GitHub Actions Route Publisher
@@ -121,6 +121,8 @@ WritingLocale → ReadingLocale → Configured | Failed
 - 完整协调器通过 `ChineseEffectVerifier` 注入应用内验证；生产 `RuntimeChineseEffectVerifier` 必须同时确认配置值和目标 App Renderer 的 `--lang=zh-CN` 运行参数，文件配置检查不能单独判定成功。
 - 激活 Tauri Command 始终保持稳定注册，但只有构建同时注入路由清单地址、验签公钥、解密 key 和 `keyId` 时才装载激活运行时并在界面展示“一键中文”；未配置构建保持只读检测能力，Command 返回稳定的不可用错误。
 - 激活进度由核心协调器的真实状态转换产生，经 Tauri 事件转发到前端；前端不得使用计时器伪造阶段或成功状态。
+- 中文设置界面固定展示五步：应用就绪、路由确认、处理旧恢复记录、中文设置验证、恢复原网络。中文验证成功后保留 `recovery.json` 和本地代理，最后一步调用网络恢复；不得走激活前清理逻辑或清空成功结果。
+- 最后一步恢复失败时保留恢复记录和本地代理并允许重试；成功后才关闭本地代理。启动发现旧恢复记录时仍阻止激活，等待用户在流程中手动恢复。
 - 首次修改前创建相邻备份；原文件不存在时记录缺失状态，以便恢复时删除由哒哒助手创建的文件。
 - 配置更新使用临时文件和替换写入，保留原文件权限，不覆盖无效 TOML 或 JSON。
 - Tauri Command 必须重新检测所选应用，不接受前端提供的任意可执行文件路径。
@@ -147,8 +149,6 @@ proxy-cache.json    上一次验证成功的代理配置
 route-bundles/      已签名且仍为密文的路由缓存
 recovery.json       未完成的网络恢复记录
 downloads.json      下载任务状态
-logs/app.log        脱敏日志
-diagnostics-exports/ 仅包含白名单摘要和二次脱敏日志的诊断包
 ```
 
 ## Public Route Artifacts
@@ -185,5 +185,5 @@ https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/routes.enc
 
 ### Desktop Distribution
 
-- 客户端不装载 Tauri Updater，也不在启动或设置界面发起在线版本检查。
-- macOS 与 Windows 安装包继续通过发布流水线独立构建、签名和分发，升级由用户获取新的正式安装包完成。
+- 客户端不装载 Tauri Updater，也不在启动或设置界面发起在线版本检查；桌面端不配置文件日志或导出诊断包。
+- macOS 与 Windows 安装包继续通过发布流水线独立构建、签名和分发。`v1.0.0` Release 仅包含安装包和 SHA-256 校验和，升级由用户获取新的正式安装包完成。
