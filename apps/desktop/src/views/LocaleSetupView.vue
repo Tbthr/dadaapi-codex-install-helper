@@ -2,13 +2,9 @@
 import { PhArrowRight, PhCheck, PhDownloadSimple, PhPlay, PhSpinnerGap } from "@phosphor-icons/vue";
 import { storeToRefs } from "pinia";
 import { computed } from "vue";
-import guideMascot from "../assets/brand/mascot/guide.png";
-import successMascot from "../assets/brand/mascot/success.png";
-import thinkingMascot from "../assets/brand/mascot/thinking.png";
 import BrandIcon from "../components/BrandIcon.vue";
 import { useActivationStore } from "../stores/activation";
 import type { LocaleOverview } from "../types/locale";
-import type { WorkspacePage } from "../types/ui";
 
 const props = defineProps<{
   overview: LocaleOverview | null;
@@ -17,7 +13,6 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  navigate: [page: WorkspacePage];
   refresh: [];
 }>();
 
@@ -48,7 +43,7 @@ const appStatusLabel = computed(() => {
 });
 
 const primaryLabel = computed(() => {
-  if (!appInstalled.value) return "去安装";
+  if (!appInstalled.value) return "请先安装";
   if (running.value) return "正在设置";
   if (recoveryRunning.value) return "正在恢复";
   if (result.value) {
@@ -60,7 +55,7 @@ const primaryLabel = computed(() => {
 });
 
 const primaryDisabled = computed(() => {
-  if (!appInstalled.value) return false;
+  if (!appInstalled.value) return true;
   if (running.value || recoveryRunning.value) return true;
   if (networkStatusState.value !== "ready") return true;
   if (result.value) return networkPending.value === false && !canActivate.value;
@@ -74,18 +69,6 @@ const staleRecoveryHandled = computed(
   () => networkPending.value === false || Boolean(result.value),
 );
 const networkRestored = computed(() => Boolean(result.value) && networkPending.value === false);
-
-const mascot = computed(() => {
-  if (running.value || recoveryRunning.value) return thinkingMascot;
-  if (result.value) return successMascot;
-  return guideMascot;
-});
-
-const mascotAlt = computed(() => {
-  if (running.value || recoveryRunning.value) return "Little D 正在思考";
-  if (result.value) return "Little D 展示完成状态";
-  return "Little D 指向下一步操作";
-});
 
 const actionMessage = computed(() => {
   if (!appInstalled.value) return "安装并打开 ChatGPT 后，哒哒助手会自动重新检测。";
@@ -101,7 +84,6 @@ const actionMessage = computed(() => {
 
 async function handlePrimaryAction(): Promise<void> {
   if (!app.value) {
-    emit("navigate", "software");
     return;
   }
   if (running.value || recoveryRunning.value) return;
@@ -120,120 +102,98 @@ async function handlePrimaryAction(): Promise<void> {
 </script>
 
 <template>
-  <div class="page locale-page">
-    <header class="page-header">
-      <span class="eyebrow">ChatGPT / Codex</span>
-      <h1>中文设置</h1>
-      <p>检测应用、选择可用节点，并确认中文界面真实生效。</p>
-    </header>
-
-    <section class="setup-workspace">
-      <div class="setup-main">
-        <div class="setup-app-row">
-          <span class="app-symbol brand-openai"><BrandIcon brand="openai" :size="28" /></span>
-          <div>
-            <strong>{{ app?.displayName ?? "ChatGPT" }}</strong>
-            <span v-if="app">版本 {{ app.version ?? "未知" }}</span>
-            <span v-else-if="loading">正在检测本机应用</span>
-            <span v-else-if="error">{{ error }}</span>
-            <span v-else>未检测到桌面应用</span>
-          </div>
-          <span :class="['status-pill', { success: appReady }]">{{ appStatusLabel }}</span>
+  <section class="locale-drawer-content">
+    <div class="setup-main">
+      <div class="setup-app-row">
+        <span class="app-symbol brand-openai"><BrandIcon brand="openai" :size="28" /></span>
+        <div>
+          <strong>{{ app?.displayName ?? "ChatGPT" }}</strong>
+          <span v-if="app">版本 {{ app.version ?? "未知" }}</span>
+          <span v-else-if="loading">正在检测本机应用</span>
+          <span v-else-if="error">{{ error }}</span>
+          <span v-else>未检测到桌面应用</span>
         </div>
-
-        <ol class="setup-steps">
-          <li :class="{ complete: appReady }">
-            <span class="step-index">
-              <PhCheck v-if="appReady" :size="14" weight="bold" />
-              <b v-else>1</b>
-            </span>
-            <div>
-              <strong>{{ appReady ? "应用已经就绪" : "打开桌面应用" }}</strong>
-              <span>{{
-                appReady ? "已找到正在运行的应用进程" : "需要先启动 ChatGPT 或 Codex"
-              }}</span>
-            </div>
-          </li>
-          <li :class="{ complete: routeConfirmed }">
-            <span class="step-index">
-              <PhCheck v-if="routeConfirmed" :size="14" weight="bold" />
-              <b v-else>2</b>
-            </span>
-            <div>
-              <strong>路由确认</strong>
-              <span>{{
-                routeConfirmed ? "配置可用，执行时会再次验签" : "正在确认当前构建配置"
-              }}</span>
-            </div>
-          </li>
-          <li :class="{ complete: staleRecoveryHandled }">
-            <span class="step-index">
-              <PhCheck v-if="staleRecoveryHandled" :size="14" weight="bold" />
-              <b v-else>3</b>
-            </span>
-            <div>
-              <strong>处理旧恢复记录</strong>
-              <span>{{
-                staleRecoveryHandled ? "当前没有阻断设置的遗留代理状态" : "检测到上次遗留的代理状态"
-              }}</span>
-            </div>
-          </li>
-          <li :class="{ complete: Boolean(result) }">
-            <span class="step-index">
-              <PhCheck v-if="result" :size="14" weight="bold" />
-              <b v-else>4</b>
-            </span>
-            <div>
-              <strong>{{ result ? "中文已经生效" : "中文设置验证" }}</strong>
-              <span>{{ result ? "应用已使用 zh-CN 启动" : "设置完成后验证应用进程语言" }}</span>
-            </div>
-          </li>
-          <li :class="{ complete: networkRestored }">
-            <span class="step-index">
-              <PhCheck v-if="networkRestored" :size="14" weight="bold" />
-              <b v-else>5</b>
-            </span>
-            <div>
-              <strong>{{ networkRestored ? "网络已恢复" : "恢复原网络" }}</strong>
-              <span>{{
-                networkRestored
-                  ? "已恢复原网络配置并关闭临时代理"
-                  : result
-                    ? "中文验证成功后，请手动恢复原网络"
-                    : "完成中文设置后可恢复原网络"
-              }}</span>
-            </div>
-          </li>
-        </ol>
-
-        <div :class="['setup-action-bar', { error: Boolean(activationError || recoveryError) }]">
-          <p>{{ actionMessage }}</p>
-          <button
-            class="primary-button large"
-            type="button"
-            :disabled="primaryDisabled"
-            @click="handlePrimaryAction"
-          >
-            <PhSpinnerGap v-if="running || recoveryRunning" class="spinning" :size="17" />
-            <PhDownloadSimple v-else-if="!appInstalled" :size="17" />
-            <PhPlay v-else :size="17" weight="fill" />
-            {{ primaryLabel }}
-            <PhArrowRight v-if="!running && !recoveryRunning" :size="16" />
-          </button>
-        </div>
+        <span :class="['status-pill', { success: appReady }]">{{ appStatusLabel }}</span>
       </div>
 
-      <aside class="setup-guide" aria-live="polite">
-        <img :src="mascot" :alt="mascotAlt" />
-        <strong>{{ result ? "设置完成" : running ? "正在处理" : "准备就绪后开始" }}</strong>
-        <span>{{
-          result
-            ? networkRestored
-              ? "中文已生效，网络已恢复。"
-              : "中文已生效，请完成最后一步恢复原网络。"
-            : "整个过程会显示真实进度与结果。"
-        }}</span>
-      </aside>
-    </section>
-  </div>
+      <ol class="setup-steps">
+        <li :class="{ complete: appReady }">
+          <span class="step-index">
+            <PhCheck v-if="appReady" :size="14" weight="bold" />
+            <b v-else>1</b>
+          </span>
+          <div>
+            <strong>{{ appReady ? "应用已经就绪" : "打开桌面应用" }}</strong>
+            <span>{{ appReady ? "已找到正在运行的应用进程" : "需要先启动 ChatGPT 或 Codex" }}</span>
+          </div>
+        </li>
+        <li :class="{ complete: routeConfirmed }">
+          <span class="step-index">
+            <PhCheck v-if="routeConfirmed" :size="14" weight="bold" />
+            <b v-else>2</b>
+          </span>
+          <div>
+            <strong>路由确认</strong>
+            <span>{{
+              routeConfirmed ? "配置可用，执行时会再次验签" : "正在确认当前构建配置"
+            }}</span>
+          </div>
+        </li>
+        <li :class="{ complete: staleRecoveryHandled }">
+          <span class="step-index">
+            <PhCheck v-if="staleRecoveryHandled" :size="14" weight="bold" />
+            <b v-else>3</b>
+          </span>
+          <div>
+            <strong>处理旧恢复记录</strong>
+            <span>{{
+              staleRecoveryHandled ? "当前没有阻断设置的遗留代理状态" : "检测到上次遗留的代理状态"
+            }}</span>
+          </div>
+        </li>
+        <li :class="{ complete: Boolean(result) }">
+          <span class="step-index">
+            <PhCheck v-if="result" :size="14" weight="bold" />
+            <b v-else>4</b>
+          </span>
+          <div>
+            <strong>{{ result ? "中文已经生效" : "中文设置验证" }}</strong>
+            <span>{{ result ? "应用已使用 zh-CN 启动" : "设置完成后验证应用进程语言" }}</span>
+          </div>
+        </li>
+        <li :class="{ complete: networkRestored }">
+          <span class="step-index">
+            <PhCheck v-if="networkRestored" :size="14" weight="bold" />
+            <b v-else>5</b>
+          </span>
+          <div>
+            <strong>{{ networkRestored ? "网络已恢复" : "恢复原网络" }}</strong>
+            <span>{{
+              networkRestored
+                ? "已恢复原网络配置并关闭临时代理"
+                : result
+                  ? "中文验证成功后，请手动恢复原网络"
+                  : "完成中文设置后可恢复原网络"
+            }}</span>
+          </div>
+        </li>
+      </ol>
+
+      <div :class="['setup-action-bar', { error: Boolean(activationError || recoveryError) }]">
+        <p>{{ actionMessage }}</p>
+        <button
+          class="primary-button large"
+          type="button"
+          :disabled="primaryDisabled"
+          @click="handlePrimaryAction"
+        >
+          <PhSpinnerGap v-if="running || recoveryRunning" class="spinning" :size="17" />
+          <PhDownloadSimple v-else-if="!appInstalled" :size="17" />
+          <PhPlay v-else :size="17" weight="fill" />
+          {{ primaryLabel }}
+          <PhArrowRight v-if="!running && !recoveryRunning" :size="16" />
+        </button>
+      </div>
+    </div>
+  </section>
 </template>

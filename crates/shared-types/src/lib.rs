@@ -73,6 +73,7 @@ pub enum InstalledSoftwareId {
 pub struct SoftwareInstallationStatus {
     pub id: InstalledSoftwareId,
     pub installed: bool,
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -296,4 +297,35 @@ pub struct HealthResponse {
     pub ok: bool,
     pub service: String,
     pub version: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InstalledSoftwareId, SoftwareInstallationStatus};
+
+    #[test]
+    fn serializes_software_version_for_the_frontend() {
+        let status = SoftwareInstallationStatus {
+            id: InstalledSoftwareId::ChatGpt,
+            installed: true,
+            version: Some("1.2.3".to_owned()),
+        };
+
+        let value = serde_json::to_value(status).expect("serialize software status");
+        assert_eq!(value["id"], "chatGpt");
+        assert_eq!(value["installed"], true);
+        assert_eq!(value["version"], "1.2.3");
+    }
+
+    #[test]
+    fn serializes_missing_software_version_as_null() {
+        let status = SoftwareInstallationStatus {
+            id: InstalledSoftwareId::ClaudeDesktop,
+            installed: false,
+            version: None,
+        };
+
+        let value = serde_json::to_value(status).expect("serialize software status");
+        assert!(value["version"].is_null());
+    }
 }

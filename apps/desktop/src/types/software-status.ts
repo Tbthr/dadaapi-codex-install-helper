@@ -4,4 +4,5 @@ export type InstalledSoftwareId =
 export interface SoftwareInstallationStatus {
   id: InstalledSoftwareId;
   installed: boolean;
+  version: string | null;
 }

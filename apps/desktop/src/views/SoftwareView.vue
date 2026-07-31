@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { PhCheck, PhDownloadSimple, PhSpinnerGap } from "@phosphor-icons/vue";
+import { PhCheck, PhDownloadSimple, PhSpinnerGap, PhTranslate } from "@phosphor-icons/vue";
 import { onMounted, onUnmounted, ref } from "vue";
+import { storeToRefs } from "pinia";
 import BrandIcon from "../components/BrandIcon.vue";
+import { useActivationStore } from "../stores/activation";
 import { getCliToolsOverview, installCliTool } from "../services/cli-tools";
 import {
   DOWNLOAD_TASK_UPDATED_EVENT,
@@ -23,9 +25,8 @@ import type {
   SoftwareProductSummary,
 } from "../types/download";
 import { isCommandError } from "../types/locale";
-import type { InstalledSoftwareId } from "../types/software-status";
+import type { InstalledSoftwareId, SoftwareInstallationStatus } from "../types/software-status";
 
-type ToolTab = "desktop" | "cli";
 type Brand = "openai" | "claude" | "claudeCode" | "ccSwitch" | "node" | "vscode";
 
 interface DesktopTool {
@@ -33,12 +34,15 @@ interface DesktopTool {
   id: InstalledSoftwareId;
   productId: SoftwareProductId;
   publisher: string;
-  note: string;
   brand: Brand;
 }
 
-const activeTab = ref<ToolTab>("desktop");
-const installationStatuses = ref<Partial<Record<InstalledSoftwareId, boolean>>>({});
+const emit = defineEmits<{ openLocale: [trigger: globalThis.HTMLElement] }>();
+const activation = useActivationStore();
+const { networkPending, running, recoveryRunning } = storeToRefs(activation);
+const installationStatuses = ref<Partial<Record<InstalledSoftwareId, SoftwareInstallationStatus>>>(
+  {},
+);
 const cliOverview = ref<CliToolsOverview | null>(null);
 const catalog = ref<DownloadCatalog | null>(null);
 const tasks = ref<DownloadTaskSnapshot[]>([]);
@@ -49,13 +53,18 @@ const cliErrors = ref<Partial<Record<CliToolId, string>>>({});
 const pageError = ref("");
 let stopDownloadListener: UnlistenFn | null = null;
 
+function openLocale(event: globalThis.MouseEvent): void {
+  if (event.currentTarget instanceof globalThis.HTMLElement) {
+    emit("openLocale", event.currentTarget);
+  }
+}
+
 const desktopTools: DesktopTool[] = [
   {
     name: "ChatGPT",
     id: "chatGpt",
     productId: "chatGptDesktop",
     publisher: "OpenAI",
-    note: "",
     brand: "openai",
   },
   {
@@ -63,7 +72,6 @@ const desktopTools: DesktopTool[] = [
     id: "claudeDesktop",
     productId: "claudeDesktop",
     publisher: "Anthropic",
-    note: "需要本机自备可访问 Claude 服务的外网环境",
     brand: "claude",
   },
   {
@@ -71,7 +79,6 @@ const desktopTools: DesktopTool[] = [
     id: "ccSwitch",
     productId: "ccSwitch",
     publisher: "CC Switch",
-    note: "",
     brand: "ccSwitch",
   },
   {
@@ -79,7 +86,6 @@ const desktopTools: DesktopTool[] = [
     id: "nodeJsLts",
     productId: "nodeJsLts",
     publisher: "OpenJS Foundation",
-    note: "",
     brand: "node",
   },
   {
@@ -87,18 +93,12 @@ const desktopTools: DesktopTool[] = [
     id: "visualStudioCode",
     productId: "visualStudioCode",
     publisher: "Microsoft",
-    note: "",
     brand: "vscode",
   },
 ];
 
 const cliTools = [
-  {
-    id: "codexCli" as const,
-    name: "Codex CLI",
-    publisher: "OpenAI",
-    brand: "openai" as const,
-  },
+  { id: "codexCli" as const, name: "Codex CLI", publisher: "OpenAI", brand: "openai" as const },
   {
     id: "claudeCodeCli" as const,
     name: "Claude Code CLI",
@@ -133,13 +133,8 @@ async function refreshPage(): Promise<void> {
     getDownloadCatalog(),
     listDownloadTasks(),
   ]);
-
-  if (software.status === "fulfilled") {
-    applyInstallationStatuses(software.value);
-  }
-  if (cli.status === "fulfilled") {
-    cliOverview.value = cli.value;
-  }
+  if (software.status === "fulfilled") applyInstallationStatuses(software.value);
+  if (cli.status === "fulfilled") cliOverview.value = cli.value;
   if (nextCatalog.status === "fulfilled") {
     catalog.value = nextCatalog.value;
   } else {
@@ -167,16 +162,16 @@ async function refreshInstallationStatuses(): Promise<void> {
   }
 }
 
-function applyInstallationStatuses(
-  statuses: Awaited<ReturnType<typeof getSoftwareInstallationStatuses>>,
-): void {
-  installationStatuses.value = Object.fromEntries(
-    statuses.map((item) => [item.id, item.installed]),
-  );
+function applyInstallationStatuses(statuses: SoftwareInstallationStatus[]): void {
+  installationStatuses.value = Object.fromEntries(statuses.map((item) => [item.id, item]));
+}
+
+function statusFor(id: InstalledSoftwareId): SoftwareInstallationStatus | undefined {
+  return installationStatuses.value[id];
 }
 
 function installedState(id: InstalledSoftwareId): boolean | undefined {
-  return installationStatuses.value[id];
+  return statusFor(id)?.installed;
 }
 
 function productFor(productId: SoftwareProductId): SoftwareProductSummary | null {
@@ -189,13 +184,11 @@ function artifactFor(productId: SoftwareProductId): SoftwareArtifactSummary | nu
 
 function taskFor(productId: SoftwareProductId): DownloadTaskSnapshot | null {
   const artifact = artifactFor(productId);
-  if (!artifact) {
-    return null;
-  }
-  return (
-    tasks.value.find((task) => task.productId === productId && task.artifactId === artifact.id) ??
-    null
-  );
+  return artifact
+    ? (tasks.value.find(
+        (task) => task.productId === productId && task.artifactId === artifact.id,
+      ) ?? null)
+    : null;
 }
 
 function updateTask(next: DownloadTaskSnapshot): void {
@@ -206,23 +199,15 @@ function updateTask(next: DownloadTaskSnapshot): void {
 }
 
 function progressFor(task: DownloadTaskSnapshot | null): number {
-  if (!task?.totalBytes || task.totalBytes <= 0) {
-    return 0;
-  }
+  if (!task?.totalBytes || task.totalBytes <= 0) return 0;
   return Math.min(100, Math.round((task.downloadedBytes / task.totalBytes) * 100));
 }
 
 function desktopStatusLabel(tool: DesktopTool): string {
   const task = taskFor(tool.productId);
-  if (task?.state === "downloading") {
-    return `${progressFor(task)}%`;
-  }
-  if (task?.state === "resolving" || task?.state === "queued") {
-    return "准备中";
-  }
-  if (task?.state === "failed") {
-    return "下载失败";
-  }
+  if (task?.state === "downloading") return `${progressFor(task)}%`;
+  if (task?.state === "resolving" || task?.state === "queued") return "准备中";
+  if (task?.state === "failed") return "下载失败";
   if (task?.state === "ready" || task?.state === "launched") {
     return installedState(tool.id) ? "已安装" : "已下载";
   }
@@ -230,13 +215,8 @@ function desktopStatusLabel(tool: DesktopTool): string {
   return installed === undefined ? "检测中" : installed ? "已安装" : "可安装";
 }
 
-function desktopStateInstalled(tool: DesktopTool): boolean {
-  return Boolean(installedState(tool.id));
-}
-
 function desktopActionLabel(tool: DesktopTool): string {
-  const task = taskFor(tool.productId);
-  switch (task?.state) {
+  switch (taskFor(tool.productId)?.state) {
     case "queued":
     case "resolving":
     case "downloading":
@@ -256,25 +236,15 @@ function desktopActionLabel(tool: DesktopTool): string {
 
 function desktopMessage(tool: DesktopTool): string {
   const error = downloadErrors.value[tool.productId];
-  if (error) {
-    return error;
-  }
+  if (error) return error;
   const task = taskFor(tool.productId);
-  if (task?.state === "failed") {
-    return task.error?.message ?? "下载失败";
-  }
+  if (task?.state === "failed") return task.error?.message ?? "下载失败";
   if (task?.state === "downloading") {
-    return `${formatBytes(task.downloadedBytes)}${
-      task.totalBytes ? ` / ${formatBytes(task.totalBytes)}` : ""
-    }`;
+    return `${formatBytes(task.downloadedBytes)}${task.totalBytes ? ` / ${formatBytes(task.totalBytes)}` : ""}`;
   }
-  if (task?.state === "ready") {
-    return "安装包已下载完成";
-  }
-  if (task?.state === "launched") {
-    return "安装包已打开，安装完成后返回此页面会自动重新检测";
-  }
-  return tool.note;
+  if (task?.state === "ready") return "安装包已下载完成";
+  if (task?.state === "launched") return "安装包已打开，安装完成后返回此页面会自动重新检测";
+  return "";
 }
 
 function desktopActionBusy(tool: DesktopTool): boolean {
@@ -295,25 +265,21 @@ async function handleDesktop(tool: DesktopTool): Promise<void> {
     }
     return;
   }
-
   downloadBusy.value = { ...downloadBusy.value, [tool.productId]: true };
   downloadErrors.value = { ...downloadErrors.value, [tool.productId]: "" };
   try {
     tasks.value = await listDownloadTasks();
     const current = taskFor(tool.productId);
     let next: DownloadTaskSnapshot;
-    if (!current) {
-      next = await startDownload(product.id, artifact.id);
-    } else if (["queued", "resolving", "downloading"].includes(current.state)) {
+    if (!current) next = await startDownload(product.id, artifact.id);
+    else if (["queued", "resolving", "downloading"].includes(current.state))
       next = await cancelDownload(current.id);
-    } else if (["cancelled", "failed"].includes(current.state)) {
+    else if (["cancelled", "failed"].includes(current.state))
       next = await retryDownload(current.id);
-    } else if (["ready", "launched"].includes(current.state)) {
+    else if (["ready", "launched"].includes(current.state)) {
       next = await launchInstaller(current.id);
       globalThis.setTimeout(() => void refreshInstallationStatuses(), 1500);
-    } else {
-      return;
-    }
+    } else return;
     updateTask(next);
   } catch (error) {
     try {
@@ -335,28 +301,18 @@ function cliStatus(id: CliToolId): CliToolStatus | undefined {
 }
 
 function cliStatusLabel(id: CliToolId): string {
-  if (cliErrors.value[id]) {
-    return "安装失败";
-  }
+  if (cliErrors.value[id]) return "安装失败";
   const status = cliStatus(id);
-  if (status?.installed) {
-    return "已安装";
-  }
-  if (!cliOverview.value) {
-    return "检测中";
-  }
+  if (status?.installed) return "已安装";
+  if (!cliOverview.value) return "检测中";
   return "可安装";
 }
 
 function cliMessage(id: CliToolId, publisher: string): string {
   const error = cliErrors.value[id];
-  if (error) {
-    return error;
-  }
+  if (error) return error;
   const status = cliStatus(id);
-  if (status?.version) {
-    return `${publisher} · ${status.version}`;
-  }
+  if (status?.version) return `${publisher} · 版本 ${status.version}`;
   if (cliOverview.value && (!cliOverview.value.nodeVersion || !cliOverview.value.npmVersion)) {
     return "需要先安装 Node.js LTS";
   }
@@ -364,18 +320,12 @@ function cliMessage(id: CliToolId, publisher: string): string {
 }
 
 async function handleCli(toolId: CliToolId): Promise<void> {
-  if (cliBusy.value[toolId]) {
-    return;
-  }
+  if (cliBusy.value[toolId]) return;
   if (!cliOverview.value?.nodeVersion || !cliOverview.value?.npmVersion) {
     const nodeTool = desktopTools.find((tool) => tool.productId === "nodeJsLts");
-    if (nodeTool) {
-      activeTab.value = "desktop";
-      await handleDesktop(nodeTool);
-    }
+    if (nodeTool) await handleDesktop(nodeTool);
     return;
   }
-
   cliBusy.value = { ...cliBusy.value, [toolId]: true };
   cliErrors.value = { ...cliErrors.value, [toolId]: "" };
   try {
@@ -387,69 +337,56 @@ async function handleCli(toolId: CliToolId): Promise<void> {
       };
     }
   } catch (error) {
-    cliErrors.value = {
-      ...cliErrors.value,
-      [toolId]: errorMessage(error, "CLI 安装失败"),
-    };
+    cliErrors.value = { ...cliErrors.value, [toolId]: errorMessage(error, "CLI 安装失败") };
   } finally {
     cliBusy.value = { ...cliBusy.value, [toolId]: false };
   }
 }
 
 function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) {
-    return `${Math.max(0, Math.round(bytes / 1024))} KB`;
-  }
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return bytes < 1024 * 1024
+    ? `${Math.max(0, Math.round(bytes / 1024))} KB`
+    : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (isCommandError(error)) {
-    return error.message;
-  }
-  return fallback;
+  return isCommandError(error) ? error.message : fallback;
 }
 </script>
 
 <template>
-  <div class="page software-page">
-    <header class="page-header with-tabs">
+  <section class="software-page" aria-labelledby="software-title">
+    <header class="software-heading">
       <div>
         <span class="eyebrow">官方来源</span>
-        <h1>软件工具</h1>
+        <h1 id="software-title">软件工具</h1>
         <p>通过本地网络从对应软件的官方地址下载。</p>
       </div>
-      <div class="segmented-control" aria-label="工具类型">
-        <button
-          type="button"
-          :class="{ active: activeTab === 'desktop' }"
-          @click="activeTab = 'desktop'"
-        >
-          桌面应用
-        </button>
-        <button type="button" :class="{ active: activeTab === 'cli' }" @click="activeTab = 'cli'">
-          命令行工具
-        </button>
-      </div>
+      <span v-if="pageError" class="software-page-error">{{ pageError }}</span>
     </header>
 
-    <p v-if="pageError" class="software-page-error">{{ pageError }}</p>
-
-    <section class="software-grid">
-      <template v-if="activeTab === 'desktop'">
+    <section class="software-group" aria-labelledby="desktop-tools-title">
+      <div class="section-heading">
+        <h2 id="desktop-tools-title">桌面应用</h2>
+        <span>5 个软件</span>
+      </div>
+      <div class="software-grid">
         <article v-for="tool in desktopTools" :key="tool.name" class="software-card">
           <div class="software-card-top">
             <span :class="['software-logo', `brand-${tool.brand}`]">
               <BrandIcon :brand="tool.brand" :size="30" />
             </span>
-            <span :class="['software-state', { installed: desktopStateInstalled(tool) }]">
-              <PhCheck v-if="desktopStateInstalled(tool)" :size="13" weight="bold" />
+            <span :class="['software-state', { installed: installedState(tool.id) }]">
+              <PhCheck v-if="installedState(tool.id)" :size="13" weight="bold" />
               {{ desktopStatusLabel(tool) }}
             </span>
           </div>
           <div class="software-copy">
             <strong>{{ tool.name }}</strong>
             <span>{{ tool.publisher }}</span>
+            <span v-if="statusFor(tool.id)?.installed">
+              版本 {{ statusFor(tool.id)?.version ?? "未知" }}
+            </span>
             <small
               v-if="desktopMessage(tool)"
               :class="{
@@ -466,20 +403,39 @@ function errorMessage(error: unknown, fallback: string): string {
               <i :style="{ width: `${progressFor(taskFor(tool.productId))}%` }" />
             </div>
           </div>
-          <button
-            type="button"
-            class="software-action"
-            :disabled="desktopActionBusy(tool)"
-            @click="handleDesktop(tool)"
-          >
-            <PhSpinnerGap v-if="desktopActionBusy(tool)" class="spinning" :size="16" />
-            <PhDownloadSimple v-else :size="16" />
-            {{ desktopActionLabel(tool) }}
-          </button>
+          <div class="software-actions">
+            <button
+              type="button"
+              class="software-action"
+              :disabled="desktopActionBusy(tool)"
+              @click="handleDesktop(tool)"
+            >
+              <PhSpinnerGap v-if="desktopActionBusy(tool)" class="spinning" :size="16" />
+              <PhDownloadSimple v-else :size="16" />
+              {{ desktopActionLabel(tool) }}
+            </button>
+            <button
+              v-if="tool.id === 'chatGpt'"
+              type="button"
+              class="software-action locale-action"
+              :disabled="!installedState(tool.id)"
+              @click="openLocale"
+            >
+              <PhSpinnerGap v-if="running || recoveryRunning" class="spinning" :size="16" />
+              <PhTranslate v-else :size="16" />
+              {{ networkPending ? "恢复原网络" : running ? "查看进度" : "配置中文" }}
+            </button>
+          </div>
         </article>
-      </template>
+      </div>
+    </section>
 
-      <template v-else>
+    <section class="software-group" aria-labelledby="cli-tools-title">
+      <div class="section-heading">
+        <h2 id="cli-tools-title">命令行工具</h2>
+        <span>需要 Node.js LTS</span>
+      </div>
+      <div class="software-grid cli-grid">
         <article v-for="tool in cliTools" :key="tool.name" class="software-card cli-card">
           <div class="software-card-top">
             <span :class="['software-logo', `brand-${tool.brand}`]">
@@ -501,10 +457,16 @@ function errorMessage(error: unknown, fallback: string): string {
             @click="handleCli(tool.id)"
           >
             <PhSpinnerGap v-if="cliBusy[tool.id]" class="spinning" :size="16" />
-            {{ cliStatus(tool.id)?.installed ? "重新安装" : "安装" }}
+            {{
+              cliStatus(tool.id)?.installed
+                ? "重新安装"
+                : cliOverview?.nodeVersion && cliOverview?.npmVersion
+                  ? "安装"
+                  : "安装 Node"
+            }}
           </button>
         </article>
-      </template>
+      </div>
     </section>
-  </div>
+  </section>
 </template>

@@ -7,6 +7,7 @@ pub async fn get_software_installation_statuses() -> Vec<SoftwareInstallationSta
     statuses.push(SoftwareInstallationStatus {
         id: InstalledSoftwareId::NodeJsLts,
         installed: cli_overview.node_version.is_some() && cli_overview.npm_version.is_some(),
+        version: cli_overview.node_version,
     });
     statuses
 }

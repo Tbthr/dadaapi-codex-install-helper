@@ -45,53 +45,133 @@ pub fn detect_installed_apps() -> Result<Vec<DesktopApp>, DiscoveryError> {
 }
 
 pub fn detect_supported_software() -> Vec<SoftwareInstallationStatus> {
-    let chat_gpt_installed = detect_installed_apps().is_ok_and(|apps| !apps.is_empty());
+    let chat_gpt = detect_installed_apps()
+        .ok()
+        .and_then(|apps| apps.into_iter().next());
     vec![
         SoftwareInstallationStatus {
             id: InstalledSoftwareId::ChatGpt,
-            installed: chat_gpt_installed,
+            installed: chat_gpt.is_some(),
+            version: chat_gpt.and_then(|app| app.version),
         },
-        SoftwareInstallationStatus {
-            id: InstalledSoftwareId::ClaudeDesktop,
-            installed: known_software_installed(InstalledSoftwareId::ClaudeDesktop),
-        },
-        SoftwareInstallationStatus {
-            id: InstalledSoftwareId::CcSwitch,
-            installed: known_software_installed(InstalledSoftwareId::CcSwitch),
-        },
-        SoftwareInstallationStatus {
-            id: InstalledSoftwareId::VisualStudioCode,
-            installed: known_software_installed(InstalledSoftwareId::VisualStudioCode),
-        },
+        known_software_status(InstalledSoftwareId::ClaudeDesktop),
+        known_software_status(InstalledSoftwareId::CcSwitch),
+        known_software_status(InstalledSoftwareId::VisualStudioCode),
     ]
 }
 
 #[cfg(target_os = "macos")]
-fn known_software_installed(id: InstalledSoftwareId) -> bool {
+fn known_software_status(id: InstalledSoftwareId) -> SoftwareInstallationStatus {
     let names: &[&str] = match id {
         InstalledSoftwareId::ClaudeDesktop => &["Claude.app"],
         InstalledSoftwareId::CcSwitch => &["CC Switch.app", "CC-Switch.app"],
         InstalledSoftwareId::VisualStudioCode => &["Visual Studio Code.app"],
         _ => &[],
     };
-    names.iter().any(|name| {
-        Path::new("/Applications").join(name).is_dir()
-            || dirs::home_dir().is_some_and(|home| home.join("Applications").join(name).is_dir())
-    })
+    let bundle = names.iter().find_map(|name| {
+        let system = Path::new("/Applications").join(name);
+        if system.is_dir() {
+            return Some(system);
+        }
+        dirs::home_dir()
+            .map(|home| home.join("Applications").join(name))
+            .filter(|path| path.is_dir())
+    });
+    SoftwareInstallationStatus {
+        id,
+        installed: bundle.is_some(),
+        version: bundle.as_deref().and_then(macos_bundle_version),
+    }
 }
 
 #[cfg(target_os = "windows")]
-fn known_software_installed(id: InstalledSoftwareId) -> bool {
+fn known_software_status(id: InstalledSoftwareId) -> SoftwareInstallationStatus {
     let relative_paths = windows_known_relative_paths(id);
-    ["LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"]
+    let executable = ["LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"]
         .into_iter()
         .filter_map(std::env::var_os)
         .map(std::path::PathBuf::from)
-        .any(|base| {
+        .find_map(|base| {
             relative_paths
                 .iter()
-                .any(|relative| base.join(relative).is_file())
-        })
+                .map(|relative| base.join(relative))
+                .find(|path| path.is_file())
+        });
+    SoftwareInstallationStatus {
+        id,
+        installed: executable.is_some(),
+        version: executable.as_deref().and_then(windows_file_version),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_bundle_version(bundle: &Path) -> Option<String> {
+    let dictionary = plist::Value::from_file(bundle.join("Contents/Info.plist"))
+        .ok()?
+        .into_dictionary()?;
+    select_version(
+        dictionary
+            .get("CFBundleShortVersionString")
+            .and_then(plist::Value::as_string),
+        dictionary
+            .get("CFBundleVersion")
+            .and_then(plist::Value::as_string),
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn windows_file_version(path: &Path) -> Option<String> {
+    let script = r#"
+$item = Get-Item -LiteralPath $env:DADA_SOFTWARE_PATH -ErrorAction Stop
+[pscustomobject]@{
+  ProductVersion = $item.VersionInfo.ProductVersion
+  FileVersion = $item.VersionInfo.FileVersion
+} | ConvertTo-Json -Compress
+"#;
+    let mut command = hidden_windows_command("powershell.exe");
+    command
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .env("DADA_SOFTWARE_PATH", path);
+    let output = command.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    select_windows_file_version(&output.stdout)
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn select_windows_file_version(output: &[u8]) -> Option<String> {
+    let versions = serde_json::from_slice::<WindowsFileVersions>(output).ok()?;
+    select_version(
+        versions.product_version.as_deref(),
+        versions.file_version.as_deref(),
+    )
+}
+
+fn select_version(primary: Option<&str>, fallback: Option<&str>) -> Option<String> {
+    primary
+        .and_then(non_empty_version)
+        .or_else(|| fallback.and_then(non_empty_version))
+}
+
+fn non_empty_version(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
+#[cfg(any(target_os = "windows", test))]
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct WindowsFileVersions {
+    product_version: Option<String>,
+    file_version: Option<String>,
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -116,8 +196,12 @@ fn windows_known_relative_paths(id: InstalledSoftwareId) -> &'static [&'static s
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn known_software_installed(_id: InstalledSoftwareId) -> bool {
-    false
+fn known_software_status(id: InstalledSoftwareId) -> SoftwareInstallationStatus {
+    SoftwareInstallationStatus {
+        id,
+        installed: false,
+        version: None,
+    }
 }
 
 fn product_from_name(value: &str) -> DesktopProduct {
@@ -612,6 +696,75 @@ mod tests {
         let paths = windows_known_relative_paths(InstalledSoftwareId::CcSwitch);
 
         assert!(paths.contains(&r"Programs\CC Switch\cc-switch.exe"));
+    }
+
+    #[test]
+    fn prefers_primary_version_and_ignores_blank_values() {
+        assert_eq!(
+            select_version(Some(" 1.2.3 "), Some("4.5.6")).as_deref(),
+            Some("1.2.3")
+        );
+        assert_eq!(
+            select_version(Some("  "), Some(" 4.5.6 ")).as_deref(),
+            Some("4.5.6")
+        );
+        assert_eq!(select_version(Some(""), None), None);
+    }
+
+    #[test]
+    fn reads_windows_file_version_with_fallback() {
+        assert_eq!(
+            select_windows_file_version(br#"{"ProductVersion":"1.2.3","FileVersion":"4.5.6"}"#,)
+                .as_deref(),
+            Some("1.2.3")
+        );
+        assert_eq!(
+            select_windows_file_version(br#"{"ProductVersion":" ","FileVersion":"4.5.6"}"#)
+                .as_deref(),
+            Some("4.5.6")
+        );
+        assert_eq!(
+            select_windows_file_version(br#"{"ProductVersion":null,"FileVersion":null}"#),
+            None
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn reads_macos_bundle_version_with_fallback() {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let app = temp.path().join("Versioned.app");
+        let contents = app.join("Contents");
+        std::fs::create_dir_all(&contents).expect("bundle directories");
+
+        let mut info = plist::Dictionary::new();
+        info.insert(
+            "CFBundleVersion".to_owned(),
+            plist::Value::String("42".to_owned()),
+        );
+        plist::Value::Dictionary(info)
+            .to_file_xml(contents.join("Info.plist"))
+            .expect("write plist");
+        assert_eq!(macos_bundle_version(&app).as_deref(), Some("42"));
+
+        let mut info = plist::Dictionary::new();
+        info.insert(
+            "CFBundleShortVersionString".to_owned(),
+            plist::Value::String("1.2.3".to_owned()),
+        );
+        info.insert(
+            "CFBundleVersion".to_owned(),
+            plist::Value::String("42".to_owned()),
+        );
+        plist::Value::Dictionary(info)
+            .to_file_xml(contents.join("Info.plist"))
+            .expect("write plist");
+        assert_eq!(macos_bundle_version(&app).as_deref(), Some("1.2.3"));
+
+        plist::Value::Dictionary(plist::Dictionary::new())
+            .to_file_xml(contents.join("Info.plist"))
+            .expect("write empty plist");
+        assert_eq!(macos_bundle_version(&app), None);
     }
 
     #[cfg(target_os = "macos")]

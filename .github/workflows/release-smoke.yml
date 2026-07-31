@@ -12,6 +12,52 @@ permissions:
   contents: write
 
 jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - name: Download released macOS package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\")")
+          test -n "$release"
+          asset_id=$(printf '%s' "$release" | jq -r \
+            '[.assets[] | select(.name | endswith("_universal.dmg"))] | if length == 1 then .[0].id else empty end')
+          test -n "$asset_id"
+          gh api "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+            -H "Accept: application/octet-stream" > installer.dmg
+
+      - name: Verify, install, and launch released macOS application
+        shell: bash
+        run: |
+          set -euo pipefail
+          mount_point="$RUNNER_TEMP/dada-assistant-release-mount"
+          installed_app="$RUNNER_TEMP/哒哒助手.app"
+          mkdir -p "$mount_point"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point" installer.dmg
+          trap 'hdiutil detach "$mount_point" >/dev/null 2>&1 || true' EXIT
+
+          source_app=$(find "$mount_point" -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$source_app"
+          binary="$source_app/Contents/MacOS/dada-assistant-desktop"
+          archs=$(lipo -archs "$binary")
+          [[ " $archs " == *" arm64 "* ]]
+          [[ " $archs " == *" x86_64 "* ]]
+          codesign --verify --deep --strict "$source_app"
+
+          ditto "$source_app" "$installed_app"
+          codesign --verify --deep --strict "$installed_app"
+          "$installed_app/Contents/MacOS/dada-assistant-desktop" >"$RUNNER_TEMP/dada-assistant.log" 2>&1 &
+          application_pid=$!
+          sleep 15
+          kill -0 "$application_pid"
+          kill "$application_pid"
+          wait "$application_pid" || true
+
   windows:
     strategy:
       fail-fast: false

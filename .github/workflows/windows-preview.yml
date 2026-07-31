@@ -1,4 +1,4 @@
-name: 哒哒助手 v1.0 Windows ARM64 预览
+name: Desktop package smoke
 
 on:
   workflow_dispatch:
@@ -7,8 +7,32 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: windows-11-arm
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundles: app,dmg
+            artifact_name: dada-assistant-macos-universal
+            artifact_path: target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
+            bundles: nsis
+            artifact_name: dada-assistant-windows-x64
+            artifact_path: target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            rust_targets: aarch64-pc-windows-msvc
+            bundles: nsis
+            artifact_name: dada-assistant-windows-arm64
+            artifact_path: target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+
+    runs-on: ${{ matrix.runner }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,25 +46,82 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-pc-windows-msvc
+          targets: ${{ matrix.rust_targets }}
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: dada-assistant-windows-arm64-preview
+          key: package-smoke-${{ matrix.target }}
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Build Windows ARM64 installer
+      - name: Build desktop package
+        run: pnpm --dir apps/desktop tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      - name: Verify macOS DMG and launch application
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=$(find target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)
+          dmg=$(find target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)
+          test -n "$app"
+          test -n "$dmg"
+          binary="$app/Contents/MacOS/dada-assistant-desktop"
+          archs=$(lipo -archs "$binary")
+          [[ " $archs " == *" arm64 "* ]]
+          [[ " $archs " == *" x86_64 "* ]]
+          codesign --verify --deep --strict "$app"
+
+          mount_point="$RUNNER_TEMP/dada-assistant-mount"
+          installed_app="$RUNNER_TEMP/哒哒助手.app"
+          mkdir -p "$mount_point"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point" "$dmg"
+          trap 'hdiutil detach "$mount_point" >/dev/null 2>&1 || true' EXIT
+          source_app=$(find "$mount_point" -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$source_app"
+          ditto "$source_app" "$installed_app"
+          codesign --verify --deep --strict "$installed_app"
+
+          "$installed_app/Contents/MacOS/dada-assistant-desktop" >"$RUNNER_TEMP/dada-assistant.log" 2>&1 &
+          application_pid=$!
+          sleep 15
+          kill -0 "$application_pid"
+          kill "$application_pid"
+          wait "$application_pid" || true
+
+      - name: Install and launch Windows application
+        if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          DADAAPI_ROUTE_MANIFEST_URLS: https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/manifest.json,https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/manifest.json
-          DADAAPI_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.DADAAPI_ROUTE_PUBLIC_KEY_PEM }}
-          DADAAPI_ROUTE_KEY_B64: ${{ secrets.DADAAPI_ROUTE_KEY_B64 }}
-          DADAAPI_ROUTE_KEY_ID: v1
-        run: pnpm --dir apps/desktop tauri build --target aarch64-pc-windows-msvc --bundles nsis
+        run: |
+          $installer = Get-ChildItem "target/${{ matrix.target }}/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) {
+            throw "NSIS installer was not generated"
+          }
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($install.ExitCode -ne 0) {
+            throw "Installer exited with code $($install.ExitCode)"
+          }
+
+          $roots = @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)}) |
+            Where-Object { $_ -and (Test-Path $_) }
+          $executable = @(
+            $roots | ForEach-Object {
+              Get-ChildItem -Path $_ -Filter "dada-assistant-desktop.exe" -File -Recurse -ErrorAction SilentlyContinue
+            }
+          ) | Select-Object -First 1
+          if (-not $executable) {
+            throw "Installed Dada Assistant executable was not found"
+          }
+
+          $application = Start-Process -FilePath $executable.FullName -PassThru
+          Start-Sleep -Seconds 15
+          if ($application.HasExited) {
+            throw "Dada Assistant exited during startup smoke test"
+          }
+          Stop-Process -Id $application.Id -Force
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dada-assistant-windows-arm64-preview
-          path: target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
           if-no-files-found: error
