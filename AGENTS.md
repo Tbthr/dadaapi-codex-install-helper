@@ -1,4 +1,4 @@
-# Wocao Hub Agent Guidance
+# Dada Assistant Agent Guidance
 
 本文件适用于整个仓库，是 Codex、Claude 和其他 AI 编程工具的长期开发约束。
 

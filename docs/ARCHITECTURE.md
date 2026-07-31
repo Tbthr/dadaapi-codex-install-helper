@@ -22,7 +22,7 @@ Desktop Client
 
 ChatGPT/Codex
     ↓ localhost HTTP CONNECT
-Wocao Hub Rust Local Proxy
+哒哒助手 Rust Local Proxy
     ↓ VLESS / Hysteria2
 Selected Overseas Node
     ↓
@@ -97,7 +97,7 @@ PendingManualRecovery → RestoringNetwork → StoppingLocalProxy → Idle
 - 清单、签名和密文分别限制为 64KB、1KB 和约 8MB，超限响应在完整读取前拒绝。
 - 只有网络错误、超时或 `5xx` 可以使用本地缓存。远程签名、格式、哈希、有效期、`keyId` 或解密错误必须直接失败。
 - 缓存使用仅当前用户可访问的原子版本文件，只保存清单、签名和密文；读取缓存时重新执行完整验证。
-- GitHub 和 wocao.ai 均不接收 ChatGPT/Codex 的代理流量。
+- GitHub 和哒哒 API 均不接收 ChatGPT/Codex 的代理流量。
 
 ### Direct Node Transport
 
@@ -105,7 +105,7 @@ PendingManualRecovery → RestoringNetwork → StoppingLocalProxy → Idle
 - 节点协议连接器在客户端进程内实现 VLESS 和 Hysteria2，不启动 Go、Mihomo、sing-box 或其他 Sidecar。
 - 节点测速与正式激活使用同一协议连接器，禁止用普通 TCP 直连结果冒充节点可用。
 - 当前连接器支持 Hysteria2、VLESS TCP 和 VLESS TLS；Reality/Vision 在真实协议实现完成前必须在预检阶段跳过。
-- ChatGPT/Codex 流量路径固定为 `应用 → 127.0.0.1 本地代理 → 选中订阅节点 → OpenAI`，不经过 wocao.ai 服务器。
+- ChatGPT/Codex 流量路径固定为 `应用 → 127.0.0.1 本地代理 → 选中订阅节点 → OpenAI`，不经过哒哒 API 服务器。
 
 ## Locale Configuration Component
 
@@ -121,7 +121,7 @@ WritingLocale → ReadingLocale → Configured | Failed
 - 完整协调器通过 `ChineseEffectVerifier` 注入应用内验证；生产 `RuntimeChineseEffectVerifier` 必须同时确认配置值和目标 App Renderer 的 `--lang=zh-CN` 运行参数，文件配置检查不能单独判定成功。
 - 激活 Tauri Command 始终保持稳定注册，但只有构建同时注入路由清单地址、验签公钥、解密 key 和 `keyId` 时才装载激活运行时并在界面展示“一键中文”；未配置构建保持只读检测能力，Command 返回稳定的不可用错误。
 - 激活进度由核心协调器的真实状态转换产生，经 Tauri 事件转发到前端；前端不得使用计时器伪造阶段或成功状态。
-- 首次修改前创建相邻备份；原文件不存在时记录缺失状态，以便恢复时删除由 Wocao Hub 创建的文件。
+- 首次修改前创建相邻备份；原文件不存在时记录缺失状态，以便恢复时删除由哒哒助手创建的文件。
 - 配置更新使用临时文件和替换写入，保留原文件权限，不覆盖无效 TOML 或 JSON。
 - Tauri Command 必须重新检测所选应用，不接受前端提供的任意可执行文件路径。
 
@@ -182,10 +182,7 @@ https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/routes.en
 - 四项全部缺失时只装载只读桌面能力；仅缺一项或任何一项格式错误时启动失败。
 - 公钥、清单 URL 和 `keyId` 是公开配置。解密 key 会进入官方客户端，只能作为混淆手段；签名私钥和原始上游订阅地址不得进入客户端构建。
 
-### Desktop Updates
+### Desktop Distribution
 
-- 客户端通过 Tauri Updater 优先检查 Gitee Raw 中的 `release/latest.json`，失败后检查 GitHub Releases 中的 `latest.json`，不依赖自建版本服务器。
-- 应用启动后后台检查一次；发现新版本后只提示，不自动安装或强制重启。
-- 更新包下载完成并通过 Tauri 更新签名验证后，由用户确认重启。
-- 更新签名私钥与密码只存在于 GitHub Actions Secrets 和发布者私有环境；客户端仅内置更新公钥。
-- GitHub Actions 对 macOS Intel/Apple Silicon 与 Windows x64/ARM64 分别构建，并将同一批更新资产同步到 Gitee Release。
+- 客户端不装载 Tauri Updater，也不在启动或设置界面发起在线版本检查。
+- macOS 与 Windows 安装包继续通过发布流水线独立构建、签名和分发，升级由用户获取新的正式安装包完成。

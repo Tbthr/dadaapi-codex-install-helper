@@ -634,7 +634,7 @@ fn load_latest_verified_cache(
             .unwrap_or(UNIX_EPOCH);
         candidates.push((modified, entry.path()));
     }
-    candidates.sort_by(|left, right| right.0.cmp(&left.0));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.0));
     if candidates.is_empty() {
         return Err(RouteBundleError::CacheUnavailable);
     }
@@ -760,7 +760,7 @@ fn cleanup_old_cache_generations(cache_directory: &Path) {
             .unwrap_or(UNIX_EPOCH);
         candidates.push((modified, entry.path()));
     }
-    candidates.sort_by(|left, right| right.0.cmp(&left.0));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.0));
     for (_, path) in candidates.into_iter().skip(MAX_CACHE_GENERATIONS) {
         let _ = fs::remove_file(path);
     }

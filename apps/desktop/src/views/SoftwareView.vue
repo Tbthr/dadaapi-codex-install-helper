@@ -22,7 +22,7 @@ import type {
   SoftwareProductId,
   SoftwareProductSummary,
 } from "../types/download";
-import type { CommandError } from "../types/locale";
+import { isCommandError } from "../types/locale";
 import type { InstalledSoftwareId } from "../types/software-status";
 
 type ToolTab = "desktop" | "cli";
@@ -404,10 +404,10 @@ function formatBytes(bytes: number): string {
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (typeof error === "object" && error !== null && "message" in error) {
-    return String((error as CommandError).message);
+  if (isCommandError(error)) {
+    return error.message;
   }
-  return typeof error === "string" ? error : fallback;
+  return fallback;
 }
 </script>
 

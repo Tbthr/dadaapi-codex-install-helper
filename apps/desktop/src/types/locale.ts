@@ -57,3 +57,14 @@ export interface CommandError {
   code: string;
   message: string;
 }
+
+export function isCommandError(value: unknown): value is CommandError {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    typeof value.code === "string" &&
+    "message" in value &&
+    typeof value.message === "string"
+  );
+}

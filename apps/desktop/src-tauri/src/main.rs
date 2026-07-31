@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    wocao_hub_desktop_lib::run()
+    dada_assistant_desktop_lib::run()
 }

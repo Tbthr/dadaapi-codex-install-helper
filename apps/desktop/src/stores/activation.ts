@@ -10,7 +10,11 @@ import {
   restoreNetwork,
 } from "../services/activation";
 import type { ActivationEvent, ActivationPhase } from "../types/activation";
-import type { CommandError, LocaleActivationResult, NetworkRecoveryStatus } from "../types/locale";
+import {
+  isCommandError,
+  type LocaleActivationResult,
+  type NetworkRecoveryStatus,
+} from "../types/locale";
 
 export type ActivationAvailabilityState =
   "unknown" | "loading" | "available" | "unavailable" | "error";
@@ -288,10 +292,10 @@ export const useActivationStore = defineStore("activation", () => {
   }
 
   function errorMessage(reason: unknown, fallback: string): string {
-    if (typeof reason === "object" && reason !== null && "message" in reason) {
-      return String((reason as CommandError).message);
+    if (isCommandError(reason)) {
+      return reason.message;
     }
-    return typeof reason === "string" ? reason : fallback;
+    return fallback;
   }
 
   return {

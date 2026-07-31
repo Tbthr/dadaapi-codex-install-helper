@@ -1,38 +1,8 @@
-# Wocao Hub
+# 哒哒助手
 
-Wocao Hub 是 wocao.ai 推出的开源跨平台 AI 桌面工具。首个版本面向 Windows 和 macOS，提供 ChatGPT/Codex 中文配置、安全路由更新、网络修复和官方软件下载能力。
+哒哒助手是哒哒 API 品牌下的开源跨平台 AI 桌面工具。首个版本面向 Windows 和 macOS，提供 ChatGPT/Codex 中文配置、安全路由更新、网络修复和官方软件下载能力。
 
 当前仓库已完成桌面激活核心链路：检测新版 ChatGPT/旧版 Codex、优先从 Gitee 并备用从 GitHub Raw 下载加密路由包、验证 Ed25519 签名和 SHA-256、使用 XChaCha20-Poly1305 解密、筛选和测试海外节点、启动本地代理、安全修改并由用户手动恢复系统网络、写入中文配置、重启应用并验证 Renderer 运行语言。生产激活 Command 已稳定注册，未注入完整构建配置时保持只读模式。
-
-## 快速安装
-
-国内网络推荐使用 Gitee。Windows 11 请打开 PowerShell：
-
-```powershell
-irm https://gitee.com/codeTrees/wocao-hub/raw/main/scripts/install.ps1 | iex
-```
-
-macOS 请打开“终端”：
-
-```bash
-curl -fsSL https://gitee.com/codeTrees/wocao-hub/raw/main/scripts/install.sh | /bin/sh
-```
-
-如果 Gitee 无法访问，可以改用 GitHub 备用入口。Windows 11 PowerShell：
-
-```powershell
-irm https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.ps1 | iex
-```
-
-macOS 终端：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.sh | /bin/sh
-```
-
-无论从哪个入口启动，安装脚本都会优先从 Gitee 获取版本信息和安装包，仅在网络请求失败时切换 GitHub。脚本会自动选择 Windows x64/ARM64 或 macOS Universal 版本，并使用 `checksums.txt` 校验 SHA-256。Windows 脚本会在校验通过后解除浏览器下载隔离标记；macOS 脚本会校验国内 ZIP、解压 DMG、验证应用代码签名完整性后安装并启动应用。
-
-不希望执行远程脚本的用户可以在 [Gitee Releases](https://gitee.com/codeTrees/wocao-hub/releases) 或 [GitHub Releases](https://github.com/ray7086/wocao-hub/releases/latest) 手动下载安装包并查看公开脚本源码。
 
 ## 技术栈
 
@@ -101,7 +71,7 @@ cargo run -p route-e2e
 - 不使用七牛或自建软件下载镜像
 - 软件安装包通过用户本地网络从官方地址下载
 - 中文订阅由独立仓库定时发布为签名加密路由包并同步到 Gitee，客户端优先访问 Gitee、备用访问 GitHub，在本机验签、解密、解析和筛选
-- ChatGPT/Codex 代理流量由客户端直接连接选中的订阅节点，不经过 wocao.ai 服务器
+- ChatGPT/Codex 代理流量由客户端直接连接选中的订阅节点，不经过哒哒 API 服务器
 
 ## 当前可用能力
 

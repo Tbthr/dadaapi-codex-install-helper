@@ -35,7 +35,7 @@ import type {
   SoftwareProductId,
   SoftwareProductSummary,
 } from "../types/download";
-import type { CommandError, RepairOverview } from "../types/locale";
+import { isCommandError, type RepairOverview } from "../types/locale";
 
 const activation = useActivationStore();
 const { networkPending, recoveryRunning } = storeToRefs(activation);
@@ -310,10 +310,10 @@ function formatBytes(bytes: number): string {
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (typeof error === "object" && error !== null && "message" in error) {
-    return String((error as CommandError).message);
+  if (isCommandError(error)) {
+    return error.message;
   }
-  return typeof error === "string" ? error : fallback;
+  return fallback;
 }
 </script>
 
@@ -350,8 +350,8 @@ function errorMessage(error: unknown, fallback: string): string {
           type="button"
           :disabled="
             !artifactFor(product) ||
-            downloadBusy[product.id] ||
-            taskFor(product)?.state === 'launching'
+              downloadBusy[product.id] ||
+              taskFor(product)?.state === 'launching'
           "
           @click="handleDownload(product)"
         >

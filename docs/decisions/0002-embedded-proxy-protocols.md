@@ -6,7 +6,7 @@ Accepted
 
 ## Decision
 
-Wocao Hub 的节点数据面在客户端 Rust 进程内实现，不启动 Mihomo、sing-box、Xray 或 Go Sidecar。
+哒哒助手的节点数据面在客户端 Rust 进程内实现，不启动 Mihomo、sing-box、Xray 或 Go Sidecar。
 
 - Hysteria2 使用 MIT 许可的 `rsteria2` 库，启用 Salamander、端口跳跃和连接复用。
 - VLESS TCP/TLS 使用仓库内的最小协议实现，包含请求头、响应头和双向流。

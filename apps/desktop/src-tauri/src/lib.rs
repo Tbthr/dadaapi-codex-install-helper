@@ -208,8 +208,6 @@ fn command_error(error: ActivationError) -> CommandError {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             let diagnostics_state =
@@ -273,7 +271,7 @@ pub fn run() {
             desktop_diagnostics::reveal_diagnostics_export
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run Wocao Hub desktop application");
+        .expect("failed to run Dada Assistant desktop application");
 }
 
 fn current_operating_system() -> OperatingSystem {

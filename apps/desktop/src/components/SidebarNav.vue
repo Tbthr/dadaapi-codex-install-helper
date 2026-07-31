@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { PhGearSix, PhHouse, PhLifebuoy, PhPackage, PhTranslate } from "@phosphor-icons/vue";
-import brandLogo from "../assets/brand/wocao-text.png";
-import { openExternalLink, WOCAO_LINKS } from "../services/external-links";
-import { useUpdaterStore } from "../stores/updater";
+import { PhArrowSquareOut, PhHouse, PhLifebuoy, PhPackage, PhTranslate } from "@phosphor-icons/vue";
+import brandLogo from "../assets/brand/dada-logo.svg";
+import { DADA_LINKS, openExternalLink } from "../services/external-links";
 import type { WorkspacePage } from "../types/ui";
 
 defineProps<{ activePage: WorkspacePage }>();
 const emit = defineEmits<{ navigate: [page: WorkspacePage] }>();
-const updater = useUpdaterStore();
 
 const navigation: Array<{
   id: WorkspacePage;
@@ -15,25 +13,27 @@ const navigation: Array<{
   icon: typeof PhHouse;
 }> = [
   { id: "home", label: "首页", icon: PhHouse },
-  { id: "locale", label: "中文设置", icon: PhTranslate },
-  { id: "software", label: "软件工具", icon: PhPackage },
-  { id: "repair", label: "修复诊断", icon: PhLifebuoy },
+  { id: "locale", label: "配置中文", icon: PhTranslate },
+  { id: "software", label: "安装软件", icon: PhPackage },
+  { id: "repair", label: "恢复与诊断", icon: PhLifebuoy },
 ];
 </script>
 
 <template>
   <aside class="sidebar">
-    <div class="brand">
-      <button
-        type="button"
-        class="brand-link"
-        title="访问 wocao.ai 官网"
-        aria-label="访问 wocao.ai 官网"
-        @click="openExternalLink(WOCAO_LINKS.home)"
-      >
-        <img :src="brandLogo" alt="wocao.ai" />
-      </button>
-    </div>
+    <button
+      type="button"
+      class="brand-link"
+      title="访问哒哒 API 官网"
+      aria-label="访问哒哒 API 官网"
+      @click="openExternalLink(DADA_LINKS.home)"
+    >
+      <img :src="brandLogo" alt="" />
+      <span>
+        <strong>哒哒助手</strong>
+        <small>DADA API</small>
+      </span>
+    </button>
 
     <nav class="sidebar-nav" aria-label="主要导航">
       <button
@@ -49,19 +49,11 @@ const navigation: Array<{
     </nav>
 
     <div class="sidebar-footer">
-      <button
-        type="button"
-        :class="['nav-item', { active: activePage === 'settings' }]"
-        @click="emit('navigate', 'settings')"
-      >
-        <PhGearSix :size="19" weight="regular" />
-        <span>设置</span>
-        <i v-if="updater.state.phase === 'available'" class="update-dot" aria-label="发现新版本" />
+      <button type="button" class="website-link" @click="openExternalLink(DADA_LINKS.home)">
+        <span>访问官网</span>
+        <PhArrowSquareOut :size="16" />
       </button>
-      <div class="version-line">
-        <span>Wocao Hub</span>
-        <span>v{{ updater.state.currentVersion }}</span>
-      </div>
+      <p>让好模型，更好用。</p>
     </div>
   </aside>
 </template>

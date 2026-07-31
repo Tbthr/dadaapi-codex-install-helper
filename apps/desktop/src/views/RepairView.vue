@@ -4,7 +4,7 @@ import { storeToRefs } from "pinia";
 import { onMounted, ref } from "vue";
 import { exportDiagnostics, revealDiagnosticsExport } from "../services/diagnostics";
 import { useActivationStore } from "../stores/activation";
-import type { CommandError } from "../types/locale";
+import { isCommandError } from "../types/locale";
 import type { DiagnosticExportResult } from "../types/diagnostics";
 
 const activation = useActivationStore();
@@ -53,10 +53,10 @@ async function handleDiagnostics(): Promise<void> {
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (typeof error === "object" && error !== null && "message" in error) {
-    return String((error as CommandError).message);
+  if (isCommandError(error)) {
+    return error.message;
   }
-  return typeof error === "string" ? error : fallback;
+  return fallback;
 }
 </script>
 
@@ -65,7 +65,7 @@ function errorMessage(error: unknown, fallback: string): string {
     <header class="page-header">
       <span class="eyebrow">系统工具</span>
       <h1>修复诊断</h1>
-      <p>只处理 Wocao Hub 修改过的配置和网络状态。</p>
+      <p>只处理哒哒助手修改过的配置和网络状态。</p>
     </header>
 
     <section class="list-panel repair-list">
@@ -75,11 +75,11 @@ function errorMessage(error: unknown, fallback: string): string {
           <strong>恢复原网络</strong>
           <span v-if="networkStatusState === 'error'">{{ networkStatusError }}</span>
           <span v-else-if="recoveryError">{{ recoveryError }}</span>
-          <span v-else-if="networkPending && localProxyActive"
-            >临时代理正在使用，恢复后会关闭本地代理</span
-          >
+          <span v-else-if="networkPending && localProxyActive">
+            临时代理正在使用，恢复后会关闭本地代理
+          </span>
           <span v-else-if="networkPending">检测到待恢复的系统代理状态</span>
-          <span v-else>当前没有 Wocao Hub 遗留的代理状态</span>
+          <span v-else>当前没有哒哒助手遗留的代理状态</span>
         </div>
         <button
           type="button"

@@ -2,11 +2,11 @@
 
 ## Product
 
-Wocao Hub 是 wocao.ai 品牌下的开源跨平台桌面工具，支持 Windows 和 macOS。
+哒哒助手是哒哒 API 品牌下的开源跨平台桌面工具，支持 Windows 和 macOS。
 
 ## Core User Flow
 
-1. 用户安装对应平台的 Wocao Hub。
+1. 用户安装对应平台的哒哒助手。
 2. App 自动检测 ChatGPT 或旧版 Codex。
 3. App 优先从 Gitee、备用从 GitHub Raw 获取最新签名加密路由包，验签、校验、解密并解析代理节点。
 4. App 在测速前排除香港节点和国内节点。
@@ -32,6 +32,7 @@ Wocao Hub 是 wocao.ai 品牌下的开源跨平台桌面工具，支持 Windows 
 - 下载进度、取消、重试、断点续传、打开目录和复制链接
 - 修复工具、诊断日志和日志导出
 - Windows x64/ARM64、Mac Intel/Apple Silicon 发布
+- 固定浅色品牌界面，不提供主题切换或客户端在线更新检查
 
 ## Route Publishing Features
 
@@ -52,6 +53,7 @@ Wocao Hub 是 wocao.ai 品牌下的开源跨平台桌面工具，支持 Windows 
 - Go Sidecar 和浏览器式本地向导
 - 远端流量隧道和服务器代理中转
 - SSH 订阅后台、配置服务器和订阅中继
+- 客户端自动或手动在线更新检查
 
 ## Network Policy
 

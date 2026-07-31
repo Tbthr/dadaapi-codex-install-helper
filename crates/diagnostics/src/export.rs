@@ -163,7 +163,10 @@ impl PendingExport {
             return Err(DiagnosticsError::UnsafeExportDirectory);
         }
 
-        let path = parent.join(format!(".wocao-hub-diagnostics-{}.part", Uuid::new_v4()));
+        let path = parent.join(format!(
+            ".dada-assistant-diagnostics-{}.part",
+            Uuid::new_v4()
+        ));
         let file = create_private_new_file(&path)?;
         Ok(Self {
             path,

@@ -3,24 +3,20 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import SidebarNav from "./components/SidebarNav.vue";
 import { getLocaleOverview } from "./services/locale";
 import type { WorkspacePage } from "./types/ui";
-import type { CommandError, LocaleOverview } from "./types/locale";
-import { useUpdaterStore } from "./stores/updater";
+import { isCommandError, type LocaleOverview } from "./types/locale";
 import { useActivationStore } from "./stores/activation";
 import HomeView from "./views/HomeView.vue";
 import LocaleSetupView from "./views/LocaleSetupView.vue";
 import RepairView from "./views/RepairView.vue";
-import SettingsView from "./views/SettingsView.vue";
 import SoftwareView from "./views/SoftwareView.vue";
 
 const activePage = ref<WorkspacePage>("home");
-const updater = useUpdaterStore();
 const activation = useActivationStore();
 const overview = ref<LocaleOverview | null>(null);
 const loading = ref(true);
 const loadError = ref("");
 
 onMounted(() => {
-  void updater.initialize();
   void Promise.all([refreshOverview(), activation.initialize()]);
   globalThis.addEventListener("focus", refreshOverview);
 });
@@ -38,8 +34,6 @@ const activeView = computed(() => {
       return SoftwareView;
     case "repair":
       return RepairView;
-    case "settings":
-      return SettingsView;
     default:
       return HomeView;
   }
@@ -69,10 +63,10 @@ async function refreshOverview(): Promise<void> {
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (typeof error === "object" && error !== null && "message" in error) {
-    return String((error as CommandError).message);
+  if (isCommandError(error)) {
+    return error.message;
   }
-  return typeof error === "string" ? error : fallback;
+  return fallback;
 }
 
 function navigate(page: WorkspacePage): void {

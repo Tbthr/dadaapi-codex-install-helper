@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { PhDownloadSimple, PhPlay, PhSpinnerGap, PhTranslate } from "@phosphor-icons/vue";
+import { PhArrowRight, PhCheck, PhDownloadSimple, PhPlay, PhSpinnerGap } from "@phosphor-icons/vue";
 import { storeToRefs } from "pinia";
 import { computed } from "vue";
+import guideMascot from "../assets/brand/mascot/guide.png";
+import successMascot from "../assets/brand/mascot/success.png";
+import thinkingMascot from "../assets/brand/mascot/thinking.png";
 import BrandIcon from "../components/BrandIcon.vue";
 import { useActivationStore } from "../stores/activation";
 import type { LocaleOverview } from "../types/locale";
@@ -20,10 +23,13 @@ const emit = defineEmits<{
 
 const activation = useActivationStore();
 const {
+  availabilityState,
+  availabilityError,
   canActivate,
   running,
   message,
   error: activationError,
+  result,
   networkPending,
   recoveryRunning,
   recoveryError,
@@ -44,7 +50,7 @@ const primaryLabel = computed(() => {
   if (running.value) return "正在设置";
   if (recoveryRunning.value) return "正在恢复";
   if (activationError.value || networkPending.value) return "恢复网络";
-  if (!appReady.value) return "请先打开应用";
+  if (!appReady.value) return "等待应用运行";
   return props.overview?.locale.chineseEnabled ? "重新设置" : "开始设置";
 });
 
@@ -56,25 +62,42 @@ const primaryDisabled = computed(() => {
   return !canActivate.value;
 });
 
+const mascot = computed(() => {
+  if (running.value || recoveryRunning.value) return thinkingMascot;
+  if (result.value) return successMascot;
+  return guideMascot;
+});
+
+const mascotAlt = computed(() => {
+  if (running.value || recoveryRunning.value) return "Little D 正在思考";
+  if (result.value) return "Little D 展示完成状态";
+  return "Little D 指向下一步操作";
+});
+
+const actionMessage = computed(() => {
+  if (!appInstalled.value) return "安装并打开 ChatGPT 后，哒哒助手会自动重新检测。";
+  if (recoveryError.value) return recoveryError.value;
+  if (activationError.value) return activationError.value;
+  if (availabilityState.value === "error") return availabilityError.value;
+  if (availabilityState.value === "unavailable") return "当前构建未配置中文路由服务。";
+  if (!appReady.value) return "请先打开 ChatGPT 或 Codex，再开始设置。";
+  if (result.value) return message.value || "中文已经生效。";
+  return running.value ? message.value : "执行期间 ChatGPT 可能会短暂重启。";
+});
+
 async function handlePrimaryAction(): Promise<void> {
   if (!app.value) {
     emit("navigate", "software");
     return;
   }
-  if (running.value || recoveryRunning.value) {
-    return;
-  }
+  if (running.value || recoveryRunning.value) return;
   if (activationError.value || networkPending.value) {
-    if (await activation.prepareNetworkForActivation()) {
-      emit("refresh");
-    }
+    if (await activation.prepareNetworkForActivation()) emit("refresh");
     return;
   }
   if (!app.value.running || !canActivate.value) return;
   if (!(await activation.prepareNetworkForActivation())) return;
-  if (await activation.activate(app.value.executablePath)) {
-    emit("refresh");
-  }
+  if (await activation.activate(app.value.executablePath)) emit("refresh");
 }
 </script>
 
@@ -83,90 +106,94 @@ async function handlePrimaryAction(): Promise<void> {
     <header class="page-header">
       <span class="eyebrow">ChatGPT / Codex</span>
       <h1>中文设置</h1>
-      <p>自动选择稳定节点，启动应用并验证中文界面真实生效。</p>
+      <p>检测应用、选择可用节点，并确认中文界面真实生效。</p>
     </header>
 
-    <section class="primary-panel setup-panel">
-      <div class="setup-app-row">
-        <span class="app-symbol brand-openai"><BrandIcon brand="openai" :size="28" /></span>
-        <div>
-          <strong>ChatGPT</strong>
-          <span v-if="app"
-            >版本 {{ app.version ?? "未知" }} · {{ app.running ? "正在运行" : "未运行" }}</span
+    <section class="setup-workspace">
+      <div class="setup-main">
+        <div class="setup-app-row">
+          <span class="app-symbol brand-openai"><BrandIcon brand="openai" :size="28" /></span>
+          <div>
+            <strong>{{ app?.displayName ?? "ChatGPT" }}</strong>
+            <span v-if="app">版本 {{ app.version ?? "未知" }}</span>
+            <span v-else-if="loading">正在检测本机应用</span>
+            <span v-else-if="error">{{ error }}</span>
+            <span v-else>未检测到桌面应用</span>
+          </div>
+          <span :class="['status-pill', { success: appReady }]">{{ appStatusLabel }}</span>
+        </div>
+
+        <ol class="setup-steps">
+          <li :class="{ complete: appReady }">
+            <span class="step-index">
+              <PhCheck v-if="appReady" :size="14" weight="bold" />
+              <b v-else>1</b>
+            </span>
+            <div>
+              <strong>{{ appReady ? "应用已经就绪" : "打开桌面应用" }}</strong>
+              <span>{{
+                appReady ? "已找到正在运行的应用进程" : "需要先启动 ChatGPT 或 Codex"
+              }}</span>
+            </div>
+          </li>
+          <li :class="{ complete: canActivate }">
+            <span class="step-index">
+              <PhCheck v-if="canActivate" :size="14" weight="bold" />
+              <b v-else>2</b>
+            </span>
+            <div>
+              <strong>确认中文路由</strong>
+              <span>{{ canActivate ? "配置可用，执行时会再次验签" : "正在确认当前构建配置" }}</span>
+            </div>
+          </li>
+          <li :class="{ complete: networkPending === false }">
+            <span class="step-index">
+              <PhCheck v-if="networkPending === false" :size="14" weight="bold" />
+              <b v-else>3</b>
+            </span>
+            <div>
+              <strong>{{ networkPending ? "恢复原网络" : "检查系统网络" }}</strong>
+              <span>{{
+                networkPending ? "检测到上次遗留的代理状态" : "当前没有待恢复的代理状态"
+              }}</span>
+            </div>
+          </li>
+          <li :class="{ complete: Boolean(result) }">
+            <span class="step-index">
+              <PhCheck v-if="result" :size="14" weight="bold" />
+              <b v-else>4</b>
+            </span>
+            <div>
+              <strong>{{ result ? "中文已经生效" : "执行并验证" }}</strong>
+              <span>{{ result ? "应用已使用 zh-CN 启动" : "设置完成后验证应用进程语言" }}</span>
+            </div>
+          </li>
+        </ol>
+
+        <div :class="['setup-action-bar', { error: Boolean(activationError || recoveryError) }]">
+          <p>{{ actionMessage }}</p>
+          <button
+            class="primary-button large"
+            type="button"
+            :disabled="primaryDisabled"
+            @click="handlePrimaryAction"
           >
-          <span v-else-if="loading">正在检测本机应用</span>
-          <span v-else-if="error">{{ error }}</span>
-          <span v-else>未检测到 ChatGPT 或 Codex 桌面应用</span>
-        </div>
-        <span :class="['status-pill', { success: appInstalled }]">{{ appStatusLabel }}</span>
-      </div>
-
-      <div class="setup-checklist">
-        <div :class="['check-row', { complete: appReady }]">
-          <div>
-            <strong>{{
-              appReady ? "应用已就绪" : appInstalled ? "应用尚未运行" : "尚未安装应用"
-            }}</strong>
-            <span>{{
-              appReady
-                ? `已找到正在运行的 ${app?.displayName ?? "ChatGPT"}`
-                : appInstalled
-                  ? "请先打开 ChatGPT 或 Codex，再进行中文设置"
-                  : "请先安装 ChatGPT 或 Codex，再进行中文设置"
-            }}</span>
-          </div>
-          <span :class="['step-state', { pending: !appReady }]">{{
-            appReady ? "就绪" : appInstalled ? "未运行" : "未安装"
-          }}</span>
-        </div>
-        <div :class="['check-row', { complete: !networkPending }]">
-          <div>
-            <strong>路由配置已就绪</strong>
-            <span>签名、完整性和有效期将在执行时验证</span>
-          </div>
-          <span class="step-state">就绪</span>
-        </div>
-        <div class="check-row complete">
-          <div>
-            <strong>{{ networkPending ? "系统网络待恢复" : "系统网络正常" }}</strong>
-            <span>{{
-              networkPending ? "请先在恢复与诊断中恢复原网络" : "当前没有待恢复的代理状态"
-            }}</span>
-          </div>
-          <span :class="['step-state', { pending: networkPending }]">{{
-            networkPending ? "待恢复" : "正常"
-          }}</span>
-        </div>
-        <div class="check-row">
-          <div>
-            <strong>等待中文设置</strong>
-            <span>完成后会验证应用进程使用 zh-CN 启动</span>
-          </div>
-          <span class="step-state pending">待执行</span>
+            <PhSpinnerGap v-if="running || recoveryRunning" class="spinning" :size="17" />
+            <PhDownloadSimple v-else-if="!appInstalled" :size="17" />
+            <PhPlay v-else :size="17" weight="fill" />
+            {{ primaryLabel }}
+            <PhArrowRight v-if="!running && !recoveryRunning" :size="16" />
+          </button>
         </div>
       </div>
 
-      <div class="setup-action-area">
-        <div class="setup-action-copy">
-          <PhTranslate :size="21" />
-          <p v-if="!appInstalled">安装完成并打开一次后，返回这里会自动重新检测。</p>
-          <p v-else-if="recoveryError">{{ recoveryError }}</p>
-          <p v-else-if="activationError">{{ activationError }}</p>
-          <p v-else-if="!appReady">请先打开 ChatGPT 或 Codex。</p>
-          <p v-else>{{ running ? message : "执行期间可能会短暂重启 ChatGPT。" }}</p>
-        </div>
-        <button
-          class="primary-button large"
-          type="button"
-          :disabled="primaryDisabled"
-          @click="handlePrimaryAction"
-        >
-          <PhSpinnerGap v-if="running || recoveryRunning" class="spinning" :size="17" />
-          <PhDownloadSimple v-else-if="!appInstalled" :size="17" />
-          <PhPlay v-else :size="17" weight="fill" />
-          {{ primaryLabel }}
-        </button>
-      </div>
+      <aside class="setup-guide" aria-live="polite">
+        <img :src="mascot" :alt="mascotAlt" />
+        <strong>{{ result ? "设置完成" : running ? "正在处理" : "准备就绪后开始" }}</strong>
+        <span>{{
+          result ? "需要时可前往修复诊断恢复原网络。" : "整个过程会显示真实进度与结果。"
+        }}</span>
+      </aside>
     </section>
   </div>
 </template>

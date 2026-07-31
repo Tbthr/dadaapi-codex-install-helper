@@ -19,6 +19,6 @@ Accepted.
 ## Consequences
 
 - 生产链路不再需要自建配置服务或订阅中继。
-- ChatGPT/Codex 用户流量仍固定为本地代理直连选中的海外节点，不经过 GitHub 或 wocao.ai 服务器。
+- ChatGPT/Codex 用户流量仍固定为本地代理直连选中的海外节点，不经过 GitHub 或哒哒 API 服务器。
 - 解密 key 会进入官方开源客户端构建，只能降低公开仓库中节点被直接浏览的风险，不能被视为不可提取秘密。
 - 签名私钥和原始上游订阅地址只保存在路由仓库的 GitHub Actions Secrets 中。

@@ -1,8 +1,8 @@
 [package]
-name = "wocao-hub-desktop"
+name = "dada-assistant-desktop"
 version.workspace = true
-description = "Wocao Hub cross-platform AI desktop toolkit"
-authors = ["wocao.ai"]
+description = "Dada Assistant cross-platform AI desktop toolkit"
+authors = ["dadaapi.com"]
 edition.workspace = true
 rust-version.workspace = true
 
@@ -12,7 +12,7 @@ rust-version.workspace = true
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "wocao_hub_desktop_lib"
+name = "dada_assistant_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -21,8 +21,6 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
-tauri-plugin-process = "2"
-tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 activation-core = { path = "../../../crates/activation-core" }

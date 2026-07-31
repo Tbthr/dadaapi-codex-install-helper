@@ -1,5 +1,5 @@
 {
-  "name": "@wocao-hub/desktop",
+  "name": "@dadaapi/assistant",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -14,14 +14,9 @@
   },
   "dependencies": {
     "@fontsource-variable/instrument-sans": "^5.2.8",
-    "@fontsource-variable/nunito": "^5.2.7",
-    "@fontsource-variable/quicksand": "^5.2.10",
-    "@fontsource-variable/source-serif-4": "^5.2.9",
     "@phosphor-icons/vue": "^2.2.1",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-updater": "^2.10.1",
     "lucide-vue-next": "^0.468.0",
     "pinia": "^3.0.0",
     "simple-icons": "^16.25.0",

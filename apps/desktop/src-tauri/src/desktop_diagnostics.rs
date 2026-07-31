@@ -18,8 +18,8 @@ use uuid::Uuid;
 
 use crate::activation_runtime::DesktopActivationState;
 
-const SERVICE_NAME: &str = "wocao-hub-desktop";
-const EXPORT_PREFIX: &str = "wocao-hub-diagnostics-";
+const SERVICE_NAME: &str = "dada-assistant-desktop";
+const EXPORT_PREFIX: &str = "dada-assistant-diagnostics-";
 const EXPORT_SUFFIX: &str = ".zip";
 
 #[derive(Clone)]
@@ -282,12 +282,14 @@ mod tests {
 
     #[test]
     fn export_file_name_rejects_path_traversal_and_untrusted_names() {
-        assert!(valid_export_file_name("wocao-hub-diagnostics-123-abc.zip"));
+        assert!(valid_export_file_name(
+            "dada-assistant-diagnostics-123-abc.zip"
+        ));
         for value in [
-            "../wocao-hub-diagnostics-123.zip",
-            "wocao-hub-diagnostics-123.zip/other",
+            "../dada-assistant-diagnostics-123.zip",
+            "dada-assistant-diagnostics-123.zip/other",
             "other.zip",
-            "wocao-hub-diagnostics-123.exe",
+            "dada-assistant-diagnostics-123.exe",
         ] {
             assert!(!valid_export_file_name(value));
         }

@@ -1,11 +1,12 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-export const WOCAO_LINKS = {
-  home: "https://wocao.ai/",
-  wallet: "https://wocao.ai/wallet",
-  imageGenerator: "https://wocao.ai/p/image-generator",
-  docs: "https://docs.wocao.ai/",
-  support: "https://wocao.ai/p/support",
+export const DADA_LINKS = {
+  home: "https://dadaapi.com/",
+  pricing: "https://dadaapi.com/pricing",
+  console: "https://dadaapi.com/console",
+  referral: "https://dadaapi.com/console/referral",
+  topup: "https://dadaapi.com/console/topup",
+  docs: "https://docs.dadaapi.com/",
 } as const;
 
 export async function openExternalLink(url: string): Promise<void> {

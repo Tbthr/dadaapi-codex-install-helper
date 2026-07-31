@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Wocao Hub",
+  "productName": "哒哒助手",
   "version": "1.0.0",
-  "identifier": "ai.wocao.hub",
+  "identifier": "com.dadaapi.assistant",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Wocao Hub",
+        "title": "哒哒助手",
         "width": 1240,
         "height": 780,
         "minWidth": 900,
@@ -27,7 +27,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "macOS": {
       "signingIdentity": "-",
       "hardenedRuntime": false
@@ -49,14 +49,5 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU3RjI1MEM4QkYxNDkyMEYKUldRUGtoUy95RkR5NXlvTmQxd3hFVW43dnRmb3g0QjhobmZwbU5zaXNIRmNqMHI3U25oUXlJMngK",
-      "endpoints": [
-        "https://gitee.com/codeTrees/wocao-hub/raw/main/release/latest.json",
-        "https://github.com/ray7086/wocao-hub/releases/latest/download/latest.json"
-      ]
-    }
   }
 }
