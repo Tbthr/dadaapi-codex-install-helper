@@ -21,7 +21,7 @@ const WU_SECURED_ENDPOINT: &str =
     "https://fe3cr.delivery.mp.microsoft.com/ClientWebService/client.asmx/secured";
 const WU_NS: &str = "http://www.microsoft.com/SoftwareDistribution/Server/ClientWebService";
 const REMOTE_MANIFEST_URL: &str =
-    "https://raw.githubusercontent.com/ray7086/wocao-hub/msix-links/msix-links.json";
+    "https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/msix-links/msix-links.json";
 
 const INSTALLED_NON_LEAF_IDS: &str = "1,2,3,11,19,544,549,2359974,2359977,5169044,8788830,23110993,23110994,54341900,54343656,59830006,59830007,59830008,60484010,62450018,62450019,62450020,66027979,66053150,97657898,98822896,98959022,98959023,98959024,98959025,98959026,104433538,104900364,105489019,117765322,129905029,130040031,132387090,132393049,133399034,138537048,140377312,143747671,158941041,158941042,158941043,158941044,159123858,159130928,164836897,164847386,164848327,164852241,164852246,164852252,164852253";
 
@@ -179,7 +179,7 @@ async fn resolve_remote_msix_url(architecture: CpuArchitecture) -> Result<Url, M
     let manifest = client
         .get(REMOTE_MANIFEST_URL)
         .header("Accept", "application/json")
-        .header("User-Agent", "wocao-hub/0.1")
+        .header("User-Agent", "dada-assistant/1.0")
         .send()
         .await
         .map_err(|_| MsStoreError::Request)?
@@ -210,9 +210,6 @@ fn metadata_client() -> Result<Client, MsStoreError> {
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))
         .redirect(Policy::none())
-        .danger_accept_invalid_certs(
-            std::env::var("WOCAO_HUB_MSSTORE_INSECURE_TLS").as_deref() == Ok("1"),
-        )
         .build()
         .map_err(|_| MsStoreError::Request)
 }
@@ -221,16 +218,9 @@ async fn fetch_fulfillment(client: &Client) -> Result<FulfillmentData, MsStoreEr
     let url = format!(
         "{STORE_PRODUCT_URL}/{PRODUCT_ID}?market=US&locale=en-us&deviceFamily=Windows.Desktop"
     );
-    let response = match send_store_product_request(client, &url).await {
-        Ok(response) => response,
-        Err(_) => {
-            tracing::warn!("retrying Microsoft Store product metadata with TLS fallback");
-            let fallback = tls_fallback_client()?;
-            send_store_product_request(&fallback, &url)
-                .await
-                .map_err(|_| MsStoreError::Request)?
-        }
-    };
+    let response = send_store_product_request(client, &url)
+        .await
+        .map_err(|_| MsStoreError::Request)?;
     let product = response
         .error_for_status()
         .map_err(|_| MsStoreError::Request)?
@@ -257,7 +247,7 @@ async fn send_store_product_request(
     client
         .get(url)
         .header("Accept", "application/json")
-        .header("User-Agent", "wocao-hub/0.1")
+        .header("User-Agent", "dada-assistant/1.0")
         .send()
         .await
 }
@@ -287,19 +277,9 @@ async fn post_soap(
     action: &str,
     body: &str,
 ) -> Result<String, MsStoreError> {
-    let response = match send_soap_request(client, endpoint, action, body).await {
-        Ok(response) => response,
-        Err(_) => {
-            tracing::warn!(
-                endpoint,
-                "retrying Microsoft Store SOAP request with TLS fallback"
-            );
-            let fallback = tls_fallback_client()?;
-            send_soap_request(&fallback, endpoint, action, body)
-                .await
-                .map_err(|_| MsStoreError::Request)?
-        }
-    };
+    let response = send_soap_request(client, endpoint, action, body)
+        .await
+        .map_err(|_| MsStoreError::Request)?;
     response
         .error_for_status()
         .map_err(|_| MsStoreError::Request)?
@@ -327,16 +307,6 @@ async fn send_soap_request(
         .body(body.to_owned())
         .send()
         .await
-}
-
-fn tls_fallback_client() -> Result<Client, MsStoreError> {
-    Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(30))
-        .redirect(Policy::none())
-        .danger_accept_invalid_certs(true)
-        .build()
-        .map_err(|_| MsStoreError::Request)
 }
 
 async fn head_file_name(client: &Client, url: Url) -> Option<String> {
@@ -376,6 +346,22 @@ fn detect_architecture(file_name: &str) -> Option<CpuArchitecture> {
         Some(CpuArchitecture::X64)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod branding_tests {
+    use super::*;
+
+    #[test]
+    fn remote_manifest_uses_the_dada_repository() {
+        let url = Url::parse(REMOTE_MANIFEST_URL).expect("remote manifest URL");
+        assert_eq!(url.scheme(), "https");
+        assert_eq!(url.host_str(), Some("raw.githubusercontent.com"));
+        assert_eq!(
+            url.path(),
+            "/Tbthr/dadaapi-codex-install-helper/msix-links/msix-links.json"
+        );
     }
 }
 

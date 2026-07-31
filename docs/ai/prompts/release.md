@@ -1,6 +1,6 @@
 # Release Readiness Prompt
 
-请检查 Wocao Hub 是否满足发布条件：
+请检查哒哒助手是否满足发布条件：
 
 - 版本号、变更日志和发布说明一致
 - Rust、Vue、Tauri 检查全部通过

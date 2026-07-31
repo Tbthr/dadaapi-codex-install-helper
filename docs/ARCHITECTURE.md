@@ -35,7 +35,6 @@ ChatGPT/OpenAI Services
 - `apps/desktop/src-tauri` 负责依赖装配、Tauri Commands 和事件转发。
 - `crates` 不依赖 Tauri，能够独立测试。
 - `crates/route-bundle` 负责静态路由包协议，不能依赖 Tauri UI。
-- `services/config-server` 和 `services/subscription-relay` 只保留为旧链路兼容测试代码，不进入生产桌面运行时。
 
 ## Activation State Machine
 
@@ -92,7 +91,7 @@ PendingManualRecovery → RestoringNetwork → StoppingLocalProxy → Idle
 
 ### Static Route Bundle
 
-- `routes.enc` 格式固定为 8 字节 `WCRTE001`、24 字节 XChaCha nonce 和带认证标签的密文，AAD 固定为 `wocao-hub-routes/v1`。
+- `routes.enc` 格式固定为 8 字节 `DADAR002`、24 字节 XChaCha nonce 和带认证标签的密文，AAD 固定为 `dadaapi-routes/v2`；清单 `schemaVersion` 固定为 `2`。
 - `routes.sig` 是对 `manifest.json` 原始字节的 Ed25519 Base64 签名；清单中的 `routeSha256` 和 `routeSize` 绑定 `routes.enc`。
 - 清单、签名和密文分别限制为 64KB、1KB 和约 8MB，超限响应在完整读取前拒绝。
 - 只有网络错误、超时或 `5xx` 可以使用本地缓存。远程签名、格式、哈希、有效期、`keyId` 或解密错误必须直接失败。
@@ -171,7 +170,6 @@ https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/routes.enc
 - `--quick` 使用 4 个候选、2 次尝试和较短超时；默认模式使用 8 个候选、3 次尝试和生产超时。
 - 工具必须完成下载、验签、有效期验证、SHA-256 校验、解密、订阅解析、香港及国内排除和真实 ChatGPT/OpenAI 多目标测速。
 - 输出只包含节点名称、协议、出口地区、覆盖率和延迟等脱敏指标，不输出路由 URI、密码、订阅正文或解密 key。
-- 旧 `tools/local-e2e` 仅用于回归历史配置服务器和固定证书中继链路，不代表生产架构。
 
 ### Desktop Build Configuration
 
@@ -179,7 +177,6 @@ https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/routes.enc
 - `DADAAPI_ROUTE_PUBLIC_KEY_PEM`：Ed25519 公钥 PEM。
 - `DADAAPI_ROUTE_KEY_B64`：32 字节 XChaCha20-Poly1305 key 的 Base64。
 - `DADAAPI_ROUTE_KEY_ID`：预期密钥标识。
-- 旧的 `WOCAO_HUB_ROUTE_*` 构建变量不再读取。
 - 四项全部缺失时只装载只读桌面能力；仅缺一项或任何一项格式错误时启动失败。
 - 公钥、清单 URL 和 `keyId` 是公开配置。解密 key 会进入官方客户端，只能作为混淆手段；签名私钥和原始上游订阅地址不得进入客户端构建。
 

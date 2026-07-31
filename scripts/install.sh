@@ -2,10 +2,10 @@
 
 set -eu
 
-github_repository="ray7086/wocao-hub"
+github_repository="Tbthr/dadaapi-codex-install-helper"
 github_release_base="https://github.com/${github_repository}/releases/latest/download"
 github_checksums_url="${github_release_base}/checksums.txt"
-gitee_repository="codeTrees/wocao-hub"
+gitee_repository="lyq_power/dadaapi-codex-install-helper"
 gitee_release_base="https://gitee.com/${gitee_repository}/releases/download"
 gitee_checksums_url="https://gitee.com/${gitee_repository}/releases/download/latest/checksums.txt"
 installer_user_agent="dada-assistant-installer"

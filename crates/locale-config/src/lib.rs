@@ -10,8 +10,8 @@ use thiserror::Error;
 use toml_edit::{value, DocumentMut, Item, Table};
 
 const CHINESE_LOCALE: &str = "zh-CN";
-const BACKUP_SUFFIX: &str = ".wocao-hub.bak";
-const MISSING_SUFFIX: &str = ".wocao-hub.missing";
+const BACKUP_SUFFIX: &str = ".dada-assistant.bak";
+const MISSING_SUFFIX: &str = ".dada-assistant.missing";
 const MISSING_MARKER_CONTENTS: &[u8] = b"missing\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -377,7 +377,10 @@ fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), LocaleConfigError> {
     let mut temp_name = path
         .file_name()
         .map_or_else(|| OsString::from("config"), OsString::from);
-    temp_name.push(format!(".wocao-hub.tmp-{}-{nonce}", std::process::id()));
+    temp_name.push(format!(
+        ".dada-assistant.tmp-{}-{nonce}",
+        std::process::id()
+    ));
     let temp_path = parent.join(temp_name);
 
     let write_result = (|| -> Result<(), std::io::Error> {
@@ -639,6 +642,28 @@ mod tests {
             original_state
         );
         assert!(!restored.status.restore_available);
+    }
+
+    #[test]
+    fn leaves_unrecognized_legacy_restore_artifacts_untouched() {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let paths = LocalePaths::from_codex_home(temp.path().join(".codex"));
+        fs::create_dir_all(paths.config_path.parent().expect("config parent"))
+            .expect("create config directory");
+        fs::write(&paths.config_path, b"model = \"gpt-5\"\n").expect("write config");
+        let legacy_backup = suffixed(&paths.config_path, ".legacy.bak");
+        fs::write(&legacy_backup, b"legacy snapshot").expect("write legacy backup");
+
+        apply_chinese_locale(&paths).expect("apply locale");
+        assert!(suffixed(&paths.config_path, BACKUP_SUFFIX).is_file());
+        assert!(legacy_backup.is_file());
+
+        restore_locale(&paths).expect("restore locale");
+        assert!(legacy_backup.is_file());
+        assert_eq!(
+            fs::read(&legacy_backup).expect("read legacy backup"),
+            b"legacy snapshot"
+        );
     }
 
     #[test]

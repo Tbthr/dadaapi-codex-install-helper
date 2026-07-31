@@ -1,6 +1,6 @@
 # Go To Rust Migration Prompt
 
-需要把旧 Go 实现迁移到 Wocao Hub Rust 模块。
+需要把旧 Go 实现迁移到哒哒助手 Rust 模块。
 
 Go 参考位置：
 

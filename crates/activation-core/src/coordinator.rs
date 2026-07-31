@@ -413,7 +413,6 @@ mod tests {
     use super::*;
     use crate::ProxyPreparationError;
     use async_trait::async_trait;
-    use chrono::{Duration as ChronoDuration, Utc};
     use desktop_discovery::DiscoveryError;
     use locale_config::inspect_locale;
     use platform::{NetworkState, PlatformError};
@@ -421,7 +420,8 @@ mod tests {
         parse_subscription, DirectNodeSelectionReport, DirectVerifiedNode, LocalProxyError,
         LocalProxySession, ProxyNode, TargetBenchmark, VerifiedActivationNode,
     };
-    use shared_types::{ClientConfig, DesktopProduct};
+    use route_catalog::SubscriptionPayload;
+    use shared_types::DesktopProduct;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::sync::{Arc, Mutex as StdMutex};
 
@@ -716,21 +716,16 @@ mod tests {
 
     #[async_trait]
     impl ProxyPreparationService for MockPreparation {
-        type PreparedSource = ClientConfig;
+        type PreparedSource = SubscriptionPayload;
 
-        async fn fetch_proxy_config(&self) -> Result<ClientConfig, ProxyPreparationError> {
+        async fn fetch_proxy_config(&self) -> Result<SubscriptionPayload, ProxyPreparationError> {
             record(&self.operations, "fetch_proxy_config");
-            Ok(ClientConfig {
-                version: "test".to_owned(),
-                generated_at: Utc::now(),
-                expires_at: Some(Utc::now() + ChronoDuration::minutes(5)),
-                subscription_endpoints: Vec::new(),
-            })
+            Ok(SubscriptionPayload::new(Vec::new()))
         }
 
         async fn load_proxy_nodes(
             &self,
-            _config: &ClientConfig,
+            _config: &SubscriptionPayload,
         ) -> Result<Vec<ProxyNode>, ProxyPreparationError> {
             record(&self.operations, "load_proxy_nodes");
             Ok(vec![test_node()])

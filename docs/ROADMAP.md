@@ -4,7 +4,6 @@
 
 - Rust Workspace
 - Tauri v2 + Vue 3 桌面壳
-- Axum 配置服务壳
 - 统一依赖、格式化、测试和 AI 开发规范
 - macOS 本地构建验证
 
@@ -30,10 +29,7 @@
 - [x] 纯 Rust 本地代理生命周期接口、就绪检查与失败清理
 - [x] 本地 Rust HTTP CONNECT 监听与双向转发
 - [x] 本地 HTTP CONNECT 代理与节点连接器边界
-- [x] 客户端 Ed25519 配置签名验证与原子缓存
-- [x] 配置服务 Ed25519 签名发布与不可用错误边界
-- [x] 安全上游订阅拉取、匿名本地 Route ID 与内存路由目录
-- [x] 固定证书 TLS 订阅中继与客户端拉取
+- [x] 订阅解析、匿名本地 Route ID 与内存路由目录
 - [x] 客户端 VLESS TCP/TLS 基础连接器
 - [ ] 客户端 VLESS Reality/Vision 连接器
 - [x] 客户端 Hysteria2 节点连接器（Salamander、端口跳跃、连接复用）

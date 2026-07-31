@@ -22,12 +22,11 @@
 - 未实现功能记录在文档或任务系统中，不通过产品页面向开发者说明。
 - 桌面端固定使用哒哒 API 浅色品牌系统，不重新引入主题切换或客户端在线更新入口。
 
-## REST
+## Static Route Bundle
 
-- API 路径使用 `/v1` 版本前缀。
-- 错误返回稳定的 `code`、`message` 和可选 `details`。
-- 配置响应包含 `version`、`generatedAt` 和 `signature`。
-- 超时、重试和缓存策略必须显式配置。
+- 路由只通过固定 HTTPS 静态文件分发，客户端不得依赖动态配置 API。
+- `manifest.json`、`routes.sig` 和 `routes.enc` 的协议版本、签名、超时、回退和缓存策略必须显式定义并测试。
+- Tauri Command 的错误返回稳定的 `code`、`message` 和可选 `details`。
 
 ## Testing
 

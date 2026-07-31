@@ -17,8 +17,7 @@
 - `apps/desktop`：Tauri 桌面客户端
 - `crates`：可测试、可复用的 Rust 核心模块
 - `crates/route-bundle`：静态路由包下载、验签、校验、解密和密文缓存
-- `tools/route-e2e`：GitHub 生产路由真实联调工具
-- `services`：旧配置服务链路和本地兼容测试代码，不是生产依赖
+- `tools/route-e2e`：Gitee 优先、GitHub 备用的生产路由真实联调工具
 - `docs`：需求、架构、规范、计划和 AI 开发提示词
 
 ## 环境要求
@@ -54,33 +53,33 @@ pnpm --dir apps/desktop tauri build
 Windows（Gitee 脚本入口）：
 
 ```powershell
-irm https://gitee.com/codeTrees/wocao-hub/raw/main/scripts/install.ps1 | iex
+irm https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/main/scripts/install.ps1 | iex
 ```
 
 macOS（Gitee 脚本入口）：
 
 ```sh
-curl -fsSL https://gitee.com/codeTrees/wocao-hub/raw/main/scripts/install.sh | sh
+curl -fsSL https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/main/scripts/install.sh | sh
 ```
 
 脚本优先从 Gitee 获取校验和和安装包，失败时回退 GitHub；也可直接使用 GitHub 脚本入口：
 
 ```powershell
-irm https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/main/scripts/install.ps1 | iex
 ```
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ray7086/wocao-hub/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/main/scripts/install.sh | sh
 ```
 
-GitHub 静态路由真实联调：
+静态路由真实联调（Gitee 优先、GitHub 备用）：
 
 ```bash
 cargo run -p route-e2e -- --quick
 cargo run -p route-e2e
 ```
 
-工具默认读取当前用户配置目录下的 `wocao-hub/routes/route-signing-public.pem` 和 `route-encryption-key.bin`。也可通过以下环境变量覆盖文件位置，但不得把密钥写入仓库或命令行参数：
+工具默认读取当前用户配置目录下的 `dada-assistant/routes/route-signing-public.pem` 和 `route-encryption-key.bin`。也可通过以下环境变量覆盖文件位置，但不得把密钥写入仓库或命令行参数：
 
 - `DADAAPI_ROUTE_PUBLIC_KEY_FILE`
 - `DADAAPI_ROUTE_KEY_FILE`
@@ -93,8 +92,6 @@ cargo run -p route-e2e
 - `DADAAPI_ROUTE_PUBLIC_KEY_PEM`：验证路由清单签名的 Ed25519 公钥 PEM，可使用真实换行或转义的 `\n`。
 - `DADAAPI_ROUTE_KEY_B64`：32 字节 XChaCha20-Poly1305 解密 key 的 Base64。它会进入官方客户端，只能用于避免直接浏览，不能视为不可提取秘密。
 - `DADAAPI_ROUTE_KEY_ID`：必须与签名清单中的 `keyId` 一致。
-
-旧的 `WOCAO_HUB_ROUTE_*` 构建变量不再读取。
 
 四项都未提供时，桌面端只装载只读检测能力；仅缺任一项或内容无效时，应用拒绝启动，避免半配置运行。签名私钥和原始上游订阅地址不得进入客户端构建。
 
@@ -116,7 +113,7 @@ cargo run -p route-e2e
 - 幂等写入 `localeOverride = "zh-CN"`
 - 恢复原语言配置
 - 配置完成后停止并重新打开目标桌面应用
-- GitHub 静态路由下载、Ed25519 验签、SHA-256 校验和 XChaCha20-Poly1305 解密
+- Gitee 优先、GitHub Raw 备用的静态路由下载、Ed25519 验签、SHA-256 校验和 XChaCha20-Poly1305 解密
 - 仅保存签名清单、签名和密文的私有原子缓存及严格安全回退
 - VLESS TCP/TLS、Hysteria2 本地协议连接
 - ChatGPT/OpenAI 多目标节点选优及脱敏结果缓存

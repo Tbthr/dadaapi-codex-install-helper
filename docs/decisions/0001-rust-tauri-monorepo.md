@@ -6,7 +6,7 @@ Accepted
 
 ## Decision
 
-哒哒助手使用 Tauri v2、Vue 3、TypeScript 和 Rust Workspace。桌面客户端和配置服务器均使用 Rust，旧 Go 项目仅作为迁移参考。
+哒哒助手使用 Tauri v2、Vue 3、TypeScript 和 Rust Workspace。桌面客户端和共享核心模块均使用 Rust，旧 Go 项目仅作为迁移参考。
 
 ## Reasons
 

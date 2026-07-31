@@ -59,7 +59,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          api="https://gitee.com/api/v5/repos/codeTrees/wocao-hub/releases"
+          api="https://gitee.com/api/v5/repos/lyq_power/dadaapi-codex-install-helper/releases"
           existing=$(curl -fsS --connect-timeout 20 --max-time 60 \
             "$api/tags/$RELEASE_TAG?access_token=$GITEE_TOKEN" || true)
           existing_id=$(printf '%s' "$existing" | jq -r '.id // empty')
@@ -90,7 +90,7 @@ jobs:
           RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
         run: |
           set -euo pipefail
-          api="https://gitee.com/api/v5/repos/codeTrees/wocao-hub/releases/$RELEASE_ID/attach_files"
+          api="https://gitee.com/api/v5/repos/lyq_power/dadaapi-codex-install-helper/releases/$RELEASE_ID/attach_files"
           export api GITEE_TOKEN
 
           find release-assets -maxdepth 1 -type f -print0 | \
@@ -122,7 +122,7 @@ jobs:
           set -euo pipefail
           expected=$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')
           actual=$(curl -fsS --connect-timeout 20 --max-time 60 \
-            "https://gitee.com/api/v5/repos/codeTrees/wocao-hub/releases/$RELEASE_ID/attach_files?per_page=100" \
+            "https://gitee.com/api/v5/repos/lyq_power/dadaapi-codex-install-helper/releases/$RELEASE_ID/attach_files?per_page=100" \
             | jq 'length')
           test "$actual" -eq "$expected"
 
@@ -132,7 +132,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          git remote add gitee "https://codeTrees:${GITEE_TOKEN}@gitee.com/codeTrees/wocao-hub.git"
+          git remote add gitee "https://lyq_power:${GITEE_TOKEN}@gitee.com/lyq_power/dadaapi-codex-install-helper.git"
           git push gitee main
           git push gitee "$RELEASE_TAG" --force
 
@@ -142,7 +142,7 @@ jobs:
         run: |
           set -euo pipefail
           while read -r checksum name; do
-            url="https://gitee.com/codeTrees/wocao-hub/releases/download/$RELEASE_TAG/$name"
+            url="https://gitee.com/lyq_power/dadaapi-codex-install-helper/releases/download/$RELEASE_TAG/$name"
             curl -fsSL \
               --connect-timeout 30 \
               --max-time 900 \

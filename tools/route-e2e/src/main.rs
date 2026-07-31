@@ -129,7 +129,7 @@ fn default_route_config_directory() -> anyhow::Result<PathBuf> {
         dirs::home_dir().context("cannot locate the current user home directory")?;
     let dot_config = home_directory
         .join(".config")
-        .join("wocao-hub")
+        .join("dada-assistant")
         .join("routes");
     if dot_config.join("route-signing-public.pem").is_file()
         || dot_config.join("route-encryption-key.bin").is_file()
@@ -138,7 +138,7 @@ fn default_route_config_directory() -> anyhow::Result<PathBuf> {
     }
     Ok(dirs::config_dir()
         .context("cannot locate the current user configuration directory")?
-        .join("wocao-hub")
+        .join("dada-assistant")
         .join("routes"))
 }
 

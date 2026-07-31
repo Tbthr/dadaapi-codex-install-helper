@@ -1,10 +1,10 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$GitHubRepository = "ray7086/wocao-hub"
+$GitHubRepository = "Tbthr/dadaapi-codex-install-helper"
 $GitHubReleaseBase = "https://github.com/$GitHubRepository/releases/latest/download"
 $GitHubChecksumsUrl = "$GitHubReleaseBase/checksums.txt"
-$GiteeRepository = "codeTrees/wocao-hub"
+$GiteeRepository = "lyq_power/dadaapi-codex-install-helper"
 $GiteeReleaseBase = "https://gitee.com/$GiteeRepository/releases/download"
 $GiteeChecksumsUrl = "https://gitee.com/$GiteeRepository/releases/download/latest/checksums.txt"
 $InstallerUserAgent = "dada-assistant-installer"

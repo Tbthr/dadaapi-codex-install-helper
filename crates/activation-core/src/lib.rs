@@ -6,7 +6,7 @@ pub use coordinator::{
 };
 pub use proxy_preparation::{
     default_activation_selection_options, ProxyPreparationError, ProxyPreparationService,
-    RemoteProxyPreparationService, StaticRouteProxyPreparationService,
+    StaticRouteProxyPreparationService,
 };
 
 use chrono::{DateTime, Utc};

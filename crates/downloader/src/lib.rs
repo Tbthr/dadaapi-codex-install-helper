@@ -26,7 +26,7 @@ use tokio::{
 use url::Url;
 
 const HASH_BUFFER_SIZE: usize = 64 * 1024;
-const RESUME_METADATA_MAGIC: &[u8; 8] = b"WHDPART1";
+const RESUME_METADATA_MAGIC: &[u8; 8] = b"DADAD001";
 const MAX_VALIDATOR_LENGTH: usize = 8 * 1024;
 
 #[derive(Debug, Error)]
@@ -1302,7 +1302,7 @@ mod tests {
                 .unwrap()
                 .as_nanos();
             let path = env::temp_dir().join(format!(
-                "wocao-hub-downloader-test-{}-{timestamp}-{counter}",
+                "dada-assistant-downloader-test-{}-{timestamp}-{counter}",
                 std::process::id()
             ));
             std_fs::create_dir_all(&path)?;

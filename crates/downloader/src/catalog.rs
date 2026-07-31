@@ -644,7 +644,7 @@ where
     let response = client
         .get(url)
         .header("Accept", "application/json")
-        .header("User-Agent", "wocao-hub/0.1")
+        .header("User-Agent", "dada-assistant/1.0")
         .send()
         .await
         .map_err(|_| CatalogError::Request)?;

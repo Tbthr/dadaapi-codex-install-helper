@@ -25,5 +25,5 @@ jobs:
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
-          git remote add gitee "https://codeTrees:${GITEE_TOKEN}@gitee.com/codeTrees/wocao-hub.git"
+          git remote add gitee "https://lyq_power:${GITEE_TOKEN}@gitee.com/lyq_power/dadaapi-codex-install-helper.git"
           git push gitee HEAD:main

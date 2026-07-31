@@ -23,9 +23,9 @@ use zeroize::Zeroizing;
 const MANIFEST_FILE_NAME: &str = "manifest.json";
 const ROUTE_FILE_NAME: &str = "routes.enc";
 const SIGNATURE_FILE_NAME: &str = "routes.sig";
-const ROUTE_MAGIC: &[u8; 8] = b"WCRTE001";
-const ROUTE_AAD: &[u8] = b"wocao-hub-routes/v1";
-const CACHE_MAGIC: &[u8; 8] = b"WCRTC001";
+const ROUTE_MAGIC: &[u8; 8] = b"DADAR002";
+const ROUTE_AAD: &[u8] = b"dadaapi-routes/v2";
+const CACHE_MAGIC: &[u8; 8] = b"DADAC002";
 const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 const MAX_SIGNATURE_BYTES: usize = 1024;
 const MAX_PLAINTEXT_BYTES: usize = 8 * 1024 * 1024;
@@ -450,7 +450,7 @@ fn validate_manifest(
     expected_key_id: &str,
     now: DateTime<Utc>,
 ) -> Result<(), RouteBundleError> {
-    if manifest.schema_version != 1 {
+    if manifest.schema_version != 2 {
         return Err(RouteBundleError::UnsupportedSchema);
     }
     if manifest.version.trim().is_empty()
@@ -466,7 +466,7 @@ fn validate_manifest(
         || manifest.expires_at <= manifest.generated_at
     {
         return Err(RouteBundleError::InvalidManifest(
-            "字段值不符合 v1 路由包协议".to_owned(),
+            "字段值不符合 v2 路由包协议".to_owned(),
         ));
     }
     if manifest.generated_at > now + MAX_CLOCK_SKEW {
@@ -805,9 +805,35 @@ mod tests {
             .find(|path| path.extension().and_then(|value| value.to_str()) == Some(CACHE_EXTENSION))
             .expect("cache file");
         let bytes = fs::read(cache_path).expect("cache bytes");
+        assert!(bytes.starts_with(CACHE_MAGIC));
         assert!(!bytes
             .windows(plaintext.len())
             .any(|window| window == plaintext));
+    }
+
+    #[test]
+    fn rejects_incompatible_cache_magic() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let cache_path = directory.path().join("route-legacy.bundle");
+        let mut payload = b"LEGACY00".to_vec();
+        payload.extend_from_slice(&[0_u8; 16]);
+        fs::write(&cache_path, payload).expect("legacy cache fixture");
+
+        assert!(matches!(
+            read_cached_bundle(&cache_path),
+            Err(RouteBundleError::InvalidCacheFormat)
+        ));
+    }
+
+    #[test]
+    fn rejects_pre_v2_route_magic() {
+        let (mut bundle, verifier) = test_bundle(b"route payload", Utc::now());
+        bundle.routes[..ROUTE_MAGIC.len()].copy_from_slice(b"LEGACY01");
+
+        assert!(matches!(
+            decrypt_routes(&bundle.routes, &verifier.encryption_key),
+            Err(RouteBundleError::InvalidRouteFormat)
+        ));
     }
 
     #[tokio::test]
@@ -914,6 +940,19 @@ mod tests {
     }
 
     #[test]
+    fn rejects_pre_v2_manifest_schema() {
+        let (bundle, _) = test_bundle(b"route payload", Utc::now());
+        let mut manifest: RouteManifest =
+            serde_json::from_slice(&bundle.manifest).expect("manifest fixture");
+        manifest.schema_version = 1;
+
+        assert!(matches!(
+            validate_manifest(&manifest, "v1", Utc::now()),
+            Err(RouteBundleError::UnsupportedSchema)
+        ));
+    }
+
+    #[test]
     fn accepts_only_fixed_https_manifest_urls() {
         for invalid in [
             "http://example.com/public/manifest.json",
@@ -951,7 +990,7 @@ mod tests {
             RouteBundleClient::new_with_fallbacks(
                 vec![
                     Url::parse(
-                        "https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/manifest.json",
+                        "https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/manifest.json",
                     )
                     .expect("Gitee URL"),
                     Url::parse("http://example.com/public/manifest.json")
@@ -1038,8 +1077,8 @@ mod tests {
         routes.extend_from_slice(&nonce);
         routes.extend_from_slice(&ciphertext);
         let manifest = RouteManifest {
-            schema_version: 1,
-            version: "test-v1".to_owned(),
+            schema_version: 2,
+            version: "test-v2".to_owned(),
             generated_at,
             expires_at: generated_at + ChronoDuration::hours(72),
             route_file: ROUTE_FILE_NAME.to_owned(),

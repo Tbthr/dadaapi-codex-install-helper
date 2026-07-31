@@ -38,7 +38,7 @@
 
 ## Route Publishing Features
 
-- 独立 `wocao-hub-routes` 仓库通过 GitHub Actions 定时拉取上游订阅。
+- 独立 `dadaapi-routes` 仓库通过 GitHub Actions 定时拉取上游订阅。
 - 使用 XChaCha20-Poly1305 加密订阅正文。
 - 发布带版本、生成时间、有效期、文件大小、SHA-256 和 `keyId` 的清单。
 - 使用 Ed25519 私钥签名清单原始字节。

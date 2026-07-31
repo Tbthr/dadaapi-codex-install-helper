@@ -455,10 +455,10 @@ mod tests {
         let response = read_response_header(&mut client).await;
         assert!(response.starts_with("HTTP/1.1 200"));
 
-        client.write_all(b"wocao-hub").await.expect("tunnel write");
-        let mut echoed = [0_u8; 9];
+        client.write_all(b"dadaapi").await.expect("tunnel write");
+        let mut echoed = [0_u8; 7];
         client.read_exact(&mut echoed).await.expect("tunnel read");
-        assert_eq!(&echoed, b"wocao-hub");
+        assert_eq!(&echoed, b"dadaapi");
 
         drop(client);
         session.shutdown().await.expect("proxy shutdown");

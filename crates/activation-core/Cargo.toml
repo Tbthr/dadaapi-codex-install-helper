@@ -11,7 +11,6 @@ desktop-discovery = { path = "../desktop-discovery" }
 locale-config = { path = "../locale-config" }
 platform = { path = "../platform" }
 proxy-core = { path = "../proxy-core" }
-remote-config = { path = "../remote-config" }
 route-bundle = { path = "../route-bundle" }
 route-catalog = { path = "../route-catalog" }
 serde.workspace = true
@@ -23,10 +22,7 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-base64.workspace = true
-ed25519-dalek.workspace = true
 tempfile.workspace = true
-uuid.workspace = true
 
 [lints]
 workspace = true

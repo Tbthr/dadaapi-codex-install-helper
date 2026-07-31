@@ -1,6 +1,6 @@
 # Feature Implementation Prompt
 
-你正在 Wocao Hub 仓库实现一个功能。
+你正在哒哒助手仓库实现一个功能。
 
 目标：
 

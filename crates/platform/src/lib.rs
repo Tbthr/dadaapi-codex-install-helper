@@ -710,8 +710,8 @@ async fn windows_desktop_app_uses_locale(
     let output = windows_powershell_output(
         WINDOWS_VERIFY_APP_LOCALE_SCRIPT,
         &[
-            ("WCH_APP_INSTALL_PATH", app.install_path.as_str()),
-            ("WCH_APP_LOCALE", locale),
+            ("DADA_ASSISTANT_APP_INSTALL_PATH", app.install_path.as_str()),
+            ("DADA_ASSISTANT_APP_LOCALE", locale),
         ],
         "Windows 应用语言检测命令执行失败",
     )
@@ -791,8 +791,8 @@ async fn apply_windows_local_proxy(settings: &LocalProxySettings) -> Result<(), 
     }
     let proxy_override = bypass_domains.join(";");
     let environment = [
-        ("WCH_PROXY_SERVER", proxy_server.as_str()),
-        ("WCH_PROXY_OVERRIDE", proxy_override.as_str()),
+        ("DADA_ASSISTANT_PROXY_SERVER", proxy_server.as_str()),
+        ("DADA_ASSISTANT_PROXY_OVERRIDE", proxy_override.as_str()),
     ];
     let mut attempt = 1_u8;
     loop {
@@ -822,7 +822,7 @@ async fn restore_windows_network_state(state: &NetworkState) -> Result<(), Platf
         serde_json::to_string(&parsed).map_err(|_| PlatformError::InvalidNetworkState)?;
     windows_powershell_status(
         WINDOWS_RESTORE_PROXY_SCRIPT,
-        &[("WCH_NETWORK_STATE", serialized.as_str())],
+        &[("DADA_ASSISTANT_NETWORK_STATE", serialized.as_str())],
         "Windows 系统代理恢复失败",
     )
     .await
@@ -934,29 +934,29 @@ function Read-String([string]$name) {
 const WINDOWS_APPLY_PROXY_SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
 $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
-if ([string]::IsNullOrWhiteSpace($env:WCH_PROXY_SERVER)) { throw 'missing proxy server' }
+if ([string]::IsNullOrWhiteSpace($env:DADA_ASSISTANT_PROXY_SERVER)) { throw 'missing proxy server' }
 New-Item -Path $path -Force | Out-Null
 New-ItemProperty -Path $path -Name 'ProxyEnable' -PropertyType DWord -Value 1 -Force | Out-Null
-New-ItemProperty -Path $path -Name 'ProxyServer' -PropertyType String -Value $env:WCH_PROXY_SERVER -Force | Out-Null
-New-ItemProperty -Path $path -Name 'ProxyOverride' -PropertyType String -Value $env:WCH_PROXY_OVERRIDE -Force | Out-Null
+New-ItemProperty -Path $path -Name 'ProxyServer' -PropertyType String -Value $env:DADA_ASSISTANT_PROXY_SERVER -Force | Out-Null
+New-ItemProperty -Path $path -Name 'ProxyOverride' -PropertyType String -Value $env:DADA_ASSISTANT_PROXY_OVERRIDE -Force | Out-Null
 Remove-ItemProperty -Path $path -Name 'AutoConfigURL' -ErrorAction SilentlyContinue
 New-ItemProperty -Path $path -Name 'AutoDetect' -PropertyType DWord -Value 0 -Force | Out-Null
 $actualEnable = [uint32](Get-ItemPropertyValue -Path $path -Name 'ProxyEnable' -ErrorAction Stop)
 $actualServer = [string](Get-ItemPropertyValue -Path $path -Name 'ProxyServer' -ErrorAction Stop)
 $actualOverride = [string](Get-ItemPropertyValue -Path $path -Name 'ProxyOverride' -ErrorAction Stop)
-if ($actualEnable -ne 1 -or $actualServer -ne $env:WCH_PROXY_SERVER -or $actualOverride -ne $env:WCH_PROXY_OVERRIDE) {
+if ($actualEnable -ne 1 -or $actualServer -ne $env:DADA_ASSISTANT_PROXY_SERVER -or $actualOverride -ne $env:DADA_ASSISTANT_PROXY_OVERRIDE) {
   throw 'proxy_write_verification_failed'
 }
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-public static class WocaoWinInet {
+public static class DadaAssistantWinInet {
   [DllImport("wininet.dll", SetLastError = true)]
   public static extern bool InternetSetOption(IntPtr internet, int option, IntPtr buffer, int length);
 }
 '@
-$settingsChanged = [WocaoWinInet]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
-$settingsRefresh = [WocaoWinInet]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
+$settingsChanged = [DadaAssistantWinInet]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
+$settingsRefresh = [DadaAssistantWinInet]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
 if (-not $settingsChanged -or -not $settingsRefresh) { throw 'wininet_notify_failed' }
 "#;
 
@@ -964,7 +964,7 @@ if (-not $settingsChanged -or -not $settingsRefresh) { throw 'wininet_notify_fai
 const WINDOWS_RESTORE_PROXY_SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
 $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
-$state = $env:WCH_NETWORK_STATE | ConvertFrom-Json
+$state = $env:DADA_ASSISTANT_NETWORK_STATE | ConvertFrom-Json
 New-Item -Path $path -Force | Out-Null
 function Restore-Dword([string]$name, $entry) {
   if ($entry.exists) {
@@ -988,13 +988,13 @@ Restore-Dword 'AutoDetect' $state.autoDetect
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-public static class WocaoWinInetRestore {
+public static class DadaAssistantWinInetRestore {
   [DllImport("wininet.dll", SetLastError = true)]
   public static extern bool InternetSetOption(IntPtr internet, int option, IntPtr buffer, int length);
 }
 '@
-[WocaoWinInetRestore]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null
-[WocaoWinInetRestore]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0) | Out-Null
+[DadaAssistantWinInetRestore]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null
+[DadaAssistantWinInetRestore]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0) | Out-Null
 "#;
 
 #[cfg(target_os = "windows")]
@@ -1011,13 +1011,13 @@ New-ItemProperty -Path $path -Name 'AutoDetect' -PropertyType DWord -Value 0 -Fo
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-public static class WocaoWinInetReset {
+public static class DadaAssistantWinInetReset {
   [DllImport("wininet.dll", SetLastError = true)]
   public static extern bool InternetSetOption(IntPtr internet, int option, IntPtr buffer, int length);
 }
 '@
-$settingsChanged = [WocaoWinInetReset]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
-$settingsRefresh = [WocaoWinInetReset]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
+$settingsChanged = [DadaAssistantWinInetReset]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
+$settingsRefresh = [DadaAssistantWinInetReset]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
 if (-not $settingsChanged -or -not $settingsRefresh) { throw 'wininet_notify_failed' }
 $actualEnable = [uint32](Get-ItemPropertyValue -Path $path -Name 'ProxyEnable' -ErrorAction Stop)
 if ($actualEnable -ne 0) { throw 'proxy_write_verification_failed' }
@@ -1026,9 +1026,9 @@ if ($actualEnable -ne 0) { throw 'proxy_write_verification_failed' }
 #[cfg(target_os = "windows")]
 const WINDOWS_VERIFY_APP_LOCALE_SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
-$installPath = $env:WCH_APP_INSTALL_PATH
-$localeFlag = '--lang=' + $env:WCH_APP_LOCALE
-if ([string]::IsNullOrWhiteSpace($installPath) -or [string]::IsNullOrWhiteSpace($env:WCH_APP_LOCALE)) {
+$installPath = $env:DADA_ASSISTANT_APP_INSTALL_PATH
+$localeFlag = '--lang=' + $env:DADA_ASSISTANT_APP_LOCALE
+if ([string]::IsNullOrWhiteSpace($installPath) -or [string]::IsNullOrWhiteSpace($env:DADA_ASSISTANT_APP_LOCALE)) {
   Write-Output 'false'
   exit 0
 }

@@ -371,7 +371,7 @@ mod tests {
             stream.read_exact(&mut domain).await.expect("VLESS domain");
             assert_eq!(&domain, b"chatgpt.com");
             stream.write_all(&[0, 0]).await.expect("VLESS response");
-            let mut payload = [0_u8; 9];
+            let mut payload = [0_u8; 7];
             stream
                 .read_exact(&mut payload)
                 .await
@@ -388,10 +388,10 @@ mod tests {
             .await
             .expect("VLESS stream");
 
-        stream.write_all(b"wocao-hub").await.expect("payload write");
-        let mut echoed = [0_u8; 9];
+        stream.write_all(b"dadaapi").await.expect("payload write");
+        let mut echoed = [0_u8; 7];
         stream.read_exact(&mut echoed).await.expect("payload read");
-        assert_eq!(&echoed, b"wocao-hub");
+        assert_eq!(&echoed, b"dadaapi");
         server.await.expect("VLESS server");
     }
 
@@ -423,7 +423,7 @@ mod tests {
             let mut domain = vec![0_u8; usize::from(fixed[22])];
             stream.read_exact(&mut domain).await.expect("VLESS domain");
             stream.write_all(&[0, 0]).await.expect("VLESS response");
-            let mut payload = [0_u8; 9];
+            let mut payload = [0_u8; 7];
             stream
                 .read_exact(&mut payload)
                 .await
@@ -440,10 +440,10 @@ mod tests {
             .await
             .expect("TLS VLESS stream");
 
-        stream.write_all(b"wocao-hub").await.expect("payload write");
-        let mut echoed = [0_u8; 9];
+        stream.write_all(b"dadaapi").await.expect("payload write");
+        let mut echoed = [0_u8; 7];
         stream.read_exact(&mut echoed).await.expect("payload read");
-        assert_eq!(&echoed, b"wocao-hub");
+        assert_eq!(&echoed, b"dadaapi");
         server.await.expect("TLS VLESS server");
     }
 
