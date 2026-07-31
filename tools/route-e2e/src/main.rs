@@ -13,9 +13,9 @@ use url::Url;
 use zeroize::Zeroizing;
 
 const DEFAULT_GITEE_MANIFEST_URL: &str =
-    "https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/manifest.json";
+    "https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/manifest.json";
 const DEFAULT_GITHUB_MANIFEST_URL: &str =
-    "https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/manifest.json";
+    "https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/manifest.json";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,18 +23,18 @@ async fn main() -> anyhow::Result<()> {
     let quick = env::args().any(|argument| argument == "--quick");
     let single = env::args().any(|argument| argument == "--single");
     let config_directory = default_route_config_directory()?;
-    let manifest_urls = env::var("WOCAO_HUB_ROUTE_MANIFEST_URLS")
-        .or_else(|_| env::var("WOCAO_HUB_ROUTE_MANIFEST_URL"))
+    let manifest_urls = env::var("DADAAPI_ROUTE_MANIFEST_URLS")
+        .or_else(|_| env::var("DADAAPI_ROUTE_MANIFEST_URL"))
         .unwrap_or_else(|_| format!("{DEFAULT_GITEE_MANIFEST_URL},{DEFAULT_GITHUB_MANIFEST_URL}"));
     let public_key_path = environment_path(
-        "WOCAO_HUB_ROUTE_PUBLIC_KEY_FILE",
+        "DADAAPI_ROUTE_PUBLIC_KEY_FILE",
         config_directory.join("route-signing-public.pem"),
     );
     let encryption_key_path = environment_path(
-        "WOCAO_HUB_ROUTE_KEY_FILE",
+        "DADAAPI_ROUTE_KEY_FILE",
         config_directory.join("route-encryption-key.bin"),
     );
-    let key_id = env::var("WOCAO_HUB_ROUTE_KEY_ID").unwrap_or_else(|_| "v1".to_owned());
+    let key_id = env::var("DADAAPI_ROUTE_KEY_ID").unwrap_or_else(|_| "v1".to_owned());
 
     let public_key = fs::read_to_string(&public_key_path)
         .context("cannot read the local route verification public key")?;

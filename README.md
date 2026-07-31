@@ -80,17 +80,19 @@ cargo run -p route-e2e
 
 工具默认读取当前用户配置目录下的 `wocao-hub/routes/route-signing-public.pem` 和 `route-encryption-key.bin`。也可通过以下环境变量覆盖文件位置，但不得把密钥写入仓库或命令行参数：
 
-- `WOCAO_HUB_ROUTE_PUBLIC_KEY_FILE`
-- `WOCAO_HUB_ROUTE_KEY_FILE`
-- `WOCAO_HUB_ROUTE_MANIFEST_URLS`
-- `WOCAO_HUB_ROUTE_KEY_ID`
+- `DADAAPI_ROUTE_PUBLIC_KEY_FILE`
+- `DADAAPI_ROUTE_KEY_FILE`
+- `DADAAPI_ROUTE_MANIFEST_URLS`
+- `DADAAPI_ROUTE_KEY_ID`
 
 桌面激活运行时通过构建环境注入四项配置：
 
-- `WOCAO_HUB_ROUTE_MANIFEST_URLS`：按优先级排列、逗号分隔且无凭据、无查询参数的 HTTPS `manifest.json` 地址；兼容旧的单地址变量 `WOCAO_HUB_ROUTE_MANIFEST_URL`。
-- `WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM`：验证路由清单签名的 Ed25519 公钥 PEM，可使用真实换行或转义的 `\n`。
-- `WOCAO_HUB_ROUTE_KEY_B64`：32 字节 XChaCha20-Poly1305 解密 key 的 Base64。它会进入官方客户端，只能用于避免直接浏览，不能视为不可提取秘密。
-- `WOCAO_HUB_ROUTE_KEY_ID`：必须与签名清单中的 `keyId` 一致。
+- `DADAAPI_ROUTE_MANIFEST_URLS`：按优先级排列、逗号分隔且无凭据、无查询参数的 HTTPS `manifest.json` 地址；兼容单地址变量 `DADAAPI_ROUTE_MANIFEST_URL`。
+- `DADAAPI_ROUTE_PUBLIC_KEY_PEM`：验证路由清单签名的 Ed25519 公钥 PEM，可使用真实换行或转义的 `\n`。
+- `DADAAPI_ROUTE_KEY_B64`：32 字节 XChaCha20-Poly1305 解密 key 的 Base64。它会进入官方客户端，只能用于避免直接浏览，不能视为不可提取秘密。
+- `DADAAPI_ROUTE_KEY_ID`：必须与签名清单中的 `keyId` 一致。
+
+旧的 `WOCAO_HUB_ROUTE_*` 构建变量不再读取。
 
 四项都未提供时，桌面端只装载只读检测能力；仅缺任一项或内容无效时，应用拒绝启动，避免半配置运行。签名私钥和原始上游订阅地址不得进入客户端构建。
 

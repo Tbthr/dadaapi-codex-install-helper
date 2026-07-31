@@ -14,10 +14,10 @@ use url::Url;
 
 use activation_core::NetworkRecoveryStore;
 
-const ROUTE_MANIFEST_URLS_ENV: &str = "WOCAO_HUB_ROUTE_MANIFEST_URLS";
-const ROUTE_PUBLIC_KEY_ENV: &str = "WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM";
-const ROUTE_KEY_ENV: &str = "WOCAO_HUB_ROUTE_KEY_B64";
-const ROUTE_KEY_ID_ENV: &str = "WOCAO_HUB_ROUTE_KEY_ID";
+const ROUTE_MANIFEST_URLS_ENV: &str = "DADAAPI_ROUTE_MANIFEST_URLS";
+const ROUTE_PUBLIC_KEY_ENV: &str = "DADAAPI_ROUTE_PUBLIC_KEY_PEM";
+const ROUTE_KEY_ENV: &str = "DADAAPI_ROUTE_KEY_B64";
+const ROUTE_KEY_ID_ENV: &str = "DADAAPI_ROUTE_KEY_ID";
 
 pub type DesktopActivationCoordinator = ActivationCoordinator<
     SystemDesktopDiscovery,
@@ -82,13 +82,13 @@ impl DesktopActivationRuntime {
     pub fn from_build_environment(
         app_data_dir: PathBuf,
     ) -> Result<Option<Self>, ActivationRuntimeError> {
-        let manifest_urls = option_env!("WOCAO_HUB_ROUTE_MANIFEST_URLS")
-            .or(option_env!("WOCAO_HUB_ROUTE_MANIFEST_URL"));
+        let manifest_urls = option_env!("DADAAPI_ROUTE_MANIFEST_URLS")
+            .or(option_env!("DADAAPI_ROUTE_MANIFEST_URL"));
         match (
             manifest_urls,
-            option_env!("WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM"),
-            option_env!("WOCAO_HUB_ROUTE_KEY_B64"),
-            option_env!("WOCAO_HUB_ROUTE_KEY_ID"),
+            option_env!("DADAAPI_ROUTE_PUBLIC_KEY_PEM"),
+            option_env!("DADAAPI_ROUTE_KEY_B64"),
+            option_env!("DADAAPI_ROUTE_KEY_ID"),
         ) {
             (None, None, None, None) => Ok(None),
             (Some(manifest_urls), Some(public_key_pem), Some(key_b64), Some(key_id)) => {
@@ -190,10 +190,23 @@ mod tests {
     use ed25519_dalek::SigningKey;
 
     #[test]
+    fn exposes_dadaapi_build_configuration_names() {
+        assert_eq!(
+            build_configuration_names(),
+            [
+                "DADAAPI_ROUTE_MANIFEST_URLS",
+                "DADAAPI_ROUTE_PUBLIC_KEY_PEM",
+                "DADAAPI_ROUTE_KEY_B64",
+                "DADAAPI_ROUTE_KEY_ID",
+            ]
+        );
+    }
+
+    #[test]
     fn accepts_static_github_route_configuration() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let runtime = DesktopActivationRuntime::new(
-            "https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/manifest.json",
+            "https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/manifest.json",
             &public_key_pem(),
             &encryption_key_b64(),
             "v1",
@@ -207,7 +220,7 @@ mod tests {
     fn accepts_gitee_primary_and_github_fallback_configuration() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let runtime = DesktopActivationRuntime::new_with_manifest_urls(
-            "https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/manifest.json,https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/manifest.json",
+            "https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/manifest.json,https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/manifest.json",
             &public_key_pem(),
             &encryption_key_b64(),
             "v1",
