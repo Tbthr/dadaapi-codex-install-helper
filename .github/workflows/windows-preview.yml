@@ -35,10 +35,10 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          WOCAO_HUB_ROUTE_MANIFEST_URLS: https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/manifest.json,https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/manifest.json
-          WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM }}
-          WOCAO_HUB_ROUTE_KEY_B64: ${{ secrets.WOCAO_HUB_ROUTE_KEY_B64 }}
-          WOCAO_HUB_ROUTE_KEY_ID: v1
+          DADAAPI_ROUTE_MANIFEST_URLS: https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/manifest.json,https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/manifest.json
+          DADAAPI_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.DADAAPI_ROUTE_PUBLIC_KEY_PEM }}
+          DADAAPI_ROUTE_KEY_B64: ${{ secrets.DADAAPI_ROUTE_KEY_B64 }}
+          DADAAPI_ROUTE_KEY_ID: v1
         run: pnpm --dir apps/desktop tauri build --target aarch64-pc-windows-msvc --bundles nsis
 
       - uses: actions/upload-artifact@v4

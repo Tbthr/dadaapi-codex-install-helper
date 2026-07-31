@@ -154,13 +154,13 @@ diagnostics-exports/ 仅包含白名单摘要和二次脱敏日志的诊断包
 ## Public Route Artifacts
 
 ```text
-https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/manifest.json
-https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/routes.sig
-https://gitee.com/codeTrees/wocao-hub-routes/raw/main/public/routes.enc
+https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/manifest.json
+https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/routes.sig
+https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/routes.enc
 
-https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/manifest.json
-https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/routes.sig
-https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/routes.enc
+https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/manifest.json
+https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/routes.sig
+https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/routes.enc
 ```
 
 公开文件不得包含上游订阅地址、Token、签名私钥或明文节点。GitHub Actions 每四小时更新一次并同步到 Gitee，默认有效期为 72 小时。客户端仅在 Gitee 网络错误、超时或 `5xx` 时切换 GitHub；签名、格式、哈希或解密错误必须直接失败。
@@ -175,10 +175,11 @@ https://raw.githubusercontent.com/ray7086/wocao-hub-routes/main/public/routes.en
 
 ### Desktop Build Configuration
 
-- `WOCAO_HUB_ROUTE_MANIFEST_URLS`：按优先级排列、逗号分隔的固定 HTTPS `manifest.json` 地址；兼容旧的单地址变量 `WOCAO_HUB_ROUTE_MANIFEST_URL`。
-- `WOCAO_HUB_ROUTE_PUBLIC_KEY_PEM`：Ed25519 公钥 PEM。
-- `WOCAO_HUB_ROUTE_KEY_B64`：32 字节 XChaCha20-Poly1305 key 的 Base64。
-- `WOCAO_HUB_ROUTE_KEY_ID`：预期密钥标识。
+- `DADAAPI_ROUTE_MANIFEST_URLS`：按优先级排列、逗号分隔的固定 HTTPS `manifest.json` 地址；兼容单地址变量 `DADAAPI_ROUTE_MANIFEST_URL`。
+- `DADAAPI_ROUTE_PUBLIC_KEY_PEM`：Ed25519 公钥 PEM。
+- `DADAAPI_ROUTE_KEY_B64`：32 字节 XChaCha20-Poly1305 key 的 Base64。
+- `DADAAPI_ROUTE_KEY_ID`：预期密钥标识。
+- 旧的 `WOCAO_HUB_ROUTE_*` 构建变量不再读取。
 - 四项全部缺失时只装载只读桌面能力；仅缺一项或任何一项格式错误时启动失败。
 - 公钥、清单 URL 和 `keyId` 是公开配置。解密 key 会进入官方客户端，只能作为混淆手段；签名私钥和原始上游订阅地址不得进入客户端构建。
 
