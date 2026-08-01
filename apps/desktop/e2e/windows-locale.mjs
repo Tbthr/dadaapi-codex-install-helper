@@ -13,6 +13,7 @@ const webdriverElementKey = "element-6066-11e4-a52e-4f735466cecf";
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 const proxyStateScript = path.join(import.meta.dirname, "proxy-state.ps1");
 const appPath = requiredEnvironment("DADA_E2E_APP");
+const chatGptPath = requiredEnvironment("DADA_E2E_CHATGPT_PATH");
 const localeHome = requiredEnvironment("DADA_E2E_LOCALE_HOME");
 const baselineStatePath = requiredEnvironment("DADA_E2E_BASELINE_PROXY_STATE");
 const artifactDirectory = requiredEnvironment("DADA_E2E_ARTIFACT_DIR");
@@ -305,9 +306,12 @@ async function assertZhCnRenderer() {
       "-ExecutionPolicy",
       "Bypass",
       "-Command",
-      "$renderer = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'ChatGPT.exe' -and $_.CommandLine -and $_.CommandLine.Contains('--type=renderer') -and $_.CommandLine.Contains('--lang=zh-CN') } | Select-Object -First 1; if ($null -ne $renderer) { $renderer.CommandLine }",
+      "$renderer = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'ChatGPT.exe' -and $_.ExecutablePath -and $_.ExecutablePath -ieq $env:DADA_E2E_CHATGPT_PATH -and $_.CommandLine -and $_.CommandLine.Contains('--type=renderer') -and $_.CommandLine.Contains('--lang=zh-CN') } | Select-Object -First 1; if ($null -ne $renderer) { $renderer.CommandLine }",
     ],
-    { windowsHide: true },
+    {
+      windowsHide: true,
+      env: { ...process.env, DADA_E2E_CHATGPT_PATH: chatGptPath },
+    },
   );
   assert.match(stdout, /--type=renderer/);
   assert.match(stdout, /--lang=zh-CN/);

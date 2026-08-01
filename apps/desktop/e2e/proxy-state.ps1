@@ -74,7 +74,7 @@ function Assert-ProxyState($expected) {
     $expectedEntry = $expected.PSObject.Properties[$name].Value
     if ([bool]$actualEntry.exists -ne [bool]$expectedEntry.exists -or
         [uint32]$actualEntry.value -ne [uint32]$expectedEntry.value) {
-      throw "proxy_state_verification_failed:$name"
+      throw "proxy_state_verification_failed:$name:expected=$([bool]$expectedEntry.exists)/$([uint32]$expectedEntry.value):actual=$([bool]$actualEntry.exists)/$([uint32]$actualEntry.value)"
     }
   }
   foreach ($name in @("proxyServer", "proxyOverride", "autoConfigUrl")) {
@@ -136,7 +136,7 @@ switch ($Action) {
       proxyServer = [pscustomobject]@{ exists = $true; value = "127.0.0.1:65534" }
       proxyOverride = [pscustomobject]@{ exists = $true; value = "<local>;localhost;*.localhost;127.0.0.1;::1" }
       autoConfigUrl = [pscustomobject]@{ exists = $true; value = "https://baseline.invalid/proxy.pac" }
-      autoDetect = [pscustomobject]@{ exists = $true; value = [uint32]1 }
+      autoDetect = [pscustomobject]@{ exists = $true; value = [uint32]0 }
     }
     Set-ProxyState $baseline
     Assert-ProxyState $baseline
