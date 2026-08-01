@@ -1061,8 +1061,7 @@ public static class DadaAssistantWinInetProxy
   public static void SetConnectionFlags(uint flags)
   {
     int error;
-    if (!TrySetConnectionFlags(INTERNET_PER_CONN_FLAGS_UI, flags, out error) &&
-        !TrySetConnectionFlags(INTERNET_PER_CONN_FLAGS, flags, out error))
+    if (!TrySetConnectionFlags(INTERNET_PER_CONN_FLAGS, flags, out error))
     {
       throw new Win32Exception(error, "InternetSetOptionW flags failed");
     }

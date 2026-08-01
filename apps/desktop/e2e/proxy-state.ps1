@@ -176,8 +176,7 @@ public static class DadaAssistantE2eWinInet
   public static void SetFlags(uint flags)
   {
     int error;
-    if (!TrySet(PerConnectionFlagsUi, flags, out error) &&
-        !TrySet(PerConnectionFlags, flags, out error))
+    if (!TrySet(PerConnectionFlags, flags, out error))
     {
       throw new Win32Exception(error, "InternetSetOptionW flags failed");
     }
@@ -365,6 +364,14 @@ switch ($Action) {
       }
     }
     Set-ProxyState $baseline
+    $actualBaseline = Get-ProxyState
+    $actualFlags = [uint32]$actualBaseline.perConnectionFlags.value
+    $automaticFlags = [DadaAssistantE2eWinInet]::ProxyTypeAutoProxyUrl -bor [DadaAssistantE2eWinInet]::ProxyTypeAutoDetect
+    if (($actualFlags -band [DadaAssistantE2eWinInet]::ProxyTypeProxy) -ne 0 -or
+        ($actualFlags -band $automaticFlags) -eq 0) {
+      throw "proxy_baseline_verification_failed:flags=$actualFlags"
+    }
+    $baseline.perConnectionFlags.value = $actualFlags
     Assert-ProxyState $baseline
     break
   }
