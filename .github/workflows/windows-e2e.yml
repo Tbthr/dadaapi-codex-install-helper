@@ -101,7 +101,7 @@ jobs:
           & $proxyScript -Action save -StatePath $env:DADA_E2E_BASELINE_PROXY_STATE
           if (-not $?) { throw "Unable to save the E2E proxy baseline" }
 
-      - name: Start tauri-driver
+      - name: Run Windows locale WebDriver E2E
         shell: pwsh
         run: |
           $artifactDirectory = $env:DADA_E2E_ARTIFACT_DIR
@@ -115,25 +115,43 @@ jobs:
             -RedirectStandardError (Join-Path $artifactDirectory "tauri-driver-error.log") `
             -PassThru
           $driverProcess.Id | Set-Content -Path (Join-Path $env:RUNNER_TEMP "dada-e2e-tauri-driver.pid")
+          $ready = $false
           for ($attempt = 0; $attempt -lt 30; $attempt += 1) {
             if ($driverProcess.HasExited) { throw "tauri-driver exited before accepting WebDriver sessions" }
             try {
               Invoke-WebRequest -Uri "http://127.0.0.1:4444/status" -TimeoutSec 2 | Out-Null
-              exit 0
+              $ready = $true
+              break
             } catch {
               Start-Sleep -Milliseconds 500
             }
           }
-          throw "tauri-driver did not become ready"
-
-      - name: Run Windows locale WebDriver E2E
-        shell: pwsh
-        run: pnpm --dir apps/desktop e2e:windows
+          if (-not $ready) { throw "tauri-driver did not become ready" }
+          pnpm --dir apps/desktop e2e:windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Restore runner proxy and terminate E2E processes
         if: always()
         shell: pwsh
         run: |
+          function Stop-ProcessTree {
+            param([int64]$ProcessId, [string]$Description)
+
+            if ($ProcessId -lt 1 -or $ProcessId -gt [int]::MaxValue) {
+              throw "E2E process PID is out of range: $Description"
+            }
+            if (-not (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) {
+              return
+            }
+
+            & taskkill.exe /PID $ProcessId /T /F | Out-Null
+            $taskkillExitCode = $LASTEXITCODE
+            if ($taskkillExitCode -ne 0 -and
+                (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) {
+              throw "Unable to terminate E2E process tree $ProcessId"
+            }
+          }
+
           function Stop-RecordedProcessTree {
             param([string]$PidPath)
 
@@ -145,19 +163,32 @@ jobs:
             if ($recordedPid -notmatch '^[1-9][0-9]*$') {
               throw "Invalid E2E process PID record: $PidPath"
             }
-            $processId = [int64]$recordedPid
-            if ($processId -gt [int]::MaxValue) {
-              throw "E2E process PID is out of range: $PidPath"
-            }
-            if (-not (Get-Process -Id $processId -ErrorAction SilentlyContinue)) {
+            Stop-ProcessTree -ProcessId ([int64]$recordedPid) -Description $PidPath
+          }
+
+          function Stop-FixtureProcessTrees {
+            param([string]$FixturePath)
+
+            if ([string]::IsNullOrWhiteSpace($FixturePath)) {
               return
             }
 
-            & taskkill.exe /PID $processId /T /F | Out-Null
-            $taskkillExitCode = $LASTEXITCODE
-            if ($taskkillExitCode -ne 0 -and
-                (Get-Process -Id $processId -ErrorAction SilentlyContinue)) {
-              throw "Unable to terminate E2E process tree $processId"
+            $fixtureProcessIds = @(
+              Get-CimInstance Win32_Process -ErrorAction Stop |
+                Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $FixturePath } |
+                Select-Object -ExpandProperty ProcessId -Unique
+            )
+            foreach ($fixtureProcessId in $fixtureProcessIds) {
+              Stop-ProcessTree -ProcessId ([int64]$fixtureProcessId) -Description $FixturePath
+            }
+
+            $remainingFixtureProcessIds = @(
+              Get-CimInstance Win32_Process -ErrorAction Stop |
+                Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $FixturePath } |
+                Select-Object -ExpandProperty ProcessId -Unique
+            )
+            if ($remainingFixtureProcessIds.Count -ne 0) {
+              throw "Fixture processes remain after cleanup: $($remainingFixtureProcessIds -join ',')"
             }
           }
 
@@ -185,6 +216,14 @@ jobs:
                 }
                 Write-Error $_
               }
+            }
+            try {
+              Stop-FixtureProcessTrees -FixturePath $env:DADA_E2E_CHATGPT_PATH
+            } catch {
+              if ($null -eq $terminationFailure) {
+                $terminationFailure = $_
+              }
+              Write-Error $_
             }
           }
           if ($null -ne $restoreFailure) { throw $restoreFailure }

@@ -102,6 +102,20 @@ async fn network_recovery_status(
     })
 }
 
+fn has_pending_recovery_record(state: &DesktopActivationState) -> Result<bool, CommandError> {
+    if let Some(runtime) = state.runtime() {
+        return runtime
+            .coordinator
+            .has_pending_recovery_record()
+            .map_err(command_error);
+    }
+
+    state
+        .fallback_recovery()
+        .has_pending()
+        .map_err(|error| command_error(ActivationError::NetworkSafety(error)))
+}
+
 #[tauri::command]
 async fn restore_network(
     state: State<'_, DesktopActivationState>,
@@ -139,8 +153,7 @@ async fn restore_network_internal(
 async fn prepare_activation_network(
     state: State<'_, DesktopActivationState>,
 ) -> Result<NetworkRecoveryStatus, CommandError> {
-    let status = network_recovery_status(&state).await?;
-    if status.pending {
+    if has_pending_recovery_record(&state)? {
         restore_network_internal(&state).await?;
     }
     network_recovery_status(&state).await

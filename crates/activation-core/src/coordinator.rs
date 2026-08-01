@@ -229,12 +229,16 @@ where
     }
 
     pub async fn network_recovery_status(&self) -> Result<NetworkRecoveryStatus, ActivationError> {
-        let recovery_record_pending = self.recovery.has_pending()?;
+        let recovery_record_pending = self.has_pending_recovery_record()?;
         let local_proxy_active = self.active_proxy.lock().await.is_some();
         Ok(NetworkRecoveryStatus {
             pending: recovery_record_pending || local_proxy_active,
             local_proxy_active,
         })
+    }
+
+    pub fn has_pending_recovery_record(&self) -> Result<bool, ActivationError> {
+        self.recovery.has_pending().map_err(ActivationError::from)
     }
 
     pub async fn restore_network(&self) -> Result<NetworkRecoveryStatus, ActivationError> {
@@ -536,6 +540,17 @@ mod tests {
         assert!(fixture.recovery_path.exists());
         assert!(!fixture.log().contains(&"restore_network_state"));
         assert!(!fixture.log().contains(&"proxy_shutdown"));
+    }
+
+    #[test]
+    fn absent_recovery_record_does_not_require_network_restoration() {
+        let fixture = Fixture::new(false, false, false);
+
+        assert!(!fixture
+            .coordinator
+            .has_pending_recovery_record()
+            .expect("read recovery record"));
+        assert!(fixture.log().is_empty());
     }
 
     #[tokio::test]

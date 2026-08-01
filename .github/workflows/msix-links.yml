@@ -8,9 +8,16 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: refresh-msix-links
+  cancel-in-progress: false
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    env:
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+      GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
     steps:
       - uses: actions/checkout@v4
 
@@ -19,6 +26,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: msix-links
+
+      - name: Validate Gitee metadata mirror configuration
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$GITEE_REPOSITORY" ]; then
+            echo "::error title=Missing Gitee repository::Set the GITEE_REPOSITORY Actions variable to your public owner/repository target."
+            exit 1
+          fi
+          if ! [[ "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error title=Invalid Gitee repository::GITEE_REPOSITORY must use owner/repository format."
+            exit 1
+          fi
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "::error title=Missing Gitee token::Add a GITEE_TOKEN Actions secret with write access to $GITEE_REPOSITORY."
+            exit 1
+          fi
 
       - name: Resolve Microsoft Store packages
         shell: bash
@@ -53,3 +79,83 @@ jobs:
           force_orphan: true
           enable_jekyll: true
           commit_message: Refresh ChatGPT MSIX links
+
+      - name: Mirror MSIX metadata to public Gitee branch
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_dir=/tmp/msix-links
+          manifest="$source_dir/msix-links.json"
+          branch=msix-links
+          test -s "$manifest"
+
+          # This branch contains only short-lived URLs on Microsoft's delivery host, never installers.
+          jq -e '
+            (.generatedAt | type == "string" and length > 0) and
+            ([.packages.arm64, .packages.x64] | all(
+              (.url | type == "string" and test("^https?://([A-Za-z0-9-]+\\.)*dl\\.delivery\\.mp\\.microsoft\\.com/")) and
+              (.expiresAt | type == "string" and length > 0)
+            ))
+          ' "$manifest" >/dev/null
+
+          export GITEE_USERNAME="${GITEE_USERNAME:-${GITEE_REPOSITORY%%/*}}"
+          gitee_url="https://gitee.com/${GITEE_REPOSITORY}.git"
+          askpass="$RUNNER_TEMP/dada-gitee-askpass.sh"
+          mirror_dir="$RUNNER_TEMP/msix-links-gitee"
+          umask 077
+          cat > "$askpass" <<'EOF'
+          #!/usr/bin/env sh
+          case "$1" in
+            *Username*) printf '%s\n' "$GITEE_USERNAME" ;;
+            *) printf '%s\n' "$GITEE_TOKEN" ;;
+          esac
+          EOF
+          chmod 700 "$askpass"
+          trap 'rm -f "$askpass"' EXIT
+
+          git init --initial-branch="$branch" "$mirror_dir"
+          git -C "$mirror_dir" config user.name "github-actions[bot]"
+          git -C "$mirror_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$mirror_dir" remote add gitee "$gitee_url"
+
+          remote_head=$(GIT_ASKPASS="$askpass" GIT_ASKPASS_REQUIRE=force GIT_TERMINAL_PROMPT=0 \
+            git ls-remote "$gitee_url" "refs/heads/$branch" | awk 'NR == 1 { print $1 }')
+          if [ -n "$remote_head" ]; then
+            GIT_ASKPASS="$askpass" GIT_ASKPASS_REQUIRE=force GIT_TERMINAL_PROMPT=0 git \
+              -C "$mirror_dir" fetch --depth=1 gitee "refs/heads/$branch"
+            git -C "$mirror_dir" checkout -B "$branch" FETCH_HEAD
+            git -C "$mirror_dir" rm -r --ignore-unmatch .
+          fi
+
+          install -m 644 "$manifest" "$mirror_dir/msix-links.json"
+          git -C "$mirror_dir" add --all
+          if git -C "$mirror_dir" diff --cached --quiet; then
+            echo "Public Gitee MSIX metadata is already current."
+          else
+            git -C "$mirror_dir" commit -m "Refresh ChatGPT MSIX links"
+            GIT_ASKPASS="$askpass" GIT_ASKPASS_REQUIRE=force GIT_TERMINAL_PROMPT=0 git \
+              -C "$mirror_dir" push gitee "HEAD:refs/heads/$branch"
+          fi
+
+          expected_head=$(git -C "$mirror_dir" rev-parse HEAD)
+          synced_head=$(GIT_ASKPASS="$askpass" GIT_ASKPASS_REQUIRE=force GIT_TERMINAL_PROMPT=0 \
+            git ls-remote "$gitee_url" "refs/heads/$branch" | awk 'NR == 1 { print $1 }')
+          test "$synced_head" = "$expected_head"
+
+          public_manifest="$RUNNER_TEMP/msix-links-gitee.json"
+          public_url="https://gitee.com/${GITEE_REPOSITORY}/raw/$branch/msix-links.json"
+          max_attempts=7
+          for attempt in $(seq 1 "$max_attempts"); do
+            if curl -fsSL --connect-timeout 20 --max-time 60 "$public_url" -o "$public_manifest" \
+              && cmp -s "$manifest" "$public_manifest"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              # Gitee can cache the prior 404 for a newly created branch for about a minute.
+              sleep 10
+            fi
+          done
+          echo "Public Gitee MSIX metadata did not match the generated manifest." >&2
+          exit 1

@@ -50,7 +50,7 @@ pnpm --dir apps/desktop tauri build
 
 `v1.0.0` Release 仅用于分发 Windows/macOS 安装包和 `checksums.txt`，客户端不会检查或下载在线更新。Release 必须包含唯一的 `*_x64-setup.exe`、`*_arm64-setup.exe` 和 `*_universal.dmg` 资产；Gitee 发布会将 macOS DMG 包装为 ZIP，安装脚本会自动处理。
 
-生产 Gitee 镜像为 `lyq_power/dadaapi-codex-install-helper`。GitHub Actions 使用 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper`、`GITEE_USERNAME=lyq_power` 和仅存放在 GitHub Actions Secret 中的 `GITEE_TOKEN` 同步 `main`、标签和 Release 资产；令牌不写入仓库、本地配置或安装脚本。
+生产 Gitee 镜像为 `lyq_power/dadaapi-codex-install-helper`。GitHub Actions 使用 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper`、`GITEE_USERNAME=lyq_power` 和仅存放在 GitHub Actions Secret 中的 `GITEE_TOKEN` 同步 `main`、标签、Release 资产和 `msix-links` 元数据分支；该分支仅保存指向 Microsoft 官方短期下载地址的 JSON，不托管安装包。令牌不写入仓库、本地配置或安装脚本。
 
 Windows（Gitee 脚本入口）：
 

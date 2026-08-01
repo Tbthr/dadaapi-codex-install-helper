@@ -21,7 +21,10 @@ const WU_SECURED_ENDPOINT: &str =
     "https://fe3cr.delivery.mp.microsoft.com/ClientWebService/client.asmx/secured";
 const WU_NS: &str = "http://www.microsoft.com/SoftwareDistribution/Server/ClientWebService";
 const REMOTE_MANIFEST_URL: &str =
-    "https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/msix-links/msix-links.json";
+    "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/msix-links/msix-links.json";
+const GITEE_RAW_CONTENT_HOST: &str = "raw.giteeusercontent.com";
+const MICROSOFT_DELIVERY_HOST: &str = "dl.delivery.mp.microsoft.com";
+const MAX_REMOTE_MANIFEST_BYTES: usize = 64 * 1024;
 
 const INSTALLED_NON_LEAF_IDS: &str = "1,2,3,11,19,544,549,2359974,2359977,5169044,8788830,23110993,23110994,54341900,54343656,59830006,59830007,59830008,60484010,62450018,62450019,62450020,66027979,66053150,97657898,98822896,98959022,98959023,98959024,98959025,98959026,104433538,104900364,105489019,117765322,129905029,130040031,132387090,132393049,133399034,138537048,140377312,143747671,158941041,158941042,158941043,158941044,159123858,159130928,164836897,164847386,164848327,164852241,164852246,164852252,164852253";
 
@@ -85,7 +88,7 @@ pub async fn resolve_chatgpt_msix_url(architecture: CpuArchitecture) -> Result<U
     match resolve_chatgpt_msix_url_direct(architecture).await {
         Ok(url) => Ok(url),
         Err(error) => {
-            tracing::warn!(error = %error, "local Microsoft Store resolution failed; using refreshed GitHub metadata");
+            tracing::warn!(error = %error, "local Microsoft Store resolution failed; using refreshed Gitee metadata");
             resolve_remote_msix_url(architecture).await
         }
     }
@@ -173,10 +176,19 @@ async fn resolve_remote_msix_url(architecture: CpuArchitecture) -> Result<Url, M
     let client = Client::builder()
         .connect_timeout(Duration::from_secs(8))
         .timeout(Duration::from_secs(15))
-        .redirect(Policy::none())
+        .redirect(Policy::custom(|attempt| {
+            if attempt.previous().len() > 1 {
+                return attempt.error("too many MSIX metadata redirects");
+            }
+            if trusted_remote_manifest_redirect(attempt.url()) {
+                attempt.follow()
+            } else {
+                attempt.error("untrusted MSIX metadata redirect")
+            }
+        }))
         .build()
         .map_err(|_| MsStoreError::Request)?;
-    let manifest = client
+    let response = client
         .get(REMOTE_MANIFEST_URL)
         .header("Accept", "application/json")
         .header("User-Agent", "dada-assistant/1.0")
@@ -184,9 +196,18 @@ async fn resolve_remote_msix_url(architecture: CpuArchitecture) -> Result<Url, M
         .await
         .map_err(|_| MsStoreError::Request)?
         .error_for_status()
-        .map_err(|_| MsStoreError::Request)?
-        .json::<RemoteManifest>()
-        .await
+        .map_err(|_| MsStoreError::Request)?;
+    if response
+        .content_length()
+        .is_some_and(|size| size > MAX_REMOTE_MANIFEST_BYTES as u64)
+    {
+        return Err(MsStoreError::InvalidMetadata);
+    }
+    let body = response.bytes().await.map_err(|_| MsStoreError::Request)?;
+    if body.len() > MAX_REMOTE_MANIFEST_BYTES {
+        return Err(MsStoreError::InvalidMetadata);
+    }
+    let manifest = serde_json::from_slice::<RemoteManifest>(&body)
         .map_err(|_| MsStoreError::InvalidMetadata)?;
     let package = match architecture {
         CpuArchitecture::Arm64 => manifest.packages.arm64,
@@ -196,13 +217,34 @@ async fn resolve_remote_msix_url(architecture: CpuArchitecture) -> Result<Url, M
         return Err(MsStoreError::InvalidMetadata);
     }
     let url = Url::parse(&package.url).map_err(|_| MsStoreError::InvalidMetadata)?;
-    if !url
-        .host_str()
-        .is_some_and(|host| host.ends_with("dl.delivery.mp.microsoft.com"))
-    {
+    if !trusted_microsoft_delivery_url(&url) {
         return Err(MsStoreError::InvalidMetadata);
     }
     Ok(url)
+}
+
+fn trusted_remote_manifest_redirect(url: &Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str() == Some(GITEE_RAW_CONTENT_HOST)
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none()
+        && url.path() == "/lyq_power/dadaapi-codex-install-helper/raw/msix-links/msix-links.json"
+}
+
+fn trusted_microsoft_delivery_url(url: &Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let host_allowed = host == MICROSOFT_DELIVERY_HOST
+        || host
+            .strip_suffix(MICROSOFT_DELIVERY_HOST)
+            .is_some_and(|prefix| prefix.ends_with('.') && !prefix[..prefix.len() - 1].is_empty());
+    (url.scheme() == "https" || url.scheme() == "http")
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none()
+        && host_allowed
 }
 
 fn metadata_client() -> Result<Client, MsStoreError> {
@@ -350,18 +392,56 @@ fn detect_architecture(file_name: &str) -> Option<CpuArchitecture> {
 }
 
 #[cfg(test)]
-mod branding_tests {
+mod remote_manifest_tests {
     use super::*;
 
     #[test]
-    fn remote_manifest_uses_the_dada_repository() {
+    fn remote_manifest_uses_the_public_gitee_repository() {
         let url = Url::parse(REMOTE_MANIFEST_URL).expect("remote manifest URL");
         assert_eq!(url.scheme(), "https");
-        assert_eq!(url.host_str(), Some("raw.githubusercontent.com"));
+        assert_eq!(url.host_str(), Some("gitee.com"));
         assert_eq!(
             url.path(),
-            "/Tbthr/dadaapi-codex-install-helper/msix-links/msix-links.json"
+            "/lyq_power/dadaapi-codex-install-helper/raw/msix-links/msix-links.json"
         );
+    }
+
+    #[test]
+    fn only_accepts_the_expected_gitee_content_redirect() {
+        assert!(trusted_remote_manifest_redirect(
+            &Url::parse(
+                "https://raw.giteeusercontent.com/lyq_power/dadaapi-codex-install-helper/raw/msix-links/msix-links.json?signature=test"
+            )
+            .expect("URL")
+        ));
+        assert!(!trusted_remote_manifest_redirect(
+            &Url::parse(
+                "https://raw.giteeusercontent.com/other/repository/raw/msix-links/msix-links.json"
+            )
+            .expect("URL")
+        ));
+        assert!(!trusted_remote_manifest_redirect(
+            &Url::parse(
+                "http://raw.giteeusercontent.com/lyq_power/dadaapi-codex-install-helper/raw/msix-links/msix-links.json"
+            )
+            .expect("URL")
+        ));
+    }
+
+    #[test]
+    fn only_accepts_safe_microsoft_delivery_urls() {
+        assert!(trusted_microsoft_delivery_url(
+            &Url::parse("http://tlu.dl.delivery.mp.microsoft.com/file?P1=1").expect("URL")
+        ));
+        assert!(trusted_microsoft_delivery_url(
+            &Url::parse("https://dl.delivery.mp.microsoft.com/file?P1=1").expect("URL")
+        ));
+        assert!(!trusted_microsoft_delivery_url(
+            &Url::parse("https://example.com/file?P1=1").expect("URL")
+        ));
+        assert!(!trusted_microsoft_delivery_url(
+            &Url::parse("https://user@dl.delivery.mp.microsoft.com/file?P1=1").expect("URL")
+        ));
     }
 }
 
@@ -707,7 +787,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "live refreshed GitHub metadata integration"]
+    #[ignore = "live refreshed Gitee metadata integration"]
     async fn resolves_remote_arm64_msix() {
         let url = resolve_remote_msix_url(CpuArchitecture::Arm64)
             .await
