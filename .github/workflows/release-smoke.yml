@@ -93,7 +93,20 @@ jobs:
           }
           Invoke-WebRequest -Uri $releaseAssets[0].url -Headers $headers -OutFile installer.exe
           $signature = Get-AuthenticodeSignature installer.exe
-          Write-Host "Installer Authenticode status: $($signature.Status)"
+          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+            throw "Installer Authenticode status is $($signature.Status)"
+          }
+          if (-not $signature.SignerCertificate) {
+            throw "Installer is missing a signer certificate"
+          }
+          if (-not $signature.TimeStamperCertificate) {
+            throw "Installer is missing a trusted timestamp"
+          }
+          $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
+          & $signtool verify /pa /tw installer.exe
+          if ($LASTEXITCODE -ne 0) {
+            throw "signtool verification failed"
+          }
 
       - name: 安装并启动已发布应用
         shell: pwsh

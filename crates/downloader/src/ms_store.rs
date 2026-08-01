@@ -5,7 +5,7 @@ use std::{
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{SecondsFormat, Utc};
-use reqwest::{header::CONTENT_DISPOSITION, redirect::Policy, Client};
+use reqwest::{header::CONTENT_DISPOSITION, redirect::Policy, Certificate, Client};
 use roxmltree::{Document, Node};
 use serde::Deserialize;
 use thiserror::Error;
@@ -25,6 +25,7 @@ const REMOTE_MANIFEST_URL: &str =
 const GITEE_RAW_CONTENT_HOST: &str = "raw.giteeusercontent.com";
 const MICROSOFT_DELIVERY_HOST: &str = "dl.delivery.mp.microsoft.com";
 const MAX_REMOTE_MANIFEST_BYTES: usize = 64 * 1024;
+const MICROSOFT_UPDATE_ROOTS: &[u8] = include_bytes!("microsoft-update-roots.pem");
 
 const INSTALLED_NON_LEAF_IDS: &str = "1,2,3,11,19,544,549,2359974,2359977,5169044,8788830,23110993,23110994,54341900,54343656,59830006,59830007,59830008,60484010,62450018,62450019,62450020,66027979,66053150,97657898,98822896,98959022,98959023,98959024,98959025,98959026,104433538,104900364,105489019,117765322,129905029,130040031,132387090,132393049,133399034,138537048,140377312,143747671,158941041,158941042,158941043,158941044,159123858,159130928,164836897,164847386,164848327,164852241,164852246,164852252,164852253";
 
@@ -253,10 +254,19 @@ fn trusted_microsoft_delivery_url(url: &Url) -> bool {
 }
 
 fn metadata_client() -> Result<Client, MsStoreError> {
-    Client::builder()
+    let certificates = Certificate::from_pem_bundle(MICROSOFT_UPDATE_ROOTS)
+        .map_err(|_| MsStoreError::Request("Microsoft Store certificate setup"))?;
+    if certificates.len() != 2 {
+        return Err(MsStoreError::Request("Microsoft Store certificate setup"));
+    }
+    let mut builder = Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))
-        .redirect(Policy::none())
+        .redirect(Policy::none());
+    for certificate in certificates {
+        builder = builder.add_root_certificate(certificate);
+    }
+    builder
         .build()
         .map_err(|_| MsStoreError::Request("Microsoft Store client setup"))
 }
@@ -797,6 +807,11 @@ mod tests {
 
         assert!(xml.contains("<User />"));
         assert!(!xml.contains("<Device>"));
+    }
+
+    #[test]
+    fn microsoft_update_roots_build_a_tls_client() {
+        assert!(metadata_client().is_ok());
     }
 
     #[tokio::test]

@@ -46,9 +46,9 @@ pnpm verify
 pnpm --dir apps/desktop tauri build
 ```
 
-## 安装哒哒助手 v1.0
+## 安装正式版本
 
-`v1.0.0` Release 仅用于分发 Windows/macOS 安装包和 `checksums.txt`，客户端不会检查或下载在线更新。Release 必须包含唯一的 `*_x64-setup.exe`、`*_arm64-setup.exe` 和 `*_universal.dmg` 资产；Gitee 发布会将 macOS DMG 包装为 ZIP，安装脚本会自动处理。
+经过签名和校验的正式 Release 仅分发 Windows/macOS 安装包和 `checksums.txt`，客户端不会检查或下载在线更新。每个 Release 必须包含唯一的 `*_x64-setup.exe`、`*_arm64-setup.exe` 和 `*_universal.dmg` 资产；Gitee 发布会将 macOS DMG 包装为 ZIP，安装脚本会自动处理。请仅在 GitHub Release 页面已显示对应正式版本后运行下方命令。
 
 生产 Gitee 镜像为 `lyq_power/dadaapi-codex-install-helper`。GitHub Actions 使用 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper`、`GITEE_USERNAME=lyq_power` 和仅存放在 GitHub Actions Secret 中的 `GITEE_TOKEN` 同步 `main`、标签、Release 资产和 `msix-links` 元数据分支；该分支仅保存指向 Microsoft 官方短期下载地址的 JSON，不托管安装包。令牌不写入仓库、本地配置或安装脚本。
 
@@ -86,9 +86,10 @@ curl -fsSL https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/
 ## 发布、镜像与 E2E
 
 - 已配置的生产 Gitee 仓库是 [lyq_power/dadaapi-codex-install-helper](https://gitee.com/lyq_power/dadaapi-codex-install-helper)。向 GitHub `main` 推送后会自动运行“同步哒哒助手 v1.0 代码至 Gitee”。需要手动重试时，在 GitHub Actions 中运行该工作流；目标始终来自受保护的 `GITEE_REPOSITORY` Actions Variable。
-- 创建 `v*` 标签会先构建 GitHub Draft Release，并用同一套 Gitee 配置同步同名标签和 Release 资产；Gitee 标签始终指向 GitHub 同名标签的提交。确认资产校验和 Gitee 同步成功后，再在 GitHub 发布该 Draft，使其成为用户可见的正式 Release。已有 GitHub Release 可在 Actions 中运行“同步哒哒助手 v1.0 发布”，输入目标标签。
+- 创建 `v*` 标签会先构建 GitHub Draft Release，并用同一套 Gitee 配置同步同名标签和 Release 资产；Gitee 标签始终指向 GitHub 同名标签的提交。只有 Gitee 暂存资产的校验和与公开下载都验证成功后，流水线才会自动公开 GitHub Draft。若 Gitee 暂存同步失败，GitHub Draft 会保留，维护者可运行“同步哒哒助手 v1.0 发布”并输入目标标签继续；正式发布的 Release 不会被该工作流覆盖或替换。
 - “验证哒哒助手 v1.0 安装脚本”在 Pull Request 和 `main` 上只检查脚本语法；GitHub Release 由维护者发布后会自动下载并校验各平台的最新安装包，但不会启动安装器。
 - GitHub 仓库设置中保留 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper`、`GITEE_USERNAME=lyq_power` 两个 Actions Variable，以及仅授予 `user_info` 和 `projects` 权限的 `GITEE_TOKEN` Actions Secret。令牌轮换后只更新该 Secret。
+- 生产发布还需要配置路由构建 Secret `DADAAPI_ROUTE_PUBLIC_KEY_PEM`、`DADAAPI_ROUTE_KEY_B64`；Apple Developer ID 的 `APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_API_KEY`、`APPLE_API_ISSUER`、`APPLE_API_KEY_BASE64`；以及 Windows 的 `WINDOWS_CERTIFICATE`、`WINDOWS_CERTIFICATE_PASSWORD` 和 HTTPS `WINDOWS_TIMESTAMP_URL` Variable。缺失任一项时发布会在构建前停止，不会生成未签名安装包。
 - Windows x64 中文全链路测试由“Windows locale E2E”在相关 Pull Request 上执行，也可在 Actions 中手动运行。失败时下载 `windows-locale-e2e-diagnostics` 查看截图和 WebDriver 日志。Windows ARM64 继续由“Desktop package smoke”和“哒哒助手 v1.0 发布冒烟”覆盖安装及启动。
 
 静态路由真实联调（Gitee 优先、GitHub 备用）：

@@ -75,6 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           manifest=/tmp/msix-links/msix-links.json
+          mkdir -p "$(dirname "$manifest")"
           public_url="https://gitee.com/${GITEE_REPOSITORY}/raw/msix-links/msix-links.json"
           curl -fsSL --connect-timeout 20 --max-time 60 "$public_url" -o "$manifest"
           expires_at=$(jq -r '[.packages.arm64.expiresAt, .packages.x64.expiresAt] | min' "$manifest")

@@ -27,11 +27,14 @@ jobs:
       - name: Initialize isolated E2E paths
         shell: pwsh
         run: |
+          $proxyMutationMarker = Join-Path $env:RUNNER_TEMP 'dada-e2e-proxy-mutation-started'
+          Remove-Item -LiteralPath $proxyMutationMarker -Force -ErrorAction SilentlyContinue
           "DADA_E2E_LOCALE_HOME=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-locale')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_ARTIFACT_DIR=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-artifacts')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_ORIGINAL_PROXY_STATE=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-original-proxy.json')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_BASELINE_PROXY_STATE=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-baseline-proxy.json')" | Add-Content -Path $env:GITHUB_ENV
-          "DADA_E2E_PROXY_MUTATION_MARKER=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-proxy-mutation-started')" | Add-Content -Path $env:GITHUB_ENV
+          "DADA_E2E_PROXY_MUTATION_MARKER=$proxyMutationMarker" | Add-Content -Path $env:GITHUB_ENV
+          "DADA_E2E_WEBVIEW2_USER_DATA_FOLDER=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-webview2-user-data')" | Add-Content -Path $env:GITHUB_ENV
 
       - uses: pnpm/action-setup@v4
 
@@ -73,13 +76,48 @@ jobs:
         shell: pwsh
         run: |
           cargo install tauri-driver --version 2.0.6 --locked --force
-          $edge = @(
-            (Join-Path ${env:ProgramFiles(x86)} "Microsoft\Edge\Application\msedge.exe"),
-            (Join-Path $env:ProgramFiles "Microsoft\Edge\Application\msedge.exe")
-          ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
-          if (-not $edge) { throw "Microsoft Edge was not found on the runner" }
-          $edgeVersion = (Get-Item -LiteralPath $edge).VersionInfo.ProductVersion.Trim()
-          if ([string]::IsNullOrWhiteSpace($edgeVersion)) { throw "Unable to read the Microsoft Edge version" }
+          $runtimeClientId = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $runtimeExecutablePatterns = @(
+            (Join-Path ${env:ProgramFiles(x86)} "Microsoft\EdgeWebView\Application\*\msedgewebview2.exe"),
+            (Join-Path $env:ProgramFiles "Microsoft\EdgeWebView\Application\*\msedgewebview2.exe"),
+            (Join-Path $env:LOCALAPPDATA "Microsoft\EdgeWebView\Application\*\msedgewebview2.exe")
+          )
+          $runtimeExecutable = @(
+            foreach ($runtimeExecutablePattern in $runtimeExecutablePatterns) {
+              Get-ChildItem -Path $runtimeExecutablePattern -File -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                  $productVersion = ([string]$_.VersionInfo.ProductVersion).Trim()
+                  if ($productVersion -match '^\d+\.\d+\.\d+\.\d+$') {
+                    [pscustomobject]@{
+                      path = $_.FullName
+                      version = $productVersion
+                    }
+                  }
+                }
+            }
+          ) |
+            Sort-Object { [version]$_.version } -Descending |
+            Select-Object -First 1
+          $runtimeRegistryPaths = @(
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$runtimeClientId",
+            "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$runtimeClientId",
+            "HKCU:\Software\WOW6432Node\Microsoft\EdgeUpdate\Clients\$runtimeClientId",
+            "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$runtimeClientId"
+          )
+          $registryRuntimeVersion = @(
+            foreach ($runtimeRegistryPath in $runtimeRegistryPaths) {
+              (Get-ItemProperty -LiteralPath $runtimeRegistryPath -ErrorAction SilentlyContinue).pv
+            }
+          ) |
+            Where-Object { $_ -and $_ -ne '0.0.0.0' -and $_ -match '^\d+\.\d+\.\d+\.\d+$' } |
+            Sort-Object { [version]$_ } -Descending |
+            Select-Object -First 1
+          $edgeVersion = if ($runtimeExecutable) {
+            $runtimeExecutable.version
+          } else {
+            $registryRuntimeVersion
+          }
+          if (-not $edgeVersion) { throw "Microsoft Edge WebView2 Runtime was not found" }
           $driverDirectory = Join-Path $env:RUNNER_TEMP "dada-e2e-edge-driver"
           $driverArchive = Join-Path $env:RUNNER_TEMP "edgedriver-win64.zip"
           New-Item -ItemType Directory -Path $driverDirectory -Force | Out-Null
@@ -87,19 +125,28 @@ jobs:
           Expand-Archive -LiteralPath $driverArchive -DestinationPath $driverDirectory -Force
           $edgeDriver = Get-ChildItem -Path $driverDirectory -Filter "msedgedriver.exe" -File -Recurse | Select-Object -First 1
           if (-not $edgeDriver) { throw "The matching Microsoft Edge Driver archive did not contain msedgedriver.exe" }
+          $edgeDriverVersionOutput = (& $edgeDriver.FullName --version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "Microsoft Edge WebDriver could not report its version" }
+          if ($edgeDriverVersionOutput -notmatch '(?<version>\d+\.\d+\.\d+\.\d+)') {
+            throw "Microsoft Edge WebDriver returned an invalid version: $edgeDriverVersionOutput"
+          }
+          $edgeDriverVersion = $Matches.version
+          if ($edgeDriverVersion -ne $edgeVersion) {
+            throw "Microsoft Edge WebDriver version $edgeDriverVersion does not match WebView2 Runtime $edgeVersion"
+          }
+          if ($runtimeExecutable) {
+            Write-Host "Using WebView2 Runtime $edgeVersion from $($runtimeExecutable.path)"
+          } else {
+            Write-Host "Using WebView2 Runtime $edgeVersion from the EdgeUpdate registry fallback"
+          }
           "DADA_E2E_EDGE_DRIVER=$($edgeDriver.FullName)" | Add-Content -Path $env:GITHUB_ENV
 
-      - name: Snapshot runner proxy and apply the E2E baseline
+      - name: Snapshot runner proxy before WebDriver
         shell: pwsh
         run: |
           $proxyScript = "apps/desktop/e2e/proxy-state.ps1"
           & $proxyScript -Action save -StatePath $env:DADA_E2E_ORIGINAL_PROXY_STATE
           if (-not $?) { throw "Unable to snapshot the runner proxy state" }
-          New-Item -ItemType File -Path $env:DADA_E2E_PROXY_MUTATION_MARKER -Force | Out-Null
-          & $proxyScript -Action set-baseline
-          if (-not $?) { throw "Unable to apply the E2E proxy baseline" }
-          & $proxyScript -Action save -StatePath $env:DADA_E2E_BASELINE_PROXY_STATE
-          if (-not $?) { throw "Unable to save the E2E proxy baseline" }
 
       - name: Run Windows locale WebDriver E2E
         shell: pwsh
@@ -108,14 +155,15 @@ jobs:
           New-Item -ItemType Directory -Path $artifactDirectory -Force | Out-Null
           $tauriDriver = Join-Path $env:USERPROFILE ".cargo\bin\tauri-driver.exe"
           if (-not (Test-Path -LiteralPath $tauriDriver)) { throw "tauri-driver was not installed" }
+          if (-not (Test-Path -LiteralPath $env:DADA_E2E_EDGE_DRIVER)) { throw "Microsoft Edge WebDriver was not installed" }
           $driverProcess = Start-Process `
             -FilePath $tauriDriver `
             -ArgumentList @("--port", "4444", "--native-port", "4445", "--native-driver", $env:DADA_E2E_EDGE_DRIVER) `
             -RedirectStandardOutput (Join-Path $artifactDirectory "tauri-driver.log") `
             -RedirectStandardError (Join-Path $artifactDirectory "tauri-driver-error.log") `
             -PassThru
-          # Keep a copy of the native driver version in the artifact even when
-          # session creation fails before tauri-driver emits a useful message.
+          # tauri-driver inherits the native driver's stderr, so this artifact
+          # contains both intermediary and Edge WebDriver failures.
           & $env:DADA_E2E_EDGE_DRIVER --version 2>&1 | Set-Content -Path (Join-Path $artifactDirectory "edge-driver-version.log")
           $driverProcess.Id | Set-Content -Path (Join-Path $env:RUNNER_TEMP "dada-e2e-tauri-driver.pid")
           $ready = $false
@@ -132,6 +180,86 @@ jobs:
           if (-not $ready) { throw "tauri-driver did not become ready" }
           pnpm --dir apps/desktop e2e:windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Capture Windows locale diagnostics
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $artifactDirectory = $env:DADA_E2E_ARTIFACT_DIR
+          New-Item -ItemType Directory -Path $artifactDirectory -Force | Out-Null
+
+          try {
+            $processSnapshot = @(
+              Get-CimInstance Win32_Process -ErrorAction Stop |
+                Where-Object { $_.Name -in @("tauri-driver.exe", "msedgedriver.exe", "msedgewebview2.exe", "dada-assistant-desktop.exe", "ChatGPT.exe") } |
+                Select-Object Name, ProcessId, ParentProcessId, ExecutablePath, CommandLine
+            )
+            $processSnapshot | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $artifactDirectory "processes.json") -Encoding utf8
+          } catch {
+            "process_snapshot_failed:$($_.Exception.Message)" | Set-Content -Path (Join-Path $artifactDirectory "processes.json") -Encoding utf8
+          }
+
+          try {
+            $policyPaths = @(
+              "HKCU:\Software\Policies\Microsoft\Edge",
+              "HKLM:\Software\Policies\Microsoft\Edge",
+              "HKCU:\Software\Policies\Microsoft\Edge\WebView2",
+              "HKLM:\Software\Policies\Microsoft\Edge\WebView2"
+            )
+            $policySnapshot = foreach ($policyPath in $policyPaths) {
+              if (Test-Path -LiteralPath $policyPath) {
+                $item = Get-ItemProperty -LiteralPath $policyPath -ErrorAction SilentlyContinue
+                [pscustomobject]@{
+                  path = $policyPath
+                  remoteDebuggingAllowed = $item.RemoteDebuggingAllowed
+                  additionalBrowserArguments = $item.AdditionalBrowserArguments
+                }
+              }
+            }
+            $policySnapshot | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $artifactDirectory "webview2-policy.json") -Encoding utf8
+          } catch {
+            "policy_snapshot_failed:$($_.Exception.Message)" | Set-Content -Path (Join-Path $artifactDirectory "webview2-policy.json") -Encoding utf8
+          }
+
+          try {
+            $runtimeCandidates = @(
+              (Join-Path ${env:ProgramFiles(x86)} "Microsoft\EdgeWebView\Application\*\msedgewebview2.exe"),
+              (Join-Path $env:ProgramFiles "Microsoft\EdgeWebView\Application\*\msedgewebview2.exe"),
+              (Join-Path $env:LOCALAPPDATA "Microsoft\EdgeWebView\Application\*\msedgewebview2.exe")
+            )
+            $runtimeSnapshot = foreach ($candidate in $runtimeCandidates) {
+              Get-ChildItem -Path $candidate -File -ErrorAction SilentlyContinue |
+                Select-Object FullName, @{Name="ProductVersion"; Expression={$_.VersionInfo.ProductVersion}}
+            }
+            $runtimeSnapshot | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $artifactDirectory "webview2-runtime.json") -Encoding utf8
+          } catch {
+            "runtime_snapshot_failed:$($_.Exception.Message)" | Set-Content -Path (Join-Path $artifactDirectory "webview2-runtime.json") -Encoding utf8
+          }
+
+          try {
+            $userDataFolder = $env:DADA_E2E_WEBVIEW2_USER_DATA_FOLDER
+            if (Test-Path -LiteralPath $userDataFolder) {
+              Get-ChildItem -LiteralPath $userDataFolder -Force -Recurse -ErrorAction SilentlyContinue |
+                Select-Object FullName, Length, LastWriteTime |
+                ConvertTo-Json -Depth 4 |
+                Set-Content -Path (Join-Path $artifactDirectory "webview2-user-data.json") -Encoding utf8
+              $activePort = Join-Path $userDataFolder "DevToolsActivePort"
+              if (Test-Path -LiteralPath $activePort) {
+                Get-Content -LiteralPath $activePort -Raw | Set-Content -Path (Join-Path $artifactDirectory "DevToolsActivePort") -Encoding utf8
+              } else {
+                "DevToolsActivePort missing" | Set-Content -Path (Join-Path $artifactDirectory "DevToolsActivePort") -Encoding utf8
+              }
+            } else {
+              "WebView2 user-data folder missing" | Set-Content -Path (Join-Path $artifactDirectory "webview2-user-data.json") -Encoding utf8
+            }
+          } catch {
+            "user_data_snapshot_failed:$($_.Exception.Message)" | Set-Content -Path (Join-Path $artifactDirectory "webview2-user-data.json") -Encoding utf8
+          }
+
+          if (Test-Path -LiteralPath $env:DADA_E2E_ORIGINAL_PROXY_STATE) {
+            & "apps/desktop/e2e/proxy-state.ps1" -Action read | Set-Content -Path (Join-Path $artifactDirectory "proxy-state-before-cleanup.json") -Encoding utf8
+          }
 
       - name: Restore runner proxy and terminate E2E processes
         if: always()

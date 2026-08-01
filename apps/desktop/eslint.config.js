@@ -31,6 +31,7 @@ export default [
     files: ["e2e/**/*.mjs"],
     languageOptions: {
       globals: {
+        AbortSignal: "readonly",
         Buffer: "readonly",
         clearTimeout: "readonly",
         fetch: "readonly",

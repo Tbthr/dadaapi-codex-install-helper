@@ -10,6 +10,8 @@ import { promisify } from "node:util";
 const execFile = promisify(execFileCallback);
 const webdriverEndpoint = "http://127.0.0.1:4444";
 const webdriverElementKey = "element-6066-11e4-a52e-4f735466cecf";
+const sessionStartAttempts = 3;
+const sessionStartRequestTimeoutMs = 30_000;
 const proxyTypeProxy = 0x2;
 const autoProxyFlags = 0x4 | 0x8;
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
@@ -18,6 +20,8 @@ const appPath = requiredEnvironment("DADA_E2E_APP");
 const chatGptPath = requiredEnvironment("DADA_E2E_CHATGPT_PATH");
 const localeHome = requiredEnvironment("DADA_E2E_LOCALE_HOME");
 const baselineStatePath = requiredEnvironment("DADA_E2E_BASELINE_PROXY_STATE");
+const proxyMutationMarkerPath = requiredEnvironment("DADA_E2E_PROXY_MUTATION_MARKER");
+const webviewUserDataFolder = requiredEnvironment("DADA_E2E_WEBVIEW2_USER_DATA_FOLDER");
 const artifactDirectory = requiredEnvironment("DADA_E2E_ARTIFACT_DIR");
 
 async function run() {
@@ -28,10 +32,13 @@ async function run() {
   await mkdir(artifactDirectory, { recursive: true });
   await rm(localeHome, { recursive: true, force: true });
   await mkdir(localeHome, { recursive: true });
+  await rm(webviewUserDataFolder, { recursive: true, force: true });
+  await mkdir(webviewUserDataFolder, { recursive: true });
 
   let driver;
   try {
-    driver = await WebDriverClient.connect(appPath);
+    driver = await WebDriverClient.connect(appPath, webviewUserDataFolder);
+    await prepareProxyBaseline();
 
     const configureChinese = await driver.waitForElement('[data-testid="configure-chinese"]');
     await driver.waitForEnabled(configureChinese);
@@ -63,10 +70,7 @@ async function run() {
     assert.match(activationProxy.proxyOverride.value, /localhost/i);
     assert.equal(activationProxy.autoConfigUrl.exists, false);
     assert.equal(activationProxy.perConnectionFlags.exists, true);
-    assert.equal(
-      activationProxy.perConnectionFlags.value & proxyTypeProxy,
-      proxyTypeProxy,
-    );
+    assert.equal(activationProxy.perConnectionFlags.value & proxyTypeProxy, proxyTypeProxy);
     assert.equal(activationProxy.perConnectionFlags.value & autoProxyFlags, 0);
     await assertLoopbackProxy(loopbackEndpoint);
     await assertZhCnRenderer();
@@ -104,17 +108,27 @@ class WebDriverClient {
     this.sessionId = sessionId;
   }
 
-  static async connect(application) {
+  static async connect(application, userDataFolder) {
     let lastError;
-    for (let attempt = 0; attempt < 8; attempt += 1) {
+    for (let attempt = 0; attempt < sessionStartAttempts; attempt += 1) {
       try {
-        const response = await requestWebDriver("POST", "/session", {
-          capabilities: {
-            alwaysMatch: {
-              "tauri:options": { application },
+        const response = await requestWebDriver(
+          "POST",
+          "/session",
+          {
+            capabilities: {
+              alwaysMatch: {
+                "tauri:options": {
+                  application,
+                  webviewOptions: {
+                    userDataFolder,
+                  },
+                },
+              },
             },
           },
-        });
+          sessionStartRequestTimeoutMs,
+        );
         const sessionId = response.value?.sessionId ?? response.sessionId;
         if (typeof sessionId !== "string" || sessionId.length === 0) {
           throw new Error("WebDriver did not return a session ID.");
@@ -122,7 +136,10 @@ class WebDriverClient {
         return new WebDriverClient(sessionId);
       } catch (error) {
         lastError = error;
-        await delay(2_000);
+        if (!isRetryableSessionStartError(error) || attempt === sessionStartAttempts - 1) {
+          break;
+        }
+        await delay(1_000);
       }
     }
     throw new Error("Unable to start the Tauri WebDriver session.", { cause: lastError });
@@ -211,11 +228,12 @@ class WebDriverClient {
 
 await run();
 
-async function requestWebDriver(method, pathSuffix, payload) {
+async function requestWebDriver(method, pathSuffix, payload, timeoutMs = 30_000) {
   const response = await fetch(`${webdriverEndpoint}${pathSuffix}`, {
     method,
     headers: payload === undefined ? undefined : { "content-type": "application/json" },
     body: payload === undefined ? undefined : JSON.stringify(payload),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const responseText = await response.text();
   let responseBody = {};
@@ -231,6 +249,40 @@ async function requestWebDriver(method, pathSuffix, payload) {
     throw new Error(`WebDriver request failed (${response.status}): ${detail}`);
   }
   return responseBody;
+}
+
+function isRetryableSessionStartError(error) {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "TimeoutError" || error.name === "TypeError") return true;
+  return /WebDriver request failed \(50[234]\)/.test(error.message);
+}
+
+async function prepareProxyBaseline() {
+  // Do not mutate the runner until EdgeDriver has created a real session. If
+  // WebView2 cannot start, cleanup sees no marker and leaves the runner alone.
+  await writeFile(proxyMutationMarkerPath, "", { encoding: "utf8" });
+  await runProxyStateAction("set-baseline");
+  await runProxyStateAction("save", baselineStatePath);
+}
+
+async function runProxyStateAction(action, statePath) {
+  const args = [
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    proxyStateScript,
+    "-Action",
+    action,
+  ];
+  if (statePath) {
+    args.push("-StatePath", statePath);
+  }
+  await execFile("powershell.exe", args, {
+    cwd: repositoryRoot,
+    windowsHide: true,
+  });
 }
 
 function requiredEnvironment(name) {
