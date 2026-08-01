@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { execFile as execFileCallback } from "node:child_process";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { execFile as execFileCallback, spawn } from "node:child_process";
+import { mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { clearTimeout, setTimeout } from "node:timers";
@@ -17,12 +17,15 @@ const autoProxyFlags = 0x4 | 0x8;
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 const proxyStateScript = path.join(import.meta.dirname, "proxy-state.ps1");
 const appPath = requiredEnvironment("DADA_E2E_APP");
+const appPidPath = requiredEnvironment("DADA_E2E_APP_PID_PATH");
 const chatGptPath = requiredEnvironment("DADA_E2E_CHATGPT_PATH");
 const localeHome = requiredEnvironment("DADA_E2E_LOCALE_HOME");
 const baselineStatePath = requiredEnvironment("DADA_E2E_BASELINE_PROXY_STATE");
 const proxyMutationMarkerPath = requiredEnvironment("DADA_E2E_PROXY_MUTATION_MARKER");
 const webviewUserDataFolder = requiredEnvironment("DADA_E2E_WEBVIEW2_USER_DATA_FOLDER");
+const remoteDebugPort = parseRemoteDebugPort(requiredEnvironment("DADA_E2E_REMOTE_DEBUG_PORT"));
 const artifactDirectory = requiredEnvironment("DADA_E2E_ARTIFACT_DIR");
+const remoteDebuggerEndpoint = `http://127.0.0.1:${remoteDebugPort}`;
 
 async function run() {
   if (process.platform !== "win32") {
@@ -35,9 +38,12 @@ async function run() {
   await rm(webviewUserDataFolder, { recursive: true, force: true });
   await mkdir(webviewUserDataFolder, { recursive: true });
 
+  let desktopApplication;
   let driver;
   try {
-    driver = await WebDriverClient.connect(appPath, webviewUserDataFolder);
+    desktopApplication = await startDesktopApplication();
+    await waitForRemoteDebugger(desktopApplication);
+    driver = await WebDriverClient.connect();
     await prepareProxyBaseline();
 
     const configureChinese = await driver.waitForElement('[data-testid="configure-chinese"]');
@@ -108,7 +114,7 @@ class WebDriverClient {
     this.sessionId = sessionId;
   }
 
-  static async connect(application, userDataFolder) {
+  static async connect() {
     let lastError;
     for (let attempt = 0; attempt < sessionStartAttempts; attempt += 1) {
       try {
@@ -118,11 +124,10 @@ class WebDriverClient {
           {
             capabilities: {
               alwaysMatch: {
-                "tauri:options": {
-                  application,
-                  webviewOptions: {
-                    userDataFolder,
-                  },
+                browserName: "webview2",
+                "ms:edgeChromium": true,
+                "ms:edgeOptions": {
+                  debuggerAddress: `127.0.0.1:${remoteDebugPort}`,
                 },
               },
             },
@@ -257,6 +262,76 @@ function isRetryableSessionStartError(error) {
   return /WebDriver request failed \(50[234]\)/.test(error.message);
 }
 
+async function startDesktopApplication() {
+  const stdout = await open(path.join(artifactDirectory, "desktop-app.log"), "w");
+  const stderr = await open(path.join(artifactDirectory, "desktop-app-error.log"), "w");
+  try {
+    const child = spawn(appPath, [], {
+      env: process.env,
+      stdio: ["ignore", stdout.fd, stderr.fd],
+      windowsHide: true,
+    });
+    let startupError;
+    let exitStatus;
+    child.once("error", (error) => {
+      startupError = error;
+    });
+    child.once("exit", (code, signal) => {
+      exitStatus = { code, signal };
+    });
+    if (!Number.isSafeInteger(child.pid) || child.pid <= 0) {
+      throw new Error("未能启动 E2E 桌面应用。");
+    }
+    await writeFile(appPidPath, `${child.pid}\n`, { encoding: "utf8" });
+    child.unref();
+
+    return {
+      failure() {
+        if (startupError) {
+          return new Error("E2E 桌面应用启动失败。", { cause: startupError });
+        }
+        if (exitStatus) {
+          return new Error(
+            `E2E 桌面应用在 WebView2 调试端点就绪前退出（code=${exitStatus.code}, signal=${exitStatus.signal}）。`,
+          );
+        }
+        return undefined;
+      },
+    };
+  } finally {
+    await Promise.all([stdout.close(), stderr.close()]);
+  }
+}
+
+async function waitForRemoteDebugger(application) {
+  const deadline = Date.now() + 30_000;
+  let lastError;
+  while (Date.now() < deadline) {
+    const applicationFailure = application.failure();
+    if (applicationFailure) {
+      throw applicationFailure;
+    }
+
+    try {
+      const response = await fetch(`${remoteDebuggerEndpoint}/json/version`, {
+        signal: AbortSignal.timeout(1_000),
+      });
+      if (!response.ok) {
+        throw new Error(`WebView2 调试端点返回 ${response.status}。`);
+      }
+      const description = await response.json();
+      if (typeof description.webSocketDebuggerUrl !== "string") {
+        throw new Error("WebView2 调试端点没有返回 WebSocket 地址。");
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      await delay(250);
+    }
+  }
+  throw new Error("WebView2 调试端点未在限定时间内就绪。", { cause: lastError });
+}
+
 async function prepareProxyBaseline() {
   // Do not mutate the runner until EdgeDriver has created a real session. If
   // WebView2 cannot start, cleanup sees no marker and leaves the runner alone.
@@ -291,6 +366,17 @@ function requiredEnvironment(name) {
     throw new Error(`${name} is required.`);
   }
   return value;
+}
+
+function parseRemoteDebugPort(value) {
+  if (!/^[1-9]\d{0,4}$/.test(value)) {
+    throw new Error("DADA_E2E_REMOTE_DEBUG_PORT 必须是非零端口号。");
+  }
+  const port = Number(value);
+  if (port > 65_535) {
+    throw new Error("DADA_E2E_REMOTE_DEBUG_PORT 超出端口范围。");
+  }
+  return port;
 }
 
 async function waitForComplete(driver, step) {

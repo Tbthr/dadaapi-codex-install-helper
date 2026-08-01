@@ -12,9 +12,15 @@ use shared_types::{
     ActivationEvent, ActivationPhase, CommandError, CpuArchitecture, LocaleActivationResult,
     LocaleOverview, LocaleRestoreResult, NetworkRecoveryStatus, OperatingSystem, RepairOverview,
 };
+#[cfg(all(feature = "e2e", target_os = "windows"))]
+use std::{io, path::PathBuf};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const ACTIVATION_PROGRESS_EVENT: &str = "activation-progress";
+#[cfg(all(feature = "e2e", target_os = "windows"))]
+const E2E_REMOTE_DEBUG_PORT_ENV: &str = "DADA_E2E_REMOTE_DEBUG_PORT";
+#[cfg(all(feature = "e2e", target_os = "windows"))]
+const E2E_WEBVIEW2_USER_DATA_FOLDER_ENV: &str = "DADA_E2E_WEBVIEW2_USER_DATA_FOLDER";
 
 #[tauri::command]
 async fn get_locale_overview() -> Result<LocaleOverview, CommandError> {
@@ -213,6 +219,17 @@ fn command_error(error: ActivationError) -> CommandError {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    #[cfg(all(feature = "e2e", target_os = "windows"))]
+    let context = {
+        let mut context = context;
+        // Tauri creates configured windows before running the setup hook.
+        for window_config in &mut context.config_mut().app.windows {
+            window_config.create = false;
+        }
+        context
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -247,6 +264,20 @@ pub fn run() {
                 app_data_dir.join("downloads"),
                 app_data_dir.join("downloads.json"),
             )?);
+            #[cfg(all(feature = "e2e", target_os = "windows"))]
+            {
+                let window_config = app.config().app.windows.first().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "missing configured desktop window",
+                    )
+                })?;
+                let options = e2e_webview_options()?;
+                tauri::WebviewWindowBuilder::from_config(app.handle(), window_config)?
+                    .data_directory(options.data_directory)
+                    .additional_browser_args(&options.additional_browser_args)
+                    .build()?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -271,8 +302,64 @@ pub fn run() {
             downloads::launch_installer,
             downloads::open_official_product_page
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("failed to run Dada Assistant desktop application");
+}
+
+#[cfg(all(feature = "e2e", target_os = "windows"))]
+struct E2eWebviewOptions {
+    data_directory: PathBuf,
+    additional_browser_args: String,
+}
+
+#[cfg(all(feature = "e2e", target_os = "windows"))]
+fn e2e_webview_options() -> Result<E2eWebviewOptions, io::Error> {
+    let data_directory = std::env::var_os(E2E_WEBVIEW2_USER_DATA_FOLDER_ENV)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "E2E WebView2 user-data folder is not configured",
+            )
+        })?;
+    if !data_directory.is_absolute() || data_directory.parent().is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "E2E WebView2 user-data folder must be an absolute non-root path",
+        ));
+    }
+
+    let remote_debug_port = std::env::var(E2E_REMOTE_DEBUG_PORT_ENV)
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "E2E WebView2 remote-debugging port is not configured",
+            )
+        })?
+        .parse::<u16>()
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "E2E WebView2 remote-debugging port is invalid",
+            )
+        })?;
+    if remote_debug_port == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "E2E WebView2 remote-debugging port must be non-zero",
+        ));
+    }
+
+    Ok(E2eWebviewOptions {
+        data_directory,
+        additional_browser_args: format!(
+            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \\
+             --remote-debugging-address=127.0.0.1 \\
+             --remote-debugging-port={remote_debug_port} \\
+             --remote-allow-origins=*"
+        ),
+    })
 }
 
 fn current_operating_system() -> OperatingSystem {

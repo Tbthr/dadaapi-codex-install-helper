@@ -28,12 +28,24 @@ jobs:
         shell: pwsh
         run: |
           $proxyMutationMarker = Join-Path $env:RUNNER_TEMP 'dada-e2e-proxy-mutation-started'
+          $remoteDebugListener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          try {
+            $remoteDebugListener.Start()
+            $remoteDebugPort = ([System.Net.IPEndPoint]$remoteDebugListener.LocalEndpoint).Port
+          } finally {
+            $remoteDebugListener.Stop()
+          }
+          if ($remoteDebugPort -lt 1 -or $remoteDebugPort -gt 65535) {
+            throw "Unable to reserve a valid loopback WebView2 debugging port"
+          }
           Remove-Item -LiteralPath $proxyMutationMarker -Force -ErrorAction SilentlyContinue
           "DADA_E2E_LOCALE_HOME=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-locale')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_ARTIFACT_DIR=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-artifacts')" | Add-Content -Path $env:GITHUB_ENV
+          "DADA_E2E_APP_PID_PATH=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-desktop-app.pid')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_ORIGINAL_PROXY_STATE=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-original-proxy.json')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_BASELINE_PROXY_STATE=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-baseline-proxy.json')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_PROXY_MUTATION_MARKER=$proxyMutationMarker" | Add-Content -Path $env:GITHUB_ENV
+          "DADA_E2E_REMOTE_DEBUG_PORT=$remoteDebugPort" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_WEBVIEW2_USER_DATA_FOLDER=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-webview2-user-data')" | Add-Content -Path $env:GITHUB_ENV
 
       - uses: pnpm/action-setup@v4
@@ -207,17 +219,21 @@ jobs:
               "HKCU:\Software\Policies\Microsoft\Edge\WebView2",
               "HKLM:\Software\Policies\Microsoft\Edge\WebView2"
             )
-            $policySnapshot = foreach ($policyPath in $policyPaths) {
-              if (Test-Path -LiteralPath $policyPath) {
-                $item = Get-ItemProperty -LiteralPath $policyPath -ErrorAction SilentlyContinue
-                [pscustomobject]@{
-                  path = $policyPath
-                  remoteDebuggingAllowed = $item.RemoteDebuggingAllowed
-                  additionalBrowserArguments = $item.AdditionalBrowserArguments
+            $policySnapshot = @(
+              foreach ($policyPath in $policyPaths) {
+                if (Test-Path -LiteralPath $policyPath) {
+                  $item = Get-ItemProperty -LiteralPath $policyPath -ErrorAction SilentlyContinue
+                  [pscustomobject]@{
+                    path = $policyPath
+                    remoteDebuggingAllowed = $item.RemoteDebuggingAllowed
+                    additionalBrowserArguments = $item.AdditionalBrowserArguments
+                  }
                 }
               }
-            }
-            $policySnapshot | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $artifactDirectory "webview2-policy.json") -Encoding utf8
+            )
+            [pscustomobject]@{ policies = $policySnapshot } |
+              ConvertTo-Json -Depth 4 |
+              Set-Content -Path (Join-Path $artifactDirectory "webview2-policy.json") -Encoding utf8
           } catch {
             "policy_snapshot_failed:$($_.Exception.Message)" | Set-Content -Path (Join-Path $artifactDirectory "webview2-policy.json") -Encoding utf8
           }
@@ -244,17 +260,30 @@ jobs:
                 Select-Object FullName, Length, LastWriteTime |
                 ConvertTo-Json -Depth 4 |
                 Set-Content -Path (Join-Path $artifactDirectory "webview2-user-data.json") -Encoding utf8
-              $activePort = Join-Path $userDataFolder "DevToolsActivePort"
+              $activePort = Join-Path $userDataFolder "EBWebView\DevToolsActivePort"
               if (Test-Path -LiteralPath $activePort) {
                 Get-Content -LiteralPath $activePort -Raw | Set-Content -Path (Join-Path $artifactDirectory "DevToolsActivePort") -Encoding utf8
               } else {
-                "DevToolsActivePort missing" | Set-Content -Path (Join-Path $artifactDirectory "DevToolsActivePort") -Encoding utf8
+                "DevToolsActivePort file missing; fixed-port WebView2 debugging is checked through remote-debugging.json" | Set-Content -Path (Join-Path $artifactDirectory "DevToolsActivePort") -Encoding utf8
               }
             } else {
               "WebView2 user-data folder missing" | Set-Content -Path (Join-Path $artifactDirectory "webview2-user-data.json") -Encoding utf8
             }
           } catch {
             "user_data_snapshot_failed:$($_.Exception.Message)" | Set-Content -Path (Join-Path $artifactDirectory "webview2-user-data.json") -Encoding utf8
+          }
+
+          try {
+            $remoteDebugEndpoint = "http://127.0.0.1:$env:DADA_E2E_REMOTE_DEBUG_PORT/json/version"
+            $remoteDebugResponse = Invoke-WebRequest -Uri $remoteDebugEndpoint -TimeoutSec 3
+            [pscustomobject]@{
+              endpoint = $remoteDebugEndpoint
+              statusCode = $remoteDebugResponse.StatusCode
+              body = $remoteDebugResponse.Content
+            } | ConvertTo-Json -Depth 4 |
+              Set-Content -Path (Join-Path $artifactDirectory "remote-debugging.json") -Encoding utf8
+          } catch {
+            "remote_debugging_snapshot_failed:$($_.Exception.Message)" | Set-Content -Path (Join-Path $artifactDirectory "remote-debugging.json") -Encoding utf8
           }
 
           if (Test-Path -LiteralPath $env:DADA_E2E_ORIGINAL_PROXY_STATE) {
@@ -337,6 +366,7 @@ jobs:
           } finally {
             foreach ($pidFile in @(
               (Join-Path $env:RUNNER_TEMP "dada-e2e-tauri-driver.pid"),
+              $env:DADA_E2E_APP_PID_PATH,
               (Join-Path $env:RUNNER_TEMP "dada-e2e-chatgpt.pid")
             )) {
               try {
