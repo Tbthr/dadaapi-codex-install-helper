@@ -17,8 +17,8 @@ const autoProxyFlags = 0x4 | 0x8;
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 const proxyStateScript = path.join(import.meta.dirname, "proxy-state.ps1");
 const appPath = requiredEnvironment("DADA_E2E_APP");
-const appPidPath = requiredEnvironment("DADA_E2E_APP_PID_PATH");
 const chatGptPath = requiredEnvironment("DADA_E2E_CHATGPT_PATH");
+const decoyPath = requiredEnvironment("DADA_E2E_DECOY_PATH");
 const localeHome = requiredEnvironment("DADA_E2E_LOCALE_HOME");
 const baselineStatePath = requiredEnvironment("DADA_E2E_BASELINE_PROXY_STATE");
 const proxyMutationMarkerPath = requiredEnvironment("DADA_E2E_PROXY_MUTATION_MARKER");
@@ -80,6 +80,8 @@ async function run() {
     assert.equal(activationProxy.perConnectionFlags.value & autoProxyFlags, 0);
     await assertLoopbackProxy(loopbackEndpoint);
     await assertZhCnRenderer();
+    await assertFixtureWasRestarted();
+    await assertUnrelatedCodexIsStillRunning();
 
     const recoveryPath = path.join(localeHome, "recovery.json");
     const recoveryRecord = JSON.parse(await readFile(recoveryPath, "utf8"));
@@ -282,7 +284,6 @@ async function startDesktopApplication() {
     if (!Number.isSafeInteger(child.pid) || child.pid <= 0) {
       throw new Error("未能启动 E2E 桌面应用。");
     }
-    await writeFile(appPidPath, `${child.pid}\n`, { encoding: "utf8" });
     child.unref();
 
     return {
@@ -462,6 +463,68 @@ async function assertZhCnRenderer() {
   );
   assert.match(stdout, /--type=renderer/);
   assert.match(stdout, /--lang=zh-CN/);
+}
+
+async function assertFixtureWasRestarted() {
+  const { stdout } = await execFile(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      "[pscustomobject]@{ commands = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $env:DADA_E2E_CHATGPT_PATH -and $_.CommandLine } | Select-Object -ExpandProperty CommandLine) } | ConvertTo-Json -Compress",
+    ],
+    {
+      windowsHide: true,
+      env: { ...process.env, DADA_E2E_CHATGPT_PATH: chatGptPath },
+    },
+  );
+  const payload = JSON.parse(stdout);
+  const commands = Array.isArray(payload.commands)
+    ? payload.commands
+    : typeof payload.commands === "string"
+      ? [payload.commands]
+      : [];
+  assert.ok(
+    commands.length > 0 && commands.every((command) => typeof command === "string"),
+    "ChatGPT fixture 未运行",
+  );
+  assert.ok(
+    commands.every((command) => !command.includes("--e2e-initial")),
+    "启动中文配置前的 ChatGPT fixture 仍在运行",
+  );
+  assert.ok(
+    commands.every((command) => !command.includes("--lang=en-US")),
+    "中文配置前的 ChatGPT renderer 仍在运行",
+  );
+  assert.ok(
+    commands.some((command) => command.includes("--lang=zh-CN")),
+    "ChatGPT fixture 未以 zh-CN 重新启动",
+  );
+}
+
+async function assertUnrelatedCodexIsStillRunning() {
+  const { stdout } = await execFile(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      "$process = Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $env:DADA_E2E_DECOY_PATH } | Select-Object -First 1; if ($null -ne $process) { Write-Output 'true' } else { Write-Output 'false' }",
+    ],
+    {
+      windowsHide: true,
+      env: {
+        ...process.env,
+        DADA_E2E_DECOY_PATH: decoyPath,
+      },
+    },
+  );
+  assert.equal(stdout.trim(), "true", "无关的 Codex fixture 被中文配置流程终止");
 }
 
 async function readProxyState() {

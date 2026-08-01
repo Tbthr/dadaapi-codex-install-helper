@@ -41,7 +41,6 @@ jobs:
           Remove-Item -LiteralPath $proxyMutationMarker -Force -ErrorAction SilentlyContinue
           "DADA_E2E_LOCALE_HOME=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-locale')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_ARTIFACT_DIR=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-artifacts')" | Add-Content -Path $env:GITHUB_ENV
-          "DADA_E2E_APP_PID_PATH=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-desktop-app.pid')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_ORIGINAL_PROXY_STATE=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-original-proxy.json')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_BASELINE_PROXY_STATE=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-baseline-proxy.json')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_PROXY_MUTATION_MARKER=$proxyMutationMarker" | Add-Content -Path $env:GITHUB_ENV
@@ -64,7 +63,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Build and stage the ChatGPT fixture
+      - name: Build and stage desktop E2E fixtures
         shell: pwsh
         run: |
           cargo build -p chatgpt-e2e-fixture
@@ -73,9 +72,14 @@ jobs:
           $fixturePath = Join-Path $fixtureDirectory "ChatGPT.exe"
           New-Item -ItemType Directory -Path $fixtureDirectory -Force | Out-Null
           Copy-Item -LiteralPath $fixture -Destination $fixturePath -Force
-          $fixtureProcess = Start-Process -FilePath $fixturePath -ArgumentList "--e2e-initial" -PassThru
-          $fixtureProcess.Id | Set-Content -Path (Join-Path $env:RUNNER_TEMP "dada-e2e-chatgpt.pid")
           "DADA_E2E_CHATGPT_PATH=$fixturePath" | Add-Content -Path $env:GITHUB_ENV
+          $decoyDirectory = Join-Path $env:LOCALAPPDATA "Programs\Dada Assistant E2E Decoy"
+          $decoyPath = Join-Path $decoyDirectory "Codex.exe"
+          New-Item -ItemType Directory -Path $decoyDirectory -Force | Out-Null
+          Copy-Item -LiteralPath $fixture -Destination $decoyPath -Force
+          "DADA_E2E_DECOY_PATH=$decoyPath" | Add-Content -Path $env:GITHUB_ENV
+          Start-Process -FilePath $fixturePath -ArgumentList @("--e2e-initial", "--lang=en-US") | Out-Null
+          Start-Process -FilePath $decoyPath -ArgumentList "--e2e-decoy" | Out-Null
 
       - name: Build the E2E desktop application
         shell: pwsh
@@ -177,7 +181,6 @@ jobs:
           # tauri-driver inherits the native driver's stderr, so this artifact
           # contains both intermediary and Edge WebDriver failures.
           & $env:DADA_E2E_EDGE_DRIVER --version 2>&1 | Set-Content -Path (Join-Path $artifactDirectory "edge-driver-version.log")
-          $driverProcess.Id | Set-Content -Path (Join-Path $env:RUNNER_TEMP "dada-e2e-tauri-driver.pid")
           $ready = $false
           for ($attempt = 0; $attempt -lt 30; $attempt += 1) {
             if ($driverProcess.HasExited) { throw "tauri-driver exited before accepting WebDriver sessions" }
@@ -204,7 +207,7 @@ jobs:
           try {
             $processSnapshot = @(
               Get-CimInstance Win32_Process -ErrorAction Stop |
-                Where-Object { $_.Name -in @("tauri-driver.exe", "msedgedriver.exe", "msedgewebview2.exe", "dada-assistant-desktop.exe", "ChatGPT.exe") } |
+                Where-Object { $_.Name -in @("tauri-driver.exe", "msedgedriver.exe", "msedgewebview2.exe", "dada-assistant-desktop.exe", "ChatGPT.exe", "Codex.exe") } |
                 Select-Object Name, ProcessId, ParentProcessId, ExecutablePath, CommandLine
             )
             $processSnapshot | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $artifactDirectory "processes.json") -Encoding utf8
@@ -294,61 +297,52 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          function Stop-ProcessTree {
-            param([int64]$ProcessId, [string]$Description)
+          function Stop-ExactPathProcessTrees {
+            param([string]$ExecutablePath)
 
-            if ($ProcessId -lt 1 -or $ProcessId -gt [int]::MaxValue) {
-              throw "E2E process PID is out of range: $Description"
-            }
-            if (-not (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) {
+            if ([string]::IsNullOrWhiteSpace($ExecutablePath)) {
               return
             }
 
-            & taskkill.exe /PID $ProcessId /T /F | Out-Null
-            $taskkillExitCode = $LASTEXITCODE
-            if ($taskkillExitCode -ne 0 -and
-                (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) {
-              throw "Unable to terminate E2E process tree $ProcessId"
+            for ($attempt = 0; $attempt -lt 3; $attempt += 1) {
+              $processes = @(
+                Get-CimInstance Win32_Process -ErrorAction Stop |
+                  Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $ExecutablePath }
+              )
+              if ($processes.Count -eq 0) {
+                return
+              }
+
+              foreach ($process in $processes) {
+                $processId = [int64]$process.ProcessId
+                $current = Get-CimInstance Win32_Process -Filter "ProcessId = $processId" -ErrorAction Stop
+                if ($null -eq $current -or
+                    -not $current.ExecutablePath -or
+                    $current.ExecutablePath -ine $ExecutablePath) {
+                  continue
+                }
+
+                & taskkill.exe /PID $processId /T /F | Out-Null
+                $taskkillExitCode = $LASTEXITCODE
+                if ($taskkillExitCode -ne 0) {
+                  $remaining = Get-CimInstance Win32_Process -Filter "ProcessId = $processId" -ErrorAction SilentlyContinue
+                  if ($null -ne $remaining -and
+                      $remaining.ExecutablePath -and
+                      $remaining.ExecutablePath -ieq $ExecutablePath) {
+                    throw "Unable to terminate E2E process tree for the expected executable"
+                  }
+                }
+              }
+
+              Start-Sleep -Milliseconds 250
             }
-          }
 
-          function Stop-RecordedProcessTree {
-            param([string]$PidPath)
-
-            if (-not (Test-Path -LiteralPath $PidPath)) {
-              return
-            }
-
-            $recordedPid = (Get-Content -LiteralPath $PidPath -Raw).Trim()
-            if ($recordedPid -notmatch '^[1-9][0-9]*$') {
-              throw "Invalid E2E process PID record: $PidPath"
-            }
-            Stop-ProcessTree -ProcessId ([int64]$recordedPid) -Description $PidPath
-          }
-
-          function Stop-FixtureProcessTrees {
-            param([string]$FixturePath)
-
-            if ([string]::IsNullOrWhiteSpace($FixturePath)) {
-              return
-            }
-
-            $fixtureProcessIds = @(
+            $remaining = @(
               Get-CimInstance Win32_Process -ErrorAction Stop |
-                Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $FixturePath } |
-                Select-Object -ExpandProperty ProcessId -Unique
+                Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $ExecutablePath }
             )
-            foreach ($fixtureProcessId in $fixtureProcessIds) {
-              Stop-ProcessTree -ProcessId ([int64]$fixtureProcessId) -Description $FixturePath
-            }
-
-            $remainingFixtureProcessIds = @(
-              Get-CimInstance Win32_Process -ErrorAction Stop |
-                Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $FixturePath } |
-                Select-Object -ExpandProperty ProcessId -Unique
-            )
-            if ($remainingFixtureProcessIds.Count -ne 0) {
-              throw "Fixture processes remain after cleanup: $($remainingFixtureProcessIds -join ',')"
+            if ($remaining.Count -ne 0) {
+              throw "E2E processes remain after exact-path cleanup"
             }
           }
 
@@ -364,27 +358,22 @@ jobs:
             $restoreFailure = $_
             Write-Error $_
           } finally {
-            foreach ($pidFile in @(
-              (Join-Path $env:RUNNER_TEMP "dada-e2e-tauri-driver.pid"),
-              $env:DADA_E2E_APP_PID_PATH,
-              (Join-Path $env:RUNNER_TEMP "dada-e2e-chatgpt.pid")
+            $tauriDriverPath = Join-Path $env:USERPROFILE ".cargo\bin\tauri-driver.exe"
+            foreach ($executablePath in @(
+              $tauriDriverPath,
+              $env:DADA_E2E_EDGE_DRIVER,
+              $env:DADA_E2E_APP,
+              $env:DADA_E2E_CHATGPT_PATH,
+              $env:DADA_E2E_DECOY_PATH
             )) {
               try {
-                Stop-RecordedProcessTree -PidPath $pidFile
+                Stop-ExactPathProcessTrees -ExecutablePath $executablePath
               } catch {
                 if ($null -eq $terminationFailure) {
                   $terminationFailure = $_
                 }
                 Write-Error $_
               }
-            }
-            try {
-              Stop-FixtureProcessTrees -FixturePath $env:DADA_E2E_CHATGPT_PATH
-            } catch {
-              if ($null -eq $terminationFailure) {
-                $terminationFailure = $_
-              }
-              Write-Error $_
             }
           }
           if ($null -ne $restoreFailure) { throw $restoreFailure }

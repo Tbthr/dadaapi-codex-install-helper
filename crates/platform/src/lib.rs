@@ -638,27 +638,16 @@ fn on_off(value: bool) -> &'static str {
 }
 
 #[cfg(target_os = "windows")]
-async fn stop_windows_app(_app: &DesktopApp) -> Result<(), PlatformError> {
-    let mut command = hidden_windows_command("powershell.exe");
-    command.args([
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "Get-Process -Name Codex,ChatGPT -ErrorAction SilentlyContinue | Stop-Process -Force",
-    ]);
-    let status = command
-        .status()
-        .await
-        .map_err(|error| PlatformError::Operation(error.to_string()))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(PlatformError::Operation(
-            "无法停止 ChatGPT/Codex".to_owned(),
-        ))
-    }
+async fn stop_windows_app(app: &DesktopApp) -> Result<(), PlatformError> {
+    windows_powershell_status(
+        WINDOWS_STOP_APP_SCRIPT,
+        &[(
+            "DADA_ASSISTANT_APP_EXECUTABLE_PATH",
+            app.executable_path.as_str(),
+        )],
+        "无法停止 ChatGPT/Codex",
+    )
+    .await
 }
 
 #[cfg(target_os = "windows")]
@@ -1283,6 +1272,74 @@ if ($null -eq $matched) {
 }
 "#;
 
+#[cfg(any(target_os = "windows", test))]
+const WINDOWS_STOP_APP_SCRIPT: &str = r#"
+$ErrorActionPreference = 'Stop'
+$targetPath = $env:DADA_ASSISTANT_APP_EXECUTABLE_PATH
+if ([string]::IsNullOrWhiteSpace($targetPath)) {
+  throw 'target_process_path_missing'
+}
+$targetPath = $targetPath.Trim().Trim('"').Replace('/', '\')
+
+function Test-TargetProcessPath([string]$candidate) {
+  if ([string]::IsNullOrWhiteSpace($candidate)) {
+    return $false
+  }
+  return ($candidate.Trim().Trim('"').Replace('/', '\') -ieq $targetPath)
+}
+
+function Get-TargetProcesses {
+  try {
+    return @(
+      Get-CimInstance Win32_Process -ErrorAction Stop |
+        Where-Object {
+          Test-TargetProcessPath $_.ExecutablePath
+        }
+    )
+  } catch {
+    throw 'target_process_query_failed'
+  }
+}
+
+function Stop-TargetProcesses {
+  foreach ($target in @(Get-TargetProcesses)) {
+    $processId = [uint32]$target.ProcessId
+    try {
+      $current = Get-CimInstance Win32_Process -Filter "ProcessId = $processId" -ErrorAction Stop
+    } catch {
+      throw 'target_process_query_failed'
+    }
+    if ($null -eq $current -or -not (Test-TargetProcessPath $current.ExecutablePath)) {
+      continue
+    }
+
+    try {
+      Stop-Process -Id $processId -Force -ErrorAction Stop
+    } catch {
+      # The process may exit between the exact-path check and Stop-Process.
+      $remaining = Get-Process -Id $processId -ErrorAction SilentlyContinue
+      if ($null -ne $remaining) {
+        throw 'target_process_stop_failed'
+      }
+    }
+  }
+}
+
+for ($attempt = 0; $attempt -lt 32; $attempt += 1) {
+  if (@(Get-TargetProcesses).Count -eq 0) {
+    exit 0
+  }
+  Stop-TargetProcesses
+  if ($attempt -lt 31) {
+    Start-Sleep -Milliseconds 250
+  }
+}
+
+if (@(Get-TargetProcesses).Count -ne 0) {
+  throw 'target_process_exit_timeout'
+}
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1319,6 +1376,15 @@ mod tests {
 
         assert_eq!(output, "NetworkState([REDACTED])");
         assert!(!output.contains("sensitive.example"));
+    }
+
+    #[test]
+    fn windows_stop_script_targets_only_the_selected_executable() {
+        assert!(WINDOWS_STOP_APP_SCRIPT.contains("DADA_ASSISTANT_APP_EXECUTABLE_PATH"));
+        assert!(WINDOWS_STOP_APP_SCRIPT.contains("Test-TargetProcessPath"));
+        assert!(WINDOWS_STOP_APP_SCRIPT.contains("Get-CimInstance Win32_Process"));
+        assert!(WINDOWS_STOP_APP_SCRIPT.contains("Stop-Process -Id $processId -Force"));
+        assert!(!WINDOWS_STOP_APP_SCRIPT.contains("Get-Process -Name Codex,ChatGPT"));
     }
 
     #[test]

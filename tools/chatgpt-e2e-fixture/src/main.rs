@@ -13,13 +13,17 @@ fn main() {
         return;
     }
 
-    if arguments.iter().any(|argument| argument == "--lang=zh-CN") {
+    if let Some(locale) = arguments
+        .iter()
+        .find_map(|argument| argument.strip_prefix("--lang="))
+    {
         let executable = match env::current_exe() {
             Ok(path) => path,
             Err(_) => std::process::exit(1),
         };
         if Command::new(executable)
-            .args(["--type=renderer", "--lang=zh-CN"])
+            .arg("--type=renderer")
+            .arg(format!("--lang={locale}"))
             .spawn()
             .is_err()
         {
