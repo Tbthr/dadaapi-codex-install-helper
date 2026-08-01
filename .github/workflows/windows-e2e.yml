@@ -36,6 +36,7 @@ jobs:
           "DADA_E2E_ARTIFACT_DIR=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-artifacts')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_ORIGINAL_PROXY_STATE=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-original-proxy.json')" | Add-Content -Path $env:GITHUB_ENV
           "DADA_E2E_BASELINE_PROXY_STATE=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-baseline-proxy.json')" | Add-Content -Path $env:GITHUB_ENV
+          "DADA_E2E_PROXY_MUTATION_MARKER=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-proxy-mutation-started')" | Add-Content -Path $env:GITHUB_ENV
 
       - uses: pnpm/action-setup@v4
 
@@ -98,11 +99,12 @@ jobs:
         run: |
           $proxyScript = "apps/desktop/e2e/proxy-state.ps1"
           & $proxyScript -Action save -StatePath $env:DADA_E2E_ORIGINAL_PROXY_STATE
-          if ($LASTEXITCODE -ne 0) { throw "Unable to snapshot the runner proxy state" }
+          if (-not $?) { throw "Unable to snapshot the runner proxy state" }
+          New-Item -ItemType File -Path $env:DADA_E2E_PROXY_MUTATION_MARKER -Force | Out-Null
           & $proxyScript -Action set-baseline
-          if ($LASTEXITCODE -ne 0) { throw "Unable to apply the E2E proxy baseline" }
+          if (-not $?) { throw "Unable to apply the E2E proxy baseline" }
           & $proxyScript -Action save -StatePath $env:DADA_E2E_BASELINE_PROXY_STATE
-          if ($LASTEXITCODE -ne 0) { throw "Unable to save the E2E proxy baseline" }
+          if (-not $?) { throw "Unable to save the E2E proxy baseline" }
 
       - name: Start tauri-driver
         shell: pwsh
@@ -139,9 +141,10 @@ jobs:
         run: |
           $restoreFailure = $null
           try {
-            if (Test-Path -LiteralPath $env:DADA_E2E_ORIGINAL_PROXY_STATE) {
+            if ((Test-Path -LiteralPath $env:DADA_E2E_ORIGINAL_PROXY_STATE) -and
+                (Test-Path -LiteralPath $env:DADA_E2E_PROXY_MUTATION_MARKER)) {
               & "apps/desktop/e2e/proxy-state.ps1" -Action restore -StatePath $env:DADA_E2E_ORIGINAL_PROXY_STATE
-              if ($LASTEXITCODE -ne 0) { throw "Unable to restore the runner proxy state" }
+              if (-not $?) { throw "Unable to restore the runner proxy state" }
             }
           } catch {
             $restoreFailure = $_
