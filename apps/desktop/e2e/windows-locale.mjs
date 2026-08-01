@@ -10,6 +10,8 @@ import { promisify } from "node:util";
 const execFile = promisify(execFileCallback);
 const webdriverEndpoint = "http://127.0.0.1:4444";
 const webdriverElementKey = "element-6066-11e4-a52e-4f735466cecf";
+const proxyTypeProxy = 0x2;
+const autoProxyFlags = 0x4 | 0x8;
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 const proxyStateScript = path.join(import.meta.dirname, "proxy-state.ps1");
 const appPath = requiredEnvironment("DADA_E2E_APP");
@@ -60,7 +62,12 @@ async function run() {
     const loopbackEndpoint = parseLoopbackEndpoint(activationProxy.proxyServer.value);
     assert.match(activationProxy.proxyOverride.value, /localhost/i);
     assert.equal(activationProxy.autoConfigUrl.exists, false);
-    assert.equal(activationProxy.autoDetect.value, 0);
+    assert.equal(activationProxy.perConnectionFlags.exists, true);
+    assert.equal(
+      activationProxy.perConnectionFlags.value & proxyTypeProxy,
+      proxyTypeProxy,
+    );
+    assert.equal(activationProxy.perConnectionFlags.value & autoProxyFlags, 0);
     await assertLoopbackProxy(loopbackEndpoint);
     await assertZhCnRenderer();
 
@@ -68,6 +75,7 @@ async function run() {
     const recoveryRecord = JSON.parse(await readFile(recoveryPath, "utf8"));
     assert.equal(recoveryRecord.operatingSystem, "windows");
     assert.deepEqual(JSON.parse(recoveryRecord.networkState), baselineState);
+    assert.notEqual(baselineState.perConnectionFlags.value & autoProxyFlags, 0);
 
     await driver.waitForEnabled(primaryAction);
     await driver.click(primaryAction);

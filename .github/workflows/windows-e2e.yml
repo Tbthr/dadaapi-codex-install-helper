@@ -5,12 +5,7 @@ on:
   pull_request:
     paths:
       - "apps/desktop/**"
-      - "crates/activation-core/**"
-      - "crates/desktop-discovery/**"
-      - "crates/locale-config/**"
-      - "crates/platform/**"
-      - "crates/proxy-core/**"
-      - "crates/shared-types/**"
+      - "crates/**"
       - "tools/chatgpt-e2e-fixture/**"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -139,7 +134,35 @@ jobs:
         if: always()
         shell: pwsh
         run: |
+          function Stop-RecordedProcessTree {
+            param([string]$PidPath)
+
+            if (-not (Test-Path -LiteralPath $PidPath)) {
+              return
+            }
+
+            $recordedPid = (Get-Content -LiteralPath $PidPath -Raw).Trim()
+            if ($recordedPid -notmatch '^[1-9][0-9]*$') {
+              throw "Invalid E2E process PID record: $PidPath"
+            }
+            $processId = [int64]$recordedPid
+            if ($processId -gt [int]::MaxValue) {
+              throw "E2E process PID is out of range: $PidPath"
+            }
+            if (-not (Get-Process -Id $processId -ErrorAction SilentlyContinue)) {
+              return
+            }
+
+            & taskkill.exe /PID $processId /T /F | Out-Null
+            $taskkillExitCode = $LASTEXITCODE
+            if ($taskkillExitCode -ne 0 -and
+                (Get-Process -Id $processId -ErrorAction SilentlyContinue)) {
+              throw "Unable to terminate E2E process tree $processId"
+            }
+          }
+
           $restoreFailure = $null
+          $terminationFailure = $null
           try {
             if ((Test-Path -LiteralPath $env:DADA_E2E_ORIGINAL_PROXY_STATE) -and
                 (Test-Path -LiteralPath $env:DADA_E2E_PROXY_MUTATION_MARKER)) {
@@ -150,10 +173,22 @@ jobs:
             $restoreFailure = $_
             Write-Error $_
           } finally {
-            Get-Process -Name ChatGPT,dada-assistant-desktop,tauri-driver,msedgedriver -ErrorAction SilentlyContinue |
-              Stop-Process -Force -ErrorAction SilentlyContinue
+            foreach ($pidFile in @(
+              (Join-Path $env:RUNNER_TEMP "dada-e2e-tauri-driver.pid"),
+              (Join-Path $env:RUNNER_TEMP "dada-e2e-chatgpt.pid")
+            )) {
+              try {
+                Stop-RecordedProcessTree -PidPath $pidFile
+              } catch {
+                if ($null -eq $terminationFailure) {
+                  $terminationFailure = $_
+                }
+                Write-Error $_
+              }
+            }
           }
           if ($null -ne $restoreFailure) { throw $restoreFailure }
+          if ($null -ne $terminationFailure) { throw $terminationFailure }
 
       - name: Upload Windows locale E2E diagnostics
         if: failure()

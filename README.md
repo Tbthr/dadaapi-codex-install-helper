@@ -86,8 +86,9 @@ curl -fsSL https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/
 ## 发布、镜像与 E2E
 
 - 已配置的生产 Gitee 仓库是 [lyq_power/dadaapi-codex-install-helper](https://gitee.com/lyq_power/dadaapi-codex-install-helper)。向 GitHub `main` 推送后会自动运行“同步哒哒助手 v1.0 代码至 Gitee”。需要手动重试时，在 GitHub Actions 中运行该工作流；目标始终来自受保护的 `GITEE_REPOSITORY` Actions Variable。
-- 创建 `v*` 标签会构建 GitHub Release，并用同一套 Gitee 配置同步标签和 Release 资产。已有 GitHub Release 可在 Actions 中运行“同步哒哒助手 v1.0 发布”，输入目标标签。
-- GitHub 仓库设置中保留 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper`、`GITEE_USERNAME=lyq_power` 两个 Actions Variable，以及具备 `projects` 权限的 `GITEE_TOKEN` Actions Secret。令牌轮换后只更新该 Secret。
+- 创建 `v*` 标签会先构建 GitHub Draft Release，并用同一套 Gitee 配置同步同名标签和 Release 资产；Gitee 标签始终指向 GitHub 同名标签的提交。确认资产校验和 Gitee 同步成功后，再在 GitHub 发布该 Draft，使其成为用户可见的正式 Release。已有 GitHub Release 可在 Actions 中运行“同步哒哒助手 v1.0 发布”，输入目标标签。
+- “验证哒哒助手 v1.0 安装脚本”在 Pull Request 和 `main` 上只检查脚本语法；GitHub Release 由维护者发布后会自动下载并校验各平台的最新安装包，但不会启动安装器。
+- GitHub 仓库设置中保留 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper`、`GITEE_USERNAME=lyq_power` 两个 Actions Variable，以及仅授予 `user_info` 和 `projects` 权限的 `GITEE_TOKEN` Actions Secret。令牌轮换后只更新该 Secret。
 - Windows x64 中文全链路测试由“Windows locale E2E”在相关 Pull Request 上执行，也可在 Actions 中手动运行。失败时下载 `windows-locale-e2e-diagnostics` 查看截图和 WebDriver 日志。Windows ARM64 继续由“Desktop package smoke”和“哒哒助手 v1.0 发布冒烟”覆盖安装及启动。
 
 静态路由真实联调（Gitee 优先、GitHub 备用）：

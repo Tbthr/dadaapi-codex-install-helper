@@ -2,6 +2,9 @@ name: 验证哒哒助手 v1.0 安装脚本
 
 on:
   workflow_dispatch:
+  release:
+    types:
+      - published
   pull_request:
     paths:
       - "scripts/install.ps1"
@@ -29,7 +32,24 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - name: 下载并校验 Windows 安装包
+
+      - name: 检查 Windows 安装脚本语法
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $env:GITHUB_WORKSPACE "scripts/install.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
+
+      - name: 下载并校验已发布 Windows 安装包
+        if: ${{ github.event_name == 'release' }}
         shell: pwsh
         env:
           DADA_ASSISTANT_INSTALL_DRY_RUN: "1"
@@ -39,7 +59,13 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - name: 下载并校验 macOS 安装包
+
+      - name: 检查 macOS 安装脚本语法
+        shell: bash
+        run: bash -n scripts/install.sh
+
+      - name: 下载并校验已发布 macOS 安装包
+        if: ${{ github.event_name == 'release' }}
         env:
           DADA_ASSISTANT_INSTALL_DRY_RUN: "1"
         run: /bin/sh scripts/install.sh

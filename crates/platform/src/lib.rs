@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 use serde::{Deserialize, Serialize};
 use shared_types::DesktopApp;
 use std::fmt;
@@ -718,7 +718,7 @@ fn process_commands_use_locale(commands: &str, install_path: &str, locale: &str)
     })
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WindowsNetworkState {
@@ -727,17 +727,19 @@ struct WindowsNetworkState {
     proxy_override: RegistryStringState,
     auto_config_url: RegistryStringState,
     auto_detect: RegistryDwordState,
+    #[serde(default)]
+    per_connection_flags: RegistryDwordState,
 }
 
-#[cfg(target_os = "windows")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg(any(target_os = "windows", test))]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RegistryDwordState {
     exists: bool,
     value: u32,
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RegistryStringState {
@@ -747,12 +749,8 @@ struct RegistryStringState {
 
 #[cfg(target_os = "windows")]
 async fn save_windows_network_state() -> Result<NetworkState, PlatformError> {
-    let output = windows_powershell_output(
-        WINDOWS_SAVE_PROXY_SCRIPT,
-        &[],
-        "Windows 系统代理状态读取失败",
-    )
-    .await?;
+    let script = windows_proxy_script(WINDOWS_SAVE_PROXY_SCRIPT);
+    let output = windows_powershell_output(&script, &[], "Windows 系统代理状态读取失败").await?;
     let state: WindowsNetworkState =
         serde_json::from_str(output.trim()).map_err(|_| PlatformError::InvalidNetworkState)?;
     let serialized =
@@ -774,14 +772,11 @@ async fn apply_windows_local_proxy(settings: &LocalProxySettings) -> Result<(), 
         ("DADA_ASSISTANT_PROXY_SERVER", proxy_server.as_str()),
         ("DADA_ASSISTANT_PROXY_OVERRIDE", proxy_override.as_str()),
     ];
+    let script = windows_proxy_script(WINDOWS_APPLY_PROXY_SCRIPT);
     let mut attempt = 1_u8;
     loop {
-        let result = windows_powershell_status(
-            WINDOWS_APPLY_PROXY_SCRIPT,
-            &environment,
-            "Windows 系统代理写入失败",
-        )
-        .await;
+        let result =
+            windows_powershell_status(&script, &environment, "Windows 系统代理写入失败").await;
         match result {
             Ok(()) => return Ok(()),
             Err(error) if attempt < 3 => {
@@ -800,8 +795,9 @@ async fn restore_windows_network_state(state: &NetworkState) -> Result<(), Platf
         .map_err(|_| PlatformError::InvalidNetworkState)?;
     let serialized =
         serde_json::to_string(&parsed).map_err(|_| PlatformError::InvalidNetworkState)?;
+    let script = windows_proxy_script(WINDOWS_RESTORE_PROXY_SCRIPT);
     windows_powershell_status(
-        WINDOWS_RESTORE_PROXY_SCRIPT,
+        &script,
         &[("DADA_ASSISTANT_NETWORK_STATE", serialized.as_str())],
         "Windows 系统代理恢复失败",
     )
@@ -867,6 +863,12 @@ fn windows_failure_message(fallback: &str, stderr: &str) -> String {
     let value = stderr.to_ascii_lowercase();
     let detail = if value.contains("proxy_write_verification_failed") {
         "写入后校验失败，可能被其他代理软件或系统策略立即覆盖"
+    } else if value.contains("proxy_restore_verification_failed") {
+        "恢复后校验失败，可能被其他代理软件或系统策略立即覆盖"
+    } else if value.contains("per_connection_flags_read_failed") {
+        "Windows 有效代理状态读取失败"
+    } else if value.contains("per_connection_flags_write_failed") {
+        "Windows 有效代理状态更新失败"
     } else if value.contains("wininet_notify_failed") {
         "代理值已写入，但 Windows 网络设置刷新失败"
     } else if value.contains("access is denied")
@@ -882,6 +884,220 @@ fn windows_failure_message(fallback: &str, stderr: &str) -> String {
     };
     format!("{fallback}：{detail}")
 }
+
+#[cfg(target_os = "windows")]
+fn windows_proxy_script(body: &str) -> String {
+    format!("{WINDOWS_WININET_PROXY_HELPER}\n{body}")
+}
+
+#[cfg(target_os = "windows")]
+const WINDOWS_WININET_PROXY_HELPER: &str = r#"
+Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+public static class DadaAssistantWinInetProxy
+{
+  private const uint INTERNET_OPTION_REFRESH = 37;
+  private const uint INTERNET_OPTION_SETTINGS_CHANGED = 39;
+  private const uint INTERNET_OPTION_PER_CONNECTION_OPTION = 75;
+  private const uint INTERNET_PER_CONN_FLAGS = 1;
+  private const uint INTERNET_PER_CONN_FLAGS_UI = 10;
+
+  [StructLayout(LayoutKind.Explicit)]
+  private struct INTERNET_PER_CONN_OPTION_VALUE
+  {
+    [FieldOffset(0)] public uint dwValue;
+    [FieldOffset(0)] public IntPtr pszValue;
+    [FieldOffset(0)] public System.Runtime.InteropServices.ComTypes.FILETIME ftValue;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct INTERNET_PER_CONN_OPTION
+  {
+    public uint dwOption;
+    public INTERNET_PER_CONN_OPTION_VALUE Value;
+  }
+
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  private struct INTERNET_PER_CONN_OPTION_LIST
+  {
+    public uint dwSize;
+    public IntPtr pszConnection;
+    public uint dwOptionCount;
+    public uint dwOptionError;
+    public IntPtr pOptions;
+  }
+
+  [DllImport("wininet.dll", EntryPoint = "InternetQueryOptionW", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool InternetQueryOption(
+    IntPtr hInternet,
+    uint dwOption,
+    IntPtr lpBuffer,
+    ref uint lpdwBufferLength);
+
+  [DllImport("wininet.dll", EntryPoint = "InternetSetOptionW", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool InternetSetOption(
+    IntPtr hInternet,
+    uint dwOption,
+    IntPtr lpBuffer,
+    uint dwBufferLength);
+
+  private static readonly int OptionSize = Marshal.SizeOf(typeof(INTERNET_PER_CONN_OPTION));
+  private static readonly int ListSize = Marshal.SizeOf(typeof(INTERNET_PER_CONN_OPTION_LIST));
+
+  private static void CheckLayout()
+  {
+    if (IntPtr.Size == 8 &&
+        (OptionSize != 16 ||
+         Marshal.OffsetOf(typeof(INTERNET_PER_CONN_OPTION), "Value").ToInt64() != 8 ||
+         ListSize != 32 ||
+         Marshal.OffsetOf(typeof(INTERNET_PER_CONN_OPTION_LIST), "pOptions").ToInt64() != 24))
+    {
+      throw new InvalidOperationException("unexpected WinINet x64 layout");
+    }
+  }
+
+  private static bool TryQueryConnectionFlags(uint option, out uint flags, out int error)
+  {
+    CheckLayout();
+    IntPtr options = IntPtr.Zero;
+    IntPtr listPointer = IntPtr.Zero;
+    try
+    {
+      options = Marshal.AllocHGlobal(OptionSize);
+      Marshal.StructureToPtr(new INTERNET_PER_CONN_OPTION { dwOption = option }, options, false);
+      listPointer = Marshal.AllocHGlobal(ListSize);
+      Marshal.StructureToPtr(new INTERNET_PER_CONN_OPTION_LIST {
+        dwSize = (uint)ListSize,
+        pszConnection = IntPtr.Zero,
+        dwOptionCount = 1,
+        pOptions = options
+      }, listPointer, false);
+
+      uint bufferLength = (uint)ListSize;
+      bool succeeded = InternetQueryOption(
+        IntPtr.Zero,
+        INTERNET_OPTION_PER_CONNECTION_OPTION,
+        listPointer,
+        ref bufferLength);
+      error = succeeded ? 0 : Marshal.GetLastWin32Error();
+      flags = succeeded
+        ? ((INTERNET_PER_CONN_OPTION)Marshal.PtrToStructure(
+            options,
+            typeof(INTERNET_PER_CONN_OPTION))).Value.dwValue
+        : 0;
+      return succeeded;
+    }
+    finally
+    {
+      if (listPointer != IntPtr.Zero) Marshal.FreeHGlobal(listPointer);
+      if (options != IntPtr.Zero) Marshal.FreeHGlobal(options);
+    }
+  }
+
+  public static uint QueryConnectionFlags()
+  {
+    int error;
+    uint flags;
+    if (TryQueryConnectionFlags(INTERNET_PER_CONN_FLAGS_UI, out flags, out error) ||
+        TryQueryConnectionFlags(INTERNET_PER_CONN_FLAGS, out flags, out error))
+    {
+      return flags;
+    }
+    throw new Win32Exception(error, "InternetQueryOptionW flags failed");
+  }
+
+  private static bool TrySetConnectionFlags(uint option, uint flags, out int error)
+  {
+    CheckLayout();
+    IntPtr options = IntPtr.Zero;
+    IntPtr listPointer = IntPtr.Zero;
+    try
+    {
+      options = Marshal.AllocHGlobal(OptionSize);
+      Marshal.StructureToPtr(new INTERNET_PER_CONN_OPTION {
+        dwOption = option,
+        Value = new INTERNET_PER_CONN_OPTION_VALUE { dwValue = flags }
+      }, options, false);
+      listPointer = Marshal.AllocHGlobal(ListSize);
+      Marshal.StructureToPtr(new INTERNET_PER_CONN_OPTION_LIST {
+        dwSize = (uint)ListSize,
+        pszConnection = IntPtr.Zero,
+        dwOptionCount = 1,
+        pOptions = options
+      }, listPointer, false);
+
+      bool succeeded = InternetSetOption(
+        IntPtr.Zero,
+        INTERNET_OPTION_PER_CONNECTION_OPTION,
+        listPointer,
+        (uint)ListSize);
+      error = succeeded ? 0 : Marshal.GetLastWin32Error();
+      return succeeded;
+    }
+    finally
+    {
+      if (listPointer != IntPtr.Zero) Marshal.FreeHGlobal(listPointer);
+      if (options != IntPtr.Zero) Marshal.FreeHGlobal(options);
+    }
+  }
+
+  private static void NotifySettingsChanged()
+  {
+    if (!InternetSetOption(IntPtr.Zero, INTERNET_OPTION_SETTINGS_CHANGED, IntPtr.Zero, 0))
+    {
+      throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+    if (!InternetSetOption(IntPtr.Zero, INTERNET_OPTION_REFRESH, IntPtr.Zero, 0))
+    {
+      throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+  }
+
+  public static void SetConnectionFlags(uint flags)
+  {
+    int error;
+    if (!TrySetConnectionFlags(INTERNET_PER_CONN_FLAGS_UI, flags, out error) &&
+        !TrySetConnectionFlags(INTERNET_PER_CONN_FLAGS, flags, out error))
+    {
+      throw new Win32Exception(error, "InternetSetOptionW flags failed");
+    }
+    NotifySettingsChanged();
+  }
+
+  public static void RestoreConnectionFlags(uint flags)
+  {
+    int error;
+    if (!TrySetConnectionFlags(INTERNET_PER_CONN_FLAGS, flags, out error))
+    {
+      throw new Win32Exception(error, "InternetSetOptionW restore flags failed");
+    }
+    NotifySettingsChanged();
+  }
+
+  public const uint ProxyTypeDirect = 0x00000001;
+  public const uint ProxyTypeProxy = 0x00000002;
+  public const uint ProxyTypeAutoProxyUrl = 0x00000004;
+  public const uint ProxyTypeAutoDetect = 0x00000008;
+}
+'@
+
+function Get-WinInetProxyFlags {
+  return [DadaAssistantWinInetProxy]::QueryConnectionFlags()
+}
+
+function Set-WinInetProxyFlags([uint32]$flags) {
+  [DadaAssistantWinInetProxy]::SetConnectionFlags($flags)
+}
+
+function Restore-WinInetProxyFlags([uint32]$flags) {
+  [DadaAssistantWinInetProxy]::RestoreConnectionFlags($flags)
+}
+"#;
 
 #[cfg(target_os = "windows")]
 const WINDOWS_SAVE_PROXY_SCRIPT: &str = r#"
@@ -901,12 +1117,20 @@ function Read-String([string]$name) {
     [pscustomobject]@{ exists = $false; value = '' }
   }
 }
+function Read-PerConnectionFlags {
+  try {
+    return [pscustomobject]@{ exists = $true; value = [uint32](Get-WinInetProxyFlags) }
+  } catch {
+    throw 'per_connection_flags_read_failed'
+  }
+}
 [pscustomobject]@{
   proxyEnable = Read-Dword 'ProxyEnable'
   proxyServer = Read-String 'ProxyServer'
   proxyOverride = Read-String 'ProxyOverride'
   autoConfigUrl = Read-String 'AutoConfigURL'
   autoDetect = Read-Dword 'AutoDetect'
+  perConnectionFlags = Read-PerConnectionFlags
 } | ConvertTo-Json -Compress -Depth 4
 "#;
 
@@ -920,30 +1144,29 @@ New-ItemProperty -Path $path -Name 'ProxyEnable' -PropertyType DWord -Value 1 -F
 New-ItemProperty -Path $path -Name 'ProxyServer' -PropertyType String -Value $env:DADA_ASSISTANT_PROXY_SERVER -Force | Out-Null
 New-ItemProperty -Path $path -Name 'ProxyOverride' -PropertyType String -Value $env:DADA_ASSISTANT_PROXY_OVERRIDE -Force | Out-Null
 Remove-ItemProperty -Path $path -Name 'AutoConfigURL' -ErrorAction SilentlyContinue
-New-ItemProperty -Path $path -Name 'AutoDetect' -PropertyType DWord -Value 0 -Force | Out-Null
+try {
+  Set-WinInetProxyFlags ([DadaAssistantWinInetProxy]::ProxyTypeProxy)
+} catch {
+  throw 'per_connection_flags_write_failed'
+}
 $actualEnable = [uint32](Get-ItemPropertyValue -Path $path -Name 'ProxyEnable' -ErrorAction Stop)
 $actualServer = [string](Get-ItemPropertyValue -Path $path -Name 'ProxyServer' -ErrorAction Stop)
 $actualOverride = [string](Get-ItemPropertyValue -Path $path -Name 'ProxyOverride' -ErrorAction Stop)
 $actualAutoConfig = Get-ItemProperty -Path $path -Name 'AutoConfigURL' -ErrorAction SilentlyContinue
-$actualAutoDetect = [uint32](Get-ItemPropertyValue -Path $path -Name 'AutoDetect' -ErrorAction Stop)
+try {
+  $actualFlags = [uint32](Get-WinInetProxyFlags)
+} catch {
+  throw 'per_connection_flags_read_failed'
+}
+$autoProxyFlags = [DadaAssistantWinInetProxy]::ProxyTypeAutoProxyUrl -bor [DadaAssistantWinInetProxy]::ProxyTypeAutoDetect
 if ($actualEnable -ne 1 -or
     $actualServer -ne $env:DADA_ASSISTANT_PROXY_SERVER -or
     $actualOverride -ne $env:DADA_ASSISTANT_PROXY_OVERRIDE -or
     $null -ne $actualAutoConfig -or
-    $actualAutoDetect -ne 0) {
+    ($actualFlags -band [DadaAssistantWinInetProxy]::ProxyTypeProxy) -eq 0 -or
+    ($actualFlags -band $autoProxyFlags) -ne 0) {
   throw 'proxy_write_verification_failed'
 }
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class DadaAssistantWinInet {
-  [DllImport("wininet.dll", SetLastError = true)]
-  public static extern bool InternetSetOption(IntPtr internet, int option, IntPtr buffer, int length);
-}
-'@
-$settingsChanged = [DadaAssistantWinInet]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
-$settingsRefresh = [DadaAssistantWinInet]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
-if (-not $settingsChanged -or -not $settingsRefresh) { throw 'wininet_notify_failed' }
 "#;
 
 #[cfg(target_os = "windows")]
@@ -971,6 +1194,34 @@ Restore-String 'ProxyServer' $state.proxyServer
 Restore-String 'ProxyOverride' $state.proxyOverride
 Restore-String 'AutoConfigURL' $state.autoConfigUrl
 Restore-Dword 'AutoDetect' $state.autoDetect
+if ($null -ne $state.perConnectionFlags -and [bool]$state.perConnectionFlags.exists) {
+  $expectedFlags = [uint32]$state.perConnectionFlags.value
+  try {
+    Restore-WinInetProxyFlags $expectedFlags
+  } catch {
+    throw 'per_connection_flags_write_failed'
+  }
+} else {
+  $legacyFlags = [uint32]0
+  if ([bool]$state.proxyEnable.exists -and [uint32]$state.proxyEnable.value -ne 0) {
+    $legacyFlags = $legacyFlags -bor [DadaAssistantWinInetProxy]::ProxyTypeProxy
+  }
+  if ([bool]$state.autoConfigUrl.exists -and -not [string]::IsNullOrWhiteSpace([string]$state.autoConfigUrl.value)) {
+    $legacyFlags = $legacyFlags -bor [DadaAssistantWinInetProxy]::ProxyTypeAutoProxyUrl
+  }
+  if ([bool]$state.autoDetect.exists -and [uint32]$state.autoDetect.value -ne 0) {
+    $legacyFlags = $legacyFlags -bor [DadaAssistantWinInetProxy]::ProxyTypeAutoDetect
+  }
+  if ($legacyFlags -eq 0) {
+    $legacyFlags = [DadaAssistantWinInetProxy]::ProxyTypeDirect
+  }
+  $expectedFlags = $legacyFlags
+  try {
+    Restore-WinInetProxyFlags $expectedFlags
+  } catch {
+    throw 'per_connection_flags_write_failed'
+  }
+}
 function Assert-Dword([string]$name, $expected) {
   try {
     $value = [uint32](Get-ItemPropertyValue -Path $path -Name $name -ErrorAction Stop)
@@ -999,18 +1250,14 @@ Assert-Dword 'ProxyEnable' $state.proxyEnable
 Assert-String 'ProxyServer' $state.proxyServer
 Assert-String 'ProxyOverride' $state.proxyOverride
 Assert-String 'AutoConfigURL' $state.autoConfigUrl
-Assert-Dword 'AutoDetect' $state.autoDetect
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class DadaAssistantWinInetRestore {
-  [DllImport("wininet.dll", SetLastError = true)]
-  public static extern bool InternetSetOption(IntPtr internet, int option, IntPtr buffer, int length);
+try {
+  $actualFlags = [uint32](Get-WinInetProxyFlags)
+} catch {
+  throw 'per_connection_flags_read_failed'
 }
-'@
-$settingsChanged = [DadaAssistantWinInetRestore]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
-$settingsRefresh = [DadaAssistantWinInetRestore]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
-if (-not $settingsChanged -or -not $settingsRefresh) { throw 'wininet_notify_failed' }
+if ($actualFlags -ne $expectedFlags) {
+  throw 'proxy_restore_verification_failed'
+}
 "#;
 
 #[cfg(target_os = "windows")]
@@ -1071,6 +1318,23 @@ mod tests {
 
         assert_eq!(output, "NetworkState([REDACTED])");
         assert!(!output.contains("sensitive.example"));
+    }
+
+    #[test]
+    fn legacy_windows_network_state_deserializes_without_connection_flags() {
+        let state: WindowsNetworkState = serde_json::from_str(
+            r#"{
+              "proxyEnable":{"exists":true,"value":1},
+              "proxyServer":{"exists":true,"value":"127.0.0.1:17892"},
+              "proxyOverride":{"exists":false,"value":""},
+              "autoConfigUrl":{"exists":false,"value":""},
+              "autoDetect":{"exists":false,"value":0}
+            }"#,
+        )
+        .expect("legacy state remains readable");
+
+        assert!(!state.per_connection_flags.exists);
+        assert_eq!(state.per_connection_flags.value, 0);
     }
 
     #[test]
