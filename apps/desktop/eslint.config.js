@@ -27,4 +27,16 @@ export default [
       ],
     },
   },
+  {
+    files: ["e2e/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        Buffer: "readonly",
+        clearTimeout: "readonly",
+        fetch: "readonly",
+        process: "readonly",
+        setTimeout: "readonly",
+      },
+    },
+  },
 ];

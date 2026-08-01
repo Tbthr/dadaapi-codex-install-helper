@@ -11,6 +11,7 @@ members = [
   "crates/route-bundle",
   "crates/route-catalog",
   "crates/shared-types",
+  "tools/chatgpt-e2e-fixture",
   "tools/msix-links",
   "tools/route-e2e",
 ]

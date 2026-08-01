@@ -239,7 +239,7 @@ where
 
     pub async fn restore_network(&self) -> Result<NetworkRecoveryStatus, ActivationError> {
         let _activation_guard = self.activation_lock.lock().await;
-        let restored = self.recovery.restore_pending().await?;
+        let restored = self.recovery.restore_pending_network().await?;
         let local_proxy_active = self.active_proxy.lock().await.is_some();
         if !restored && local_proxy_active {
             return Err(ActivationError::NetworkSafety(
@@ -248,6 +248,9 @@ where
         }
         if restored && local_proxy_active {
             self.stop_active_proxy().await?;
+        }
+        if restored {
+            self.recovery.clear_pending()?;
         }
         self.network_recovery_status().await
     }
@@ -580,6 +583,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn proxy_shutdown_failure_keeps_recovery_record_after_network_restore() {
+        let fixture = Fixture::with_proxy_shutdown_failure(false, false, false, true);
+
+        fixture
+            .coordinator
+            .activate(None)
+            .await
+            .expect("activation must succeed before manual restore");
+
+        let error = fixture
+            .coordinator
+            .restore_network()
+            .await
+            .expect_err("proxy shutdown must fail");
+
+        assert!(matches!(error, ActivationError::LocalProxy(_)));
+        assert_order(&fixture.log(), "restore_network_state", "proxy_shutdown");
+        assert!(fixture.recovery_path.exists());
+    }
+
+    #[tokio::test]
     async fn runtime_verifier_requires_a_zh_cn_renderer_process() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let locale_paths = LocalePaths::from_codex_home(directory.path().join(".codex"));
@@ -655,6 +679,15 @@ mod tests {
 
     impl Fixture {
         fn new(verification_fails: bool, apply_fails: bool, restore_fails: bool) -> Self {
+            Self::with_proxy_shutdown_failure(verification_fails, apply_fails, restore_fails, false)
+        }
+
+        fn with_proxy_shutdown_failure(
+            verification_fails: bool,
+            apply_fails: bool,
+            restore_fails: bool,
+            proxy_shutdown_fails: bool,
+        ) -> Self {
             let directory = tempfile::tempdir().expect("temporary directory");
             let locale_paths = LocalePaths::from_codex_home(directory.path().join(".codex"));
             let recovery_path = directory.path().join("recovery.json");
@@ -679,6 +712,7 @@ mod tests {
                 },
                 MockProxyEngine {
                     operations: operations.clone(),
+                    shutdown_fails: proxy_shutdown_fails,
                 },
                 Duration::from_secs(1),
                 NetworkRecoveryStore::new(recovery_path.clone()),
@@ -828,6 +862,7 @@ mod tests {
 
     struct MockProxyEngine {
         operations: Arc<StdMutex<Vec<&'static str>>>,
+        shutdown_fails: bool,
     }
 
     #[async_trait]
@@ -839,12 +874,14 @@ mod tests {
             record(&self.operations, "proxy_start");
             Ok(Box::new(MockProxySession {
                 operations: self.operations.clone(),
+                shutdown_fails: self.shutdown_fails,
             }))
         }
     }
 
     struct MockProxySession {
         operations: Arc<StdMutex<Vec<&'static str>>>,
+        shutdown_fails: bool,
     }
 
     #[async_trait]
@@ -860,7 +897,13 @@ mod tests {
 
         async fn shutdown(&mut self) -> Result<(), LocalProxyError> {
             record(&self.operations, "proxy_shutdown");
-            Ok(())
+            if self.shutdown_fails {
+                Err(LocalProxyError::Shutdown(
+                    "mock shutdown failure".to_owned(),
+                ))
+            } else {
+                Ok(())
+            }
         }
 
         fn abort(&mut self) {

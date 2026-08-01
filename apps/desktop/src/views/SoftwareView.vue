@@ -355,15 +355,8 @@ function errorMessage(error: unknown, fallback: string): string {
 </script>
 
 <template>
-  <section class="software-page" aria-labelledby="software-title">
-    <header class="software-heading">
-      <div>
-        <span class="eyebrow">官方来源</span>
-        <h1 id="software-title">软件工具</h1>
-        <p>通过本地网络从对应软件的官方地址下载。</p>
-      </div>
-      <span v-if="pageError" class="software-page-error">{{ pageError }}</span>
-    </header>
+  <section class="software-page">
+    <p v-if="pageError" class="software-page-error" role="alert">{{ pageError }}</p>
 
     <section class="software-group" aria-labelledby="desktop-tools-title">
       <div class="section-heading">
@@ -418,6 +411,7 @@ function errorMessage(error: unknown, fallback: string): string {
               v-if="tool.id === 'chatGpt'"
               type="button"
               class="software-action locale-action"
+              data-testid="configure-chinese"
               :disabled="!installedState(tool.id)"
               @click="openLocale"
             >

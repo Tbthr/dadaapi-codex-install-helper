@@ -184,3 +184,4 @@ https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/routes.enc
 
 - 客户端不装载 Tauri Updater，也不在启动或设置界面发起在线版本检查；桌面端不配置文件日志或导出诊断包。
 - macOS 与 Windows 安装包继续通过发布流水线独立构建、签名和分发。`v1.0.0` Release 仅包含安装包和 SHA-256 校验和，升级由用户获取新的正式安装包完成。
+- GitHub 为发布源；自有 Gitee 仓库镜像通过独立工作流同步 `main`，发布工作流使用同一目标同步标签和 Release 资产。目标由 `GITEE_REPOSITORY` 与可选 `GITEE_USERNAME` Actions Variable 指定，写入令牌仅通过 `GITEE_TOKEN` Actions Secret 提供。

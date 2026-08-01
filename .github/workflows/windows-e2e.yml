@@ -1,0 +1,161 @@
+name: Windows locale E2E
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "crates/activation-core/**"
+      - "crates/desktop-discovery/**"
+      - "crates/locale-config/**"
+      - "crates/platform/**"
+      - "crates/proxy-core/**"
+      - "crates/shared-types/**"
+      - "tools/chatgpt-e2e-fixture/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/windows-e2e.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  locale-e2e:
+    name: Windows x64 locale flow
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize isolated E2E paths
+        shell: pwsh
+        run: |
+          "DADA_E2E_LOCALE_HOME=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-locale')" | Add-Content -Path $env:GITHUB_ENV
+          "DADA_E2E_ARTIFACT_DIR=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-artifacts')" | Add-Content -Path $env:GITHUB_ENV
+          "DADA_E2E_ORIGINAL_PROXY_STATE=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-original-proxy.json')" | Add-Content -Path $env:GITHUB_ENV
+          "DADA_E2E_BASELINE_PROXY_STATE=$(Join-Path $env:RUNNER_TEMP 'dada-e2e-baseline-proxy.json')" | Add-Content -Path $env:GITHUB_ENV
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-locale-e2e-x64
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build and stage the ChatGPT fixture
+        shell: pwsh
+        run: |
+          cargo build -p chatgpt-e2e-fixture
+          $fixture = Resolve-Path "target/debug/ChatGPT.exe"
+          $fixtureDirectory = Join-Path $env:LOCALAPPDATA "Programs\ChatGPT"
+          $fixturePath = Join-Path $fixtureDirectory "ChatGPT.exe"
+          New-Item -ItemType Directory -Path $fixtureDirectory -Force | Out-Null
+          Copy-Item -LiteralPath $fixture -Destination $fixturePath -Force
+          $fixtureProcess = Start-Process -FilePath $fixturePath -ArgumentList "--e2e-initial" -PassThru
+          $fixtureProcess.Id | Set-Content -Path (Join-Path $env:RUNNER_TEMP "dada-e2e-chatgpt.pid")
+          "DADA_E2E_CHATGPT_PATH=$fixturePath" | Add-Content -Path $env:GITHUB_ENV
+
+      - name: Build the E2E desktop application
+        shell: pwsh
+        run: |
+          pnpm --dir apps/desktop tauri build --debug --no-bundle --features e2e
+          $application = Resolve-Path "target/debug/dada-assistant-desktop.exe"
+          "DADA_E2E_APP=$application" | Add-Content -Path $env:GITHUB_ENV
+
+      - name: Install the pinned Tauri and Edge drivers
+        shell: pwsh
+        run: |
+          cargo install tauri-driver --version 2.0.6 --locked --force
+          $edge = @(
+            (Join-Path ${env:ProgramFiles(x86)} "Microsoft\Edge\Application\msedge.exe"),
+            (Join-Path $env:ProgramFiles "Microsoft\Edge\Application\msedge.exe")
+          ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+          if (-not $edge) { throw "Microsoft Edge was not found on the runner" }
+          $edgeVersion = (Get-Item -LiteralPath $edge).VersionInfo.ProductVersion.Trim()
+          if ([string]::IsNullOrWhiteSpace($edgeVersion)) { throw "Unable to read the Microsoft Edge version" }
+          $driverDirectory = Join-Path $env:RUNNER_TEMP "dada-e2e-edge-driver"
+          $driverArchive = Join-Path $env:RUNNER_TEMP "edgedriver-win64.zip"
+          New-Item -ItemType Directory -Path $driverDirectory -Force | Out-Null
+          Invoke-WebRequest -Uri "https://msedgedriver.microsoft.com/$edgeVersion/edgedriver_win64.zip" -OutFile $driverArchive
+          Expand-Archive -LiteralPath $driverArchive -DestinationPath $driverDirectory -Force
+          $edgeDriver = Get-ChildItem -Path $driverDirectory -Filter "msedgedriver.exe" -File -Recurse | Select-Object -First 1
+          if (-not $edgeDriver) { throw "The matching Microsoft Edge Driver archive did not contain msedgedriver.exe" }
+          "DADA_E2E_EDGE_DRIVER=$($edgeDriver.FullName)" | Add-Content -Path $env:GITHUB_ENV
+
+      - name: Snapshot runner proxy and apply the E2E baseline
+        shell: pwsh
+        run: |
+          $proxyScript = "apps/desktop/e2e/proxy-state.ps1"
+          & $proxyScript -Action save -StatePath $env:DADA_E2E_ORIGINAL_PROXY_STATE
+          if ($LASTEXITCODE -ne 0) { throw "Unable to snapshot the runner proxy state" }
+          & $proxyScript -Action set-baseline
+          if ($LASTEXITCODE -ne 0) { throw "Unable to apply the E2E proxy baseline" }
+          & $proxyScript -Action save -StatePath $env:DADA_E2E_BASELINE_PROXY_STATE
+          if ($LASTEXITCODE -ne 0) { throw "Unable to save the E2E proxy baseline" }
+
+      - name: Start tauri-driver
+        shell: pwsh
+        run: |
+          $artifactDirectory = $env:DADA_E2E_ARTIFACT_DIR
+          New-Item -ItemType Directory -Path $artifactDirectory -Force | Out-Null
+          $tauriDriver = Join-Path $env:USERPROFILE ".cargo\bin\tauri-driver.exe"
+          if (-not (Test-Path -LiteralPath $tauriDriver)) { throw "tauri-driver was not installed" }
+          $driverProcess = Start-Process `
+            -FilePath $tauriDriver `
+            -ArgumentList @("--port", "4444", "--native-port", "4445", "--native-driver", $env:DADA_E2E_EDGE_DRIVER) `
+            -RedirectStandardOutput (Join-Path $artifactDirectory "tauri-driver.log") `
+            -RedirectStandardError (Join-Path $artifactDirectory "tauri-driver-error.log") `
+            -PassThru
+          $driverProcess.Id | Set-Content -Path (Join-Path $env:RUNNER_TEMP "dada-e2e-tauri-driver.pid")
+          for ($attempt = 0; $attempt -lt 30; $attempt += 1) {
+            if ($driverProcess.HasExited) { throw "tauri-driver exited before accepting WebDriver sessions" }
+            try {
+              Invoke-WebRequest -Uri "http://127.0.0.1:4444/status" -TimeoutSec 2 | Out-Null
+              exit 0
+            } catch {
+              Start-Sleep -Milliseconds 500
+            }
+          }
+          throw "tauri-driver did not become ready"
+
+      - name: Run Windows locale WebDriver E2E
+        shell: pwsh
+        run: pnpm --dir apps/desktop e2e:windows
+
+      - name: Restore runner proxy and terminate E2E processes
+        if: always()
+        shell: pwsh
+        run: |
+          $restoreFailure = $null
+          try {
+            if (Test-Path -LiteralPath $env:DADA_E2E_ORIGINAL_PROXY_STATE) {
+              & "apps/desktop/e2e/proxy-state.ps1" -Action restore -StatePath $env:DADA_E2E_ORIGINAL_PROXY_STATE
+              if ($LASTEXITCODE -ne 0) { throw "Unable to restore the runner proxy state" }
+            }
+          } catch {
+            $restoreFailure = $_
+            Write-Error $_
+          } finally {
+            Get-Process -Name ChatGPT,dada-assistant-desktop,tauri-driver,msedgedriver -ErrorAction SilentlyContinue |
+              Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+          if ($null -ne $restoreFailure) { throw $restoreFailure }
+
+      - name: Upload Windows locale E2E diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-locale-e2e-diagnostics
+          path: ${{ runner.temp }}\dada-e2e-artifacts
+          if-no-files-found: warn

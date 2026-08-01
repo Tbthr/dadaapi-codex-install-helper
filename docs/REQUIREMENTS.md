@@ -51,7 +51,7 @@
 - 使用次数、有效期和 IP 绑定
 - 卡密重置、禁用和激活历史
 - 七牛云和自建软件下载镜像
-- 镜像同步、镜像令牌和镜像回退
+- 第三方软件的下载镜像、镜像令牌和镜像回退
 - Go Sidecar 和浏览器式本地向导
 - 远端流量隧道和服务器代理中转
 - SSH 订阅后台、配置服务器和订阅中继
@@ -80,6 +80,7 @@
 
 - Cargo、Tauri 和 npm 构建版本统一为 `1.0.0`；首个 Release tag 为 `v1.0.0`，对用户展示为“哒哒助手 v1.0”。
 - GitHub/Gitee Release 仅分发安装包和 SHA-256 校验和，不生成 updater JSON，也不作为客户端在线更新源。
+- 自有 Gitee 仓库镜像同步 `main`、发布标签和 Release 资产；GitHub Actions 中的目标仓库使用变量配置，写入令牌仅保存为 Actions Secret。
 
 ## Non-Goals For First Release
 

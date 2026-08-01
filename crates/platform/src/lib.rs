@@ -221,26 +221,6 @@ pub async fn restore_network_state(state: &NetworkState) -> Result<(), PlatformE
     Err(PlatformError::Unsupported("恢复系统代理状态".to_owned()))
 }
 
-pub async fn reset_system_proxy() -> Result<(), PlatformError> {
-    #[cfg(target_os = "windows")]
-    {
-        return windows_powershell_status(
-            WINDOWS_RESET_PROXY_SCRIPT,
-            &[],
-            "Windows 系统代理清理失败",
-        )
-        .await;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        return Ok(());
-    }
-
-    #[allow(unreachable_code)]
-    Err(PlatformError::Unsupported("清理系统代理".to_owned()))
-}
-
 #[cfg(target_os = "macos")]
 async fn stop_macos_app(app: &DesktopApp) -> Result<(), PlatformError> {
     let executable_name = Path::new(&app.executable_path)
@@ -944,7 +924,13 @@ New-ItemProperty -Path $path -Name 'AutoDetect' -PropertyType DWord -Value 0 -Fo
 $actualEnable = [uint32](Get-ItemPropertyValue -Path $path -Name 'ProxyEnable' -ErrorAction Stop)
 $actualServer = [string](Get-ItemPropertyValue -Path $path -Name 'ProxyServer' -ErrorAction Stop)
 $actualOverride = [string](Get-ItemPropertyValue -Path $path -Name 'ProxyOverride' -ErrorAction Stop)
-if ($actualEnable -ne 1 -or $actualServer -ne $env:DADA_ASSISTANT_PROXY_SERVER -or $actualOverride -ne $env:DADA_ASSISTANT_PROXY_OVERRIDE) {
+$actualAutoConfig = Get-ItemProperty -Path $path -Name 'AutoConfigURL' -ErrorAction SilentlyContinue
+$actualAutoDetect = [uint32](Get-ItemPropertyValue -Path $path -Name 'AutoDetect' -ErrorAction Stop)
+if ($actualEnable -ne 1 -or
+    $actualServer -ne $env:DADA_ASSISTANT_PROXY_SERVER -or
+    $actualOverride -ne $env:DADA_ASSISTANT_PROXY_OVERRIDE -or
+    $null -ne $actualAutoConfig -or
+    $actualAutoDetect -ne 0) {
   throw 'proxy_write_verification_failed'
 }
 Add-Type -TypeDefinition @'
@@ -985,6 +971,35 @@ Restore-String 'ProxyServer' $state.proxyServer
 Restore-String 'ProxyOverride' $state.proxyOverride
 Restore-String 'AutoConfigURL' $state.autoConfigUrl
 Restore-Dword 'AutoDetect' $state.autoDetect
+function Assert-Dword([string]$name, $expected) {
+  try {
+    $value = [uint32](Get-ItemPropertyValue -Path $path -Name $name -ErrorAction Stop)
+    if (-not $expected.exists -or $value -ne [uint32]$expected.value) {
+      throw 'proxy_restore_verification_failed'
+    }
+  } catch {
+    if ($expected.exists -or $_.Exception.Message -eq 'proxy_restore_verification_failed') {
+      throw 'proxy_restore_verification_failed'
+    }
+  }
+}
+function Assert-String([string]$name, $expected) {
+  try {
+    $value = [string](Get-ItemPropertyValue -Path $path -Name $name -ErrorAction Stop)
+    if (-not $expected.exists -or $value -ne [string]$expected.value) {
+      throw 'proxy_restore_verification_failed'
+    }
+  } catch {
+    if ($expected.exists -or $_.Exception.Message -eq 'proxy_restore_verification_failed') {
+      throw 'proxy_restore_verification_failed'
+    }
+  }
+}
+Assert-Dword 'ProxyEnable' $state.proxyEnable
+Assert-String 'ProxyServer' $state.proxyServer
+Assert-String 'ProxyOverride' $state.proxyOverride
+Assert-String 'AutoConfigURL' $state.autoConfigUrl
+Assert-Dword 'AutoDetect' $state.autoDetect
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -993,34 +1008,9 @@ public static class DadaAssistantWinInetRestore {
   public static extern bool InternetSetOption(IntPtr internet, int option, IntPtr buffer, int length);
 }
 '@
-[DadaAssistantWinInetRestore]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null
-[DadaAssistantWinInetRestore]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0) | Out-Null
-"#;
-
-#[cfg(target_os = "windows")]
-const WINDOWS_RESET_PROXY_SCRIPT: &str = r#"
-$ErrorActionPreference = 'Stop'
-$path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
-New-Item -Path $path -Force | Out-Null
-New-ItemProperty -Path $path -Name 'ProxyEnable' -PropertyType DWord -Value 0 -Force | Out-Null
-Remove-ItemProperty -Path $path -Name 'ProxyServer' -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path $path -Name 'ProxyOverride' -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path $path -Name 'AutoConfigURL' -ErrorAction SilentlyContinue
-New-ItemProperty -Path $path -Name 'AutoDetect' -PropertyType DWord -Value 0 -Force | Out-Null
-& netsh.exe winhttp reset proxy | Out-Null
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class DadaAssistantWinInetReset {
-  [DllImport("wininet.dll", SetLastError = true)]
-  public static extern bool InternetSetOption(IntPtr internet, int option, IntPtr buffer, int length);
-}
-'@
-$settingsChanged = [DadaAssistantWinInetReset]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
-$settingsRefresh = [DadaAssistantWinInetReset]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
+$settingsChanged = [DadaAssistantWinInetRestore]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0)
+$settingsRefresh = [DadaAssistantWinInetRestore]::InternetSetOption([IntPtr]::Zero, 37, [IntPtr]::Zero, 0)
 if (-not $settingsChanged -or -not $settingsRefresh) { throw 'wininet_notify_failed' }
-$actualEnable = [uint32](Get-ItemPropertyValue -Path $path -Name 'ProxyEnable' -ErrorAction Stop)
-if ($actualEnable -ne 0) { throw 'proxy_write_verification_failed' }
 "#;
 
 #[cfg(target_os = "windows")]

@@ -19,11 +19,32 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+      GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Validate Gitee release configuration
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GITEE_REPOSITORY" ]; then
+            echo "::error title=Missing Gitee repository::Set the GITEE_REPOSITORY Actions variable to your Gitee owner/repository target."
+            exit 1
+          fi
+          if ! [[ "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error title=Invalid Gitee repository::GITEE_REPOSITORY must use owner/repository format."
+            exit 1
+          fi
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "::error title=Missing Gitee token::Add a GITEE_TOKEN Actions secret with write access to $GITEE_REPOSITORY."
+            exit 1
+          fi
 
       - name: 下载完整 GitHub Release
         env:
@@ -59,25 +80,26 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          api="https://gitee.com/api/v5/repos/lyq_power/dadaapi-codex-install-helper/releases"
+          api="https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/releases"
           existing=$(curl -fsS --connect-timeout 20 --max-time 60 \
-            "$api/tags/$RELEASE_TAG?access_token=$GITEE_TOKEN" || true)
+            --url-query "access_token=$GITEE_TOKEN" \
+            "$api/tags/$RELEASE_TAG" || true)
           existing_id=$(printf '%s' "$existing" | jq -r '.id // empty')
           if [ -n "$existing_id" ]; then
             curl -fsS --connect-timeout 20 --max-time 60 \
-              -X DELETE "$api/$existing_id?access_token=$GITEE_TOKEN" >/dev/null
+              -X DELETE \
+              --url-query "access_token=$GITEE_TOKEN" \
+              "$api/$existing_id" >/dev/null
           fi
 
-          payload=$(jq -n \
-            --arg token "$GITEE_TOKEN" \
-            --arg tag "$RELEASE_TAG" \
-            --arg name "哒哒助手 v1.0" \
-            --arg body "哒哒助手 v1.0 国内发行版。Windows 可直接下载安装；macOS 使用 ZIP 封装的 DMG，可执行仓库首页的一键安装命令。" \
-            '{access_token:$token,tag_name:$tag,name:$name,body:$body,target_commitish:"main",prerelease:false}')
           response=$(curl -fsS --connect-timeout 20 --max-time 60 \
             -X POST \
-            -H "Content-Type: application/json" \
-            -d "$payload" \
+            -F "access_token=$GITEE_TOKEN" \
+            -F "tag_name=$RELEASE_TAG" \
+            -F "name=哒哒助手 v1.0" \
+            -F "body=哒哒助手 v1.0 国内发行版。Windows 可直接下载安装；macOS 使用 ZIP 封装的 DMG，可执行仓库首页的一键安装命令。" \
+            -F "target_commitish=main" \
+            -F "prerelease=false" \
             "$api")
           release_id=$(printf '%s' "$response" | jq -r '.id')
           test -n "$release_id"
@@ -90,7 +112,7 @@ jobs:
           RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
         run: |
           set -euo pipefail
-          api="https://gitee.com/api/v5/repos/lyq_power/dadaapi-codex-install-helper/releases/$RELEASE_ID/attach_files"
+          api="https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/releases/$RELEASE_ID/attach_files"
           export api GITEE_TOKEN
 
           find release-assets -maxdepth 1 -type f -print0 | \
@@ -117,12 +139,15 @@ jobs:
 
       - name: 验证 Gitee Release 资产列表
         env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
         run: |
           set -euo pipefail
           expected=$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')
           actual=$(curl -fsS --connect-timeout 20 --max-time 60 \
-            "https://gitee.com/api/v5/repos/lyq_power/dadaapi-codex-install-helper/releases/$RELEASE_ID/attach_files?per_page=100" \
+            --url-query "access_token=$GITEE_TOKEN" \
+            --url-query "per_page=100" \
+            "https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/releases/$RELEASE_ID/attach_files" \
             | jq 'length')
           test "$actual" -eq "$expected"
 
@@ -132,9 +157,22 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          git remote add gitee "https://lyq_power:${GITEE_TOKEN}@gitee.com/lyq_power/dadaapi-codex-install-helper.git"
-          git push gitee main
-          git push gitee "$RELEASE_TAG" --force
+          export GITEE_USERNAME="${GITEE_USERNAME:-${GITEE_REPOSITORY%%/*}}"
+          askpass="$RUNNER_TEMP/dada-gitee-askpass.sh"
+          umask 077
+          cat > "$askpass" <<'EOF'
+          #!/usr/bin/env sh
+          case "$1" in
+            *Username*) printf '%s\n' "$GITEE_USERNAME" ;;
+            *) printf '%s\n' "$GITEE_TOKEN" ;;
+          esac
+          EOF
+          chmod 700 "$askpass"
+          trap 'rm -f "$askpass"' EXIT
+          GIT_ASKPASS="$askpass" GIT_ASKPASS_REQUIRE=force GIT_TERMINAL_PROMPT=0 git \
+            push "https://gitee.com/${GITEE_REPOSITORY}.git" main
+          GIT_ASKPASS="$askpass" GIT_ASKPASS_REQUIRE=force GIT_TERMINAL_PROMPT=0 git \
+            push "https://gitee.com/${GITEE_REPOSITORY}.git" "$RELEASE_TAG" --force
 
       - name: 验证 Gitee Release 下载
         env:
@@ -142,7 +180,7 @@ jobs:
         run: |
           set -euo pipefail
           while read -r checksum name; do
-            url="https://gitee.com/lyq_power/dadaapi-codex-install-helper/releases/download/$RELEASE_TAG/$name"
+            url="https://gitee.com/${GITEE_REPOSITORY}/releases/download/$RELEASE_TAG/$name"
             curl -fsSL \
               --connect-timeout 30 \
               --max-time 900 \

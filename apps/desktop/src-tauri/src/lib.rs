@@ -143,9 +143,6 @@ async fn prepare_activation_network(
     if status.pending {
         restore_network_internal(&state).await?;
     }
-    platform::reset_system_proxy()
-        .await
-        .map_err(|error| command_error(ActivationError::Platform(error)))?;
     network_recovery_status(&state).await
 }
 
@@ -206,7 +203,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let app_data_dir = app.path().app_data_dir()?;
+            let app_data_dir =
+                activation_runtime::application_data_dir(app.path().app_data_dir()?)?;
             let activation_runtime =
                 activation_runtime::DesktopActivationRuntime::from_build_environment(
                     app_data_dir.clone(),

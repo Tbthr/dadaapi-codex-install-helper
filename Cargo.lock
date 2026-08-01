@@ -533,6 +533,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "chatgpt-e2e-fixture"
+version = "1.0.0"
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -766,6 +770,7 @@ name = "dada-assistant-desktop"
 version = "1.0.0"
 dependencies = [
  "activation-core",
+ "async-trait",
  "base64 0.22.1",
  "cli-tools",
  "desktop-discovery",

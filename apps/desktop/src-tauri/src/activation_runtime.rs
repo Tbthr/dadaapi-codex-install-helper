@@ -1,28 +1,58 @@
+#[cfg(not(feature = "e2e"))]
+use activation_core::{default_activation_selection_options, StaticRouteProxyPreparationService};
 use activation_core::{
-    default_activation_selection_options, ActivationCoordinator, NetworkRecoveryService,
-    RuntimeChineseEffectVerifier, StaticRouteProxyPreparationService,
+    ActivationCoordinator, NetworkRecoveryService, RuntimeChineseEffectVerifier,
 };
+#[cfg(feature = "e2e")]
+use activation_core::{ProxyPreparationError, ProxyPreparationService};
+#[cfg(feature = "e2e")]
+use async_trait::async_trait;
 use desktop_discovery::SystemDesktopDiscovery;
-use locale_config::{default_locale_paths, LocaleConfigError};
+#[cfg(any(not(feature = "e2e"), target_os = "windows"))]
+use locale_config::default_locale_paths;
+use locale_config::LocaleConfigError;
 use platform::NativePlatformAdapter;
+#[cfg(feature = "e2e")]
+use proxy_core::{
+    parse_subscription, DirectNodeSelectionReport, DirectVerifiedNode, ProxyNode, TargetBenchmark,
+    VerifiedActivationNode,
+};
 use proxy_core::{EmbeddedNodeConnector, HttpConnectProxyEngine};
+#[cfg(not(feature = "e2e"))]
 use route_bundle::{decode_encryption_key, RouteBundleClient, RouteBundleError};
 use std::path::PathBuf;
+#[cfg(any(not(feature = "e2e"), target_os = "windows"))]
 use std::time::Duration;
 use thiserror::Error;
+#[cfg(not(feature = "e2e"))]
 use url::Url;
 
+#[cfg(any(not(feature = "e2e"), target_os = "windows"))]
 use activation_core::NetworkRecoveryStore;
 
 const ROUTE_MANIFEST_URLS_ENV: &str = "DADAAPI_ROUTE_MANIFEST_URLS";
 const ROUTE_PUBLIC_KEY_ENV: &str = "DADAAPI_ROUTE_PUBLIC_KEY_PEM";
 const ROUTE_KEY_ENV: &str = "DADAAPI_ROUTE_KEY_B64";
 const ROUTE_KEY_ID_ENV: &str = "DADAAPI_ROUTE_KEY_ID";
+#[cfg(feature = "e2e")]
+const E2E_LOCALE_HOME_ENV: &str = "DADA_E2E_LOCALE_HOME";
+#[cfg(feature = "e2e")]
+const E2E_LOOPBACK_SUBSCRIPTION: &str =
+    "vless://00000000-0000-0000-0000-000000000001@127.0.0.1:1#E2E%20loopback";
 
+#[cfg(not(feature = "e2e"))]
 pub type DesktopActivationCoordinator = ActivationCoordinator<
     SystemDesktopDiscovery,
     NativePlatformAdapter,
     StaticRouteProxyPreparationService,
+    RuntimeChineseEffectVerifier<NativePlatformAdapter>,
+    HttpConnectProxyEngine<EmbeddedNodeConnector>,
+>;
+#[cfg(feature = "e2e")]
+pub type DesktopActivationCoordinator = ActivationCoordinator<
+    SystemDesktopDiscovery,
+    NativePlatformAdapter,
+    E2eProxyPreparationService,
     RuntimeChineseEffectVerifier<NativePlatformAdapter>,
     HttpConnectProxyEngine<EmbeddedNodeConnector>,
 >;
@@ -66,19 +96,37 @@ impl DesktopActivationState {
 
 #[derive(Debug, Error)]
 pub enum ActivationRuntimeError {
+    #[cfg(not(feature = "e2e"))]
     #[error("激活构建配置不完整，必须同时提供路由清单地址、验签公钥、解密密钥和密钥标识")]
     IncompleteBuildConfiguration,
+    #[cfg(not(feature = "e2e"))]
     #[error("静态路由清单地址格式无效")]
     InvalidManifestUrl,
+    #[cfg(not(feature = "e2e"))]
     #[error("内置节点检测地址格式无效")]
     InvalidProbeUrl,
+    #[cfg(not(feature = "e2e"))]
     #[error(transparent)]
     RouteBundle(#[from] RouteBundleError),
     #[error(transparent)]
     Locale(#[from] LocaleConfigError),
+    #[cfg(feature = "e2e")]
+    #[error("E2E 中文配置目录未设置")]
+    E2eLocaleHomeNotConfigured,
+    #[cfg(feature = "e2e")]
+    #[error("E2E 中文流程仅支持 Windows")]
+    E2eWindowsOnly,
 }
 
 impl DesktopActivationRuntime {
+    #[cfg(feature = "e2e")]
+    pub fn from_build_environment(
+        app_data_dir: PathBuf,
+    ) -> Result<Option<Self>, ActivationRuntimeError> {
+        Self::new_e2e(app_data_dir).map(Some)
+    }
+
+    #[cfg(not(feature = "e2e"))]
     pub fn from_build_environment(
         app_data_dir: PathBuf,
     ) -> Result<Option<Self>, ActivationRuntimeError> {
@@ -105,6 +153,7 @@ impl DesktopActivationRuntime {
         }
     }
 
+    #[cfg(not(feature = "e2e"))]
     pub fn new(
         manifest_url: &str,
         public_key_pem: &str,
@@ -121,6 +170,7 @@ impl DesktopActivationRuntime {
         )
     }
 
+    #[cfg(not(feature = "e2e"))]
     pub fn new_with_manifest_urls(
         manifest_urls: &str,
         public_key_pem: &str,
@@ -169,6 +219,122 @@ impl DesktopActivationRuntime {
         );
         Ok(Self { coordinator })
     }
+
+    #[cfg(all(feature = "e2e", target_os = "windows"))]
+    fn new_e2e(app_data_dir: PathBuf) -> Result<Self, ActivationRuntimeError> {
+        let locale_paths = default_locale_paths()?;
+        let platform = NativePlatformAdapter;
+        let coordinator = ActivationCoordinator::new(
+            SystemDesktopDiscovery,
+            platform,
+            E2eProxyPreparationService,
+            RuntimeChineseEffectVerifier::new(
+                platform,
+                Duration::from_secs(20),
+                Duration::from_millis(250),
+            ),
+            HttpConnectProxyEngine::new(EmbeddedNodeConnector::default()),
+            Duration::from_secs(3),
+            NetworkRecoveryStore::new(app_data_dir.join("recovery.json")),
+            super::current_operating_system(),
+            locale_paths,
+        );
+        Ok(Self { coordinator })
+    }
+
+    #[cfg(all(feature = "e2e", not(target_os = "windows")))]
+    fn new_e2e(_app_data_dir: PathBuf) -> Result<Self, ActivationRuntimeError> {
+        Err(ActivationRuntimeError::E2eWindowsOnly)
+    }
+}
+
+#[cfg(feature = "e2e")]
+pub fn application_data_dir(default_path: PathBuf) -> Result<PathBuf, ActivationRuntimeError> {
+    let _ = default_path;
+    e2e_locale_home()
+}
+
+#[cfg(not(feature = "e2e"))]
+pub fn application_data_dir(default_path: PathBuf) -> Result<PathBuf, ActivationRuntimeError> {
+    Ok(default_path)
+}
+
+#[cfg(feature = "e2e")]
+fn e2e_locale_home() -> Result<PathBuf, ActivationRuntimeError> {
+    std::env::var_os(E2E_LOCALE_HOME_ENV)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .ok_or(ActivationRuntimeError::E2eLocaleHomeNotConfigured)
+}
+
+#[cfg(feature = "e2e")]
+#[derive(Debug, Clone, Copy)]
+pub struct E2eProxyPreparationService;
+
+#[cfg(feature = "e2e")]
+#[async_trait]
+impl ProxyPreparationService for E2eProxyPreparationService {
+    type PreparedSource = ();
+
+    async fn fetch_proxy_config(&self) -> Result<Self::PreparedSource, ProxyPreparationError> {
+        Ok(())
+    }
+
+    async fn load_proxy_nodes(
+        &self,
+        _source: &Self::PreparedSource,
+    ) -> Result<Vec<ProxyNode>, ProxyPreparationError> {
+        let parsed = parse_subscription(E2E_LOOPBACK_SUBSCRIPTION.as_bytes())
+            .map_err(|_| ProxyPreparationError::SubscriptionUnavailable)?;
+        if parsed.candidates.is_empty() {
+            return Err(ProxyPreparationError::SubscriptionUnavailable);
+        }
+        Ok(parsed.candidates)
+    }
+
+    async fn select_proxy_node(
+        &self,
+        nodes: &[ProxyNode],
+    ) -> Result<DirectNodeSelectionReport, ProxyPreparationError> {
+        let node = nodes
+            .first()
+            .cloned()
+            .ok_or(ProxyPreparationError::SubscriptionUnavailable)?;
+        let selected = DirectVerifiedNode {
+            verification: e2e_verification(&node),
+            node,
+        };
+        Ok(DirectNodeSelectionReport {
+            selected: selected.clone(),
+            verified: vec![selected],
+        })
+    }
+}
+
+#[cfg(feature = "e2e")]
+fn e2e_verification(node: &ProxyNode) -> VerifiedActivationNode {
+    VerifiedActivationNode {
+        name: node.name.clone(),
+        protocol: "vless".to_owned(),
+        region: node.region,
+        country_code: "US".to_owned(),
+        exit_success_count: 1,
+        exit_attempt_count: 1,
+        successful_targets: 3,
+        target_count: 3,
+        success_count: 3,
+        attempt_count: 3,
+        median_delay_ms: 1,
+        jitter_ms: 0,
+        score: 1,
+        targets: vec![TargetBenchmark {
+            name: "e2e-loopback".to_owned(),
+            success_count: 1,
+            attempt_count: 1,
+            median_delay_ms: Some(1),
+            jitter_ms: Some(0),
+        }],
+    }
 }
 
 #[must_use]
@@ -181,7 +347,7 @@ pub fn build_configuration_names() -> [&'static str; 4] {
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "e2e")))]
 mod tests {
     use super::*;
     use base64::engine::general_purpose::STANDARD;
@@ -326,5 +492,28 @@ mod tests {
 
     fn encryption_key_b64() -> String {
         STANDARD.encode([23_u8; 32])
+    }
+}
+
+#[cfg(all(test, feature = "e2e"))]
+mod e2e_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn e2e_proxy_preparation_uses_only_the_deterministic_loopback_node() {
+        let service = E2eProxyPreparationService;
+        service
+            .fetch_proxy_config()
+            .await
+            .expect("prepare E2E source");
+        let nodes = service.load_proxy_nodes(&()).await.expect("load E2E node");
+        let report = service
+            .select_proxy_node(&nodes)
+            .await
+            .expect("select E2E node");
+
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(report.selected.node.server, "127.0.0.1");
+        assert_eq!(report.selected.node.port, 1);
     }
 }

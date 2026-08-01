@@ -258,14 +258,26 @@ where
     }
 
     pub async fn restore_pending(&self) -> Result<bool, NetworkSafetyError> {
+        let restored = self.restore_pending_network().await?;
+        if restored {
+            self.clear_pending()?;
+        }
+        Ok(restored)
+    }
+
+    pub async fn restore_pending_network(&self) -> Result<bool, NetworkSafetyError> {
         let Some(record) = self.store.load(self.operating_system)? else {
             return Ok(false);
         };
         self.platform
             .restore_network_state(&record.network_state())
             .await?;
-        self.store.clear()?;
         Ok(true)
+    }
+
+    pub fn clear_pending(&self) -> Result<(), NetworkSafetyError> {
+        self.store.clear()?;
+        Ok(())
     }
 
     pub fn has_pending(&self) -> Result<bool, NetworkSafetyError> {
@@ -605,6 +617,28 @@ mod tests {
         assert_eq!(state.save_calls, 1);
         assert_eq!(state.apply_calls, 1);
         assert_eq!(state.restore_calls, 1);
+    }
+
+    #[tokio::test]
+    async fn missing_recovery_record_leaves_network_untouched() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let platform = MockPlatform::default();
+        let service = NetworkRecoveryService::new(
+            platform.clone(),
+            NetworkRecoveryStore::new(directory.path().join("recovery.json")),
+            OperatingSystem::Windows,
+        );
+
+        assert!(!service.has_pending().expect("read recovery status"));
+        assert!(!service
+            .restore_pending()
+            .await
+            .expect("skip missing recovery"));
+
+        let state = platform.state.lock().expect("mock state");
+        assert_eq!(state.save_calls, 0);
+        assert_eq!(state.apply_calls, 0);
+        assert_eq!(state.restore_calls, 0);
     }
 
     #[tokio::test]

@@ -13,6 +13,8 @@ const CHINESE_LOCALE: &str = "zh-CN";
 const BACKUP_SUFFIX: &str = ".dada-assistant.bak";
 const MISSING_SUFFIX: &str = ".dada-assistant.missing";
 const MISSING_MARKER_CONTENTS: &[u8] = b"missing\n";
+#[cfg(feature = "e2e")]
+const E2E_LOCALE_HOME_ENV: &str = "DADA_E2E_LOCALE_HOME";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalePaths {
@@ -48,6 +50,9 @@ pub struct LocaleRestoreOutcome {
 pub enum LocaleConfigError {
     #[error("无法确定当前用户目录")]
     HomeDirectoryNotFound,
+    #[cfg(feature = "e2e")]
+    #[error("E2E 中文配置目录未设置")]
+    E2eLocaleHomeNotConfigured,
     #[error("读取配置文件失败（{path}）：{source}")]
     Read {
         path: String,
@@ -104,6 +109,15 @@ struct RestorePlan {
     action: RestoreAction,
 }
 
+#[cfg(feature = "e2e")]
+pub fn default_locale_paths() -> Result<LocalePaths, LocaleConfigError> {
+    let e2e_locale_home = env::var_os(E2E_LOCALE_HOME_ENV)
+        .filter(|value| !value.is_empty())
+        .ok_or(LocaleConfigError::E2eLocaleHomeNotConfigured)?;
+    Ok(LocalePaths::from_codex_home(PathBuf::from(e2e_locale_home)))
+}
+
+#[cfg(not(feature = "e2e"))]
 pub fn default_locale_paths() -> Result<LocalePaths, LocaleConfigError> {
     if let Some(codex_home) = env::var_os("CODEX_HOME").filter(|value| !value.is_empty()) {
         return Ok(LocalePaths::from_codex_home(PathBuf::from(codex_home)));

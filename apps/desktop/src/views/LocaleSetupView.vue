@@ -117,7 +117,7 @@ async function handlePrimaryAction(): Promise<void> {
       </div>
 
       <ol class="setup-steps">
-        <li :class="{ complete: appReady }">
+        <li data-testid="locale-step-1" :class="{ complete: appReady }">
           <span class="step-index">
             <PhCheck v-if="appReady" :size="14" weight="bold" />
             <b v-else>1</b>
@@ -127,7 +127,7 @@ async function handlePrimaryAction(): Promise<void> {
             <span>{{ appReady ? "已找到正在运行的应用进程" : "需要先启动 ChatGPT 或 Codex" }}</span>
           </div>
         </li>
-        <li :class="{ complete: routeConfirmed }">
+        <li data-testid="locale-step-2" :class="{ complete: routeConfirmed }">
           <span class="step-index">
             <PhCheck v-if="routeConfirmed" :size="14" weight="bold" />
             <b v-else>2</b>
@@ -139,7 +139,7 @@ async function handlePrimaryAction(): Promise<void> {
             }}</span>
           </div>
         </li>
-        <li :class="{ complete: staleRecoveryHandled }">
+        <li data-testid="locale-step-3" :class="{ complete: staleRecoveryHandled }">
           <span class="step-index">
             <PhCheck v-if="staleRecoveryHandled" :size="14" weight="bold" />
             <b v-else>3</b>
@@ -151,7 +151,7 @@ async function handlePrimaryAction(): Promise<void> {
             }}</span>
           </div>
         </li>
-        <li :class="{ complete: Boolean(result) }">
+        <li data-testid="locale-step-4" :class="{ complete: Boolean(result) }">
           <span class="step-index">
             <PhCheck v-if="result" :size="14" weight="bold" />
             <b v-else>4</b>
@@ -161,7 +161,7 @@ async function handlePrimaryAction(): Promise<void> {
             <span>{{ result ? "应用已使用 zh-CN 启动" : "设置完成后验证应用进程语言" }}</span>
           </div>
         </li>
-        <li :class="{ complete: networkRestored }">
+        <li data-testid="locale-step-5" :class="{ complete: networkRestored }">
           <span class="step-index">
             <PhCheck v-if="networkRestored" :size="14" weight="bold" />
             <b v-else>5</b>
@@ -184,6 +184,7 @@ async function handlePrimaryAction(): Promise<void> {
         <button
           class="primary-button large"
           type="button"
+          data-testid="locale-primary-action"
           :disabled="primaryDisabled"
           @click="handlePrimaryAction"
         >

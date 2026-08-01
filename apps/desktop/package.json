@@ -9,6 +9,7 @@
     "check": "vue-tsc --noEmit && eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "e2e:windows": "node e2e/windows-locale.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },
