@@ -276,7 +276,8 @@ function Set-StringState([string]$name, $entry) {
 }
 
 function Set-ProxyState($state, [bool]$restore = $false) {
-  New-Item -Path $registryPath -Force | Out-Null
+  # The snapshot action has already established that this per-user key exists.
+  # Recreating it with -Force is denied on hosted Windows runners.
   Set-DwordState "ProxyEnable" $state.proxyEnable
   Set-StringState "ProxyServer" $state.proxyServer
   Set-StringState "ProxyOverride" $state.proxyOverride

@@ -871,6 +871,8 @@ fn windows_failure_message(fallback: &str, stderr: &str) -> String {
         "Windows 有效代理状态更新失败"
     } else if value.contains("wininet_notify_failed") {
         "代理值已写入，但 Windows 网络设置刷新失败"
+    } else if value.contains("proxy_settings_path_missing") {
+        "Windows 系统代理注册表路径不可用"
     } else if value.contains("access is denied")
         || value.contains("requested registry access is not allowed")
         || value.contains("unauthorizedaccess")
@@ -1138,7 +1140,7 @@ const WINDOWS_APPLY_PROXY_SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
 $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
 if ([string]::IsNullOrWhiteSpace($env:DADA_ASSISTANT_PROXY_SERVER)) { throw 'missing proxy server' }
-New-Item -Path $path -Force | Out-Null
+if (-not (Test-Path -LiteralPath $path)) { throw 'proxy_settings_path_missing' }
 New-ItemProperty -Path $path -Name 'ProxyEnable' -PropertyType DWord -Value 1 -Force | Out-Null
 New-ItemProperty -Path $path -Name 'ProxyServer' -PropertyType String -Value $env:DADA_ASSISTANT_PROXY_SERVER -Force | Out-Null
 New-ItemProperty -Path $path -Name 'ProxyOverride' -PropertyType String -Value $env:DADA_ASSISTANT_PROXY_OVERRIDE -Force | Out-Null
@@ -1173,7 +1175,7 @@ const WINDOWS_RESTORE_PROXY_SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
 $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
 $state = $env:DADA_ASSISTANT_NETWORK_STATE | ConvertFrom-Json
-New-Item -Path $path -Force | Out-Null
+if (-not (Test-Path -LiteralPath $path)) { throw 'proxy_settings_path_missing' }
 function Restore-Dword([string]$name, $entry) {
   if ($entry.exists) {
     New-ItemProperty -Path $path -Name $name -PropertyType DWord -Value ([uint32]$entry.value) -Force | Out-Null
