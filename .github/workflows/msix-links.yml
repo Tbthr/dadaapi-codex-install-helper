@@ -21,7 +21,28 @@ jobs:
           key: msix-links
 
       - name: Resolve Microsoft Store packages
-        run: cargo run --release -p msix-links -- /tmp/msix-links/msix-links.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_attempts=3
+          resolver_status=1
+
+          for attempt in $(seq 1 "$max_attempts"); do
+            if cargo run --release -p msix-links -- /tmp/msix-links/msix-links.json; then
+              exit 0
+            else
+              resolver_status=$?
+            fi
+
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "Microsoft Store package resolution failed after $max_attempts attempts." >&2
+              exit "$resolver_status"
+            fi
+
+            delay_seconds=$((attempt * 10))
+            echo "Microsoft Store package resolution failed (attempt $attempt/$max_attempts); retrying in $delay_seconds seconds." >&2
+            sleep "$delay_seconds"
+          done
 
       - name: Publish current links
         uses: peaceiris/actions-gh-pages@v4
