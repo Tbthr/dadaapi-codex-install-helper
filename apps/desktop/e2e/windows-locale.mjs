@@ -68,7 +68,7 @@ async function run() {
     await saveScreenshot(driver, "activation-succeeded.png");
     await assertLocaleFiles();
     const activationProxy = await readProxyState();
-    const baselineState = JSON.parse(await readFile(baselineStatePath, "utf8"));
+    const baselineState = await readJsonFile(baselineStatePath);
     assert.equal(activationProxy.proxyEnable.exists, true);
     assert.equal(activationProxy.proxyEnable.value, 1);
     assert.equal(activationProxy.proxyServer.exists, true);
@@ -84,7 +84,7 @@ async function run() {
     await assertUnrelatedCodexIsStillRunning();
 
     const recoveryPath = path.join(localeHome, "recovery.json");
-    const recoveryRecord = JSON.parse(await readFile(recoveryPath, "utf8"));
+    const recoveryRecord = await readJsonFile(recoveryPath);
     assert.equal(recoveryRecord.operatingSystem, "windows");
     assert.deepEqual(JSON.parse(recoveryRecord.networkState), baselineState);
     assert.notEqual(baselineState.perConnectionFlags.value & autoProxyFlags, 0);
@@ -397,10 +397,13 @@ async function assertLocaleFiles() {
   const config = await readFile(path.join(localeHome, "config.toml"), "utf8");
   assert.match(config, /\[desktop\][\s\S]*localeOverride\s*=\s*"zh-CN"/);
 
-  const globalState = JSON.parse(
-    await readFile(path.join(localeHome, ".codex-global-state.json"), "utf8"),
-  );
+  const globalState = await readJsonFile(path.join(localeHome, ".codex-global-state.json"));
   assert.equal(globalState.localeOverride, "zh-CN");
+}
+
+async function readJsonFile(filePath) {
+  const contents = await readFile(filePath, "utf8");
+  return JSON.parse(contents.replace(/^\uFEFF/, ""));
 }
 
 function parseLoopbackEndpoint(proxyServer) {
