@@ -114,6 +114,9 @@ jobs:
             -RedirectStandardOutput (Join-Path $artifactDirectory "tauri-driver.log") `
             -RedirectStandardError (Join-Path $artifactDirectory "tauri-driver-error.log") `
             -PassThru
+          # Keep a copy of the native driver version in the artifact even when
+          # session creation fails before tauri-driver emits a useful message.
+          & $env:DADA_E2E_EDGE_DRIVER --version 2>&1 | Set-Content -Path (Join-Path $artifactDirectory "edge-driver-version.log")
           $driverProcess.Id | Set-Content -Path (Join-Path $env:RUNNER_TEMP "dada-e2e-tauri-driver.pid")
           $ready = $false
           for ($attempt = 0; $attempt -lt 30; $attempt += 1) {

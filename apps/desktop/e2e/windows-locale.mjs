@@ -227,7 +227,8 @@ async function requestWebDriver(method, pathSuffix, payload) {
     }
   }
   if (!response.ok || responseBody.value?.error) {
-    throw new Error(`WebDriver request failed (${response.status}).`);
+    const detail = responseBody.value?.message ?? responseBody.value?.error ?? responseText;
+    throw new Error(`WebDriver request failed (${response.status}): ${detail}`);
   }
   return responseBody;
 }

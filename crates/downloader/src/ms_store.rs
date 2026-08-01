@@ -32,8 +32,8 @@ const OTHER_CACHED_IDS: &str = "10,17,2359977,5143990,5169043,5169047,8806526,91
 
 #[derive(Debug, Error)]
 pub enum MsStoreError {
-    #[error("Microsoft Store request failed")]
-    Request,
+    #[error("Microsoft Store request failed during {0}")]
+    Request(&'static str),
     #[error("Microsoft Store returned invalid metadata")]
     InvalidMetadata,
     #[error("Microsoft Store has no package for this architecture")]
@@ -105,6 +105,7 @@ pub async fn resolve_chatgpt_msix_url_direct(
         WU_ENDPOINT,
         &format!("{WU_NS}/SyncUpdates"),
         &build_sync_updates_xml(&cookie, &fulfillment.category_id),
+        "Microsoft Store update catalog",
     )
     .await?;
     let records = collect_update_records(&sync)?;
@@ -129,6 +130,7 @@ pub async fn resolve_chatgpt_msix_url_direct(
             WU_SECURED_ENDPOINT,
             &format!("{WU_NS}/GetExtendedUpdateInfo2"),
             &build_extended_info_xml(&leaf),
+            "Microsoft Store package URL",
         )
         .await?;
         let Some(raw_url) = extract_file_url(&response)? else {
@@ -187,23 +189,26 @@ async fn resolve_remote_msix_url(architecture: CpuArchitecture) -> Result<Url, M
             }
         }))
         .build()
-        .map_err(|_| MsStoreError::Request)?;
+        .map_err(|_| MsStoreError::Request("metadata client setup"))?;
     let response = client
         .get(REMOTE_MANIFEST_URL)
         .header("Accept", "application/json")
         .header("User-Agent", "dada-assistant/1.0")
         .send()
         .await
-        .map_err(|_| MsStoreError::Request)?
+        .map_err(|_| MsStoreError::Request("metadata request"))?
         .error_for_status()
-        .map_err(|_| MsStoreError::Request)?;
+        .map_err(|_| MsStoreError::Request("metadata response"))?;
     if response
         .content_length()
         .is_some_and(|size| size > MAX_REMOTE_MANIFEST_BYTES as u64)
     {
         return Err(MsStoreError::InvalidMetadata);
     }
-    let body = response.bytes().await.map_err(|_| MsStoreError::Request)?;
+    let body = response
+        .bytes()
+        .await
+        .map_err(|_| MsStoreError::Request("metadata response body"))?;
     if body.len() > MAX_REMOTE_MANIFEST_BYTES {
         return Err(MsStoreError::InvalidMetadata);
     }
@@ -253,7 +258,7 @@ fn metadata_client() -> Result<Client, MsStoreError> {
         .timeout(Duration::from_secs(30))
         .redirect(Policy::none())
         .build()
-        .map_err(|_| MsStoreError::Request)
+        .map_err(|_| MsStoreError::Request("Microsoft Store client setup"))
 }
 
 async fn fetch_fulfillment(client: &Client) -> Result<FulfillmentData, MsStoreError> {
@@ -262,10 +267,10 @@ async fn fetch_fulfillment(client: &Client) -> Result<FulfillmentData, MsStoreEr
     );
     let response = send_store_product_request(client, &url)
         .await
-        .map_err(|_| MsStoreError::Request)?;
+        .map_err(|_| MsStoreError::Request("Microsoft Store product request"))?;
     let product = response
         .error_for_status()
-        .map_err(|_| MsStoreError::Request)?
+        .map_err(|_| MsStoreError::Request("Microsoft Store product response"))?
         .json::<StoreProduct>()
         .await
         .map_err(|_| MsStoreError::InvalidMetadata)?;
@@ -300,6 +305,7 @@ async fn get_cookie(client: &Client) -> Result<String, MsStoreError> {
         WU_ENDPOINT,
         &format!("{WU_NS}/GetCookie"),
         &build_get_cookie_xml(),
+        "Microsoft Store cookie",
     )
     .await?;
     let document = Document::parse(&response).map_err(|_| MsStoreError::InvalidMetadata)?;
@@ -318,16 +324,17 @@ async fn post_soap(
     endpoint: &str,
     action: &str,
     body: &str,
+    operation: &'static str,
 ) -> Result<String, MsStoreError> {
     let response = send_soap_request(client, endpoint, action, body)
         .await
-        .map_err(|_| MsStoreError::Request)?;
+        .map_err(|_| MsStoreError::Request(operation))?;
     response
         .error_for_status()
-        .map_err(|_| MsStoreError::Request)?
+        .map_err(|_| MsStoreError::Request(operation))?
         .text()
         .await
-        .map_err(|_| MsStoreError::Request)
+        .map_err(|_| MsStoreError::Request(operation))
 }
 
 async fn send_soap_request(
@@ -609,7 +616,7 @@ fn strip_xml_declaration(value: &str) -> &str {
 
 fn build_get_cookie_xml() -> String {
     let now = iso_now();
-    soap_envelope(
+    anonymous_soap_envelope(
         &format!("{WU_NS}/GetCookie"),
         WU_ENDPOINT,
         &format!(
@@ -626,7 +633,7 @@ fn build_get_cookie_xml() -> String {
 fn build_sync_updates_xml(cookie: &str, category_id: &str) -> String {
     let expiration =
         (Utc::now() + chrono::Duration::hours(1)).to_rfc3339_opts(SecondsFormat::Secs, true);
-    soap_envelope(
+    device_soap_envelope(
         &format!("{WU_NS}/SyncUpdates"),
         WU_ENDPOINT,
         &format!(
@@ -665,7 +672,7 @@ fn build_sync_updates_xml(cookie: &str, category_id: &str) -> String {
 }
 
 fn build_extended_info_xml(identity: &UpdateIdentity) -> String {
-    soap_envelope(
+    device_soap_envelope(
         &format!("{WU_NS}/GetExtendedUpdateInfo2"),
         WU_SECURED_ENDPOINT,
         &format!(
@@ -682,7 +689,16 @@ fn build_extended_info_xml(identity: &UpdateIdentity) -> String {
     )
 }
 
-fn soap_envelope(action: &str, endpoint: &str, body: &str) -> String {
+fn anonymous_soap_envelope(action: &str, endpoint: &str, body: &str) -> String {
+    soap_envelope(action, endpoint, body, "<User />")
+}
+
+fn device_soap_envelope(action: &str, endpoint: &str, body: &str) -> String {
+    let ticket = format!("<Device>{}</Device>", windows_update_device_token());
+    soap_envelope(action, endpoint, body, &ticket)
+}
+
+fn soap_envelope(action: &str, endpoint: &str, body: &str, ticket: &str) -> String {
     let created = Utc::now();
     let expires = created + chrono::Duration::minutes(2);
     format!(
@@ -697,7 +713,7 @@ fn soap_envelope(action: &str, endpoint: &str, body: &str) -> String {
         <Created>{}</Created><Expires>{}</Expires>
       </Timestamp>
       <wuws:WindowsUpdateTicketsToken wsu:id="ClientMSA" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" xmlns:wuws="http://schemas.microsoft.com/msus/2014/10/WindowsUpdateAuthorization">
-        <TicketType Name="MSA" Version="1.0" Policy="MBI_SSL"><Device>{}</Device></TicketType>
+        <TicketType Name="MSA" Version="1.0" Policy="MBI_SSL">{}</TicketType>
       </wuws:WindowsUpdateTicketsToken>
     </o:Security>
   </s:Header>
@@ -708,7 +724,7 @@ fn soap_envelope(action: &str, endpoint: &str, body: &str) -> String {
         escape_xml(endpoint),
         created.to_rfc3339_opts(SecondsFormat::Secs, true),
         expires.to_rfc3339_opts(SecondsFormat::Secs, true),
-        windows_update_device_token(),
+        ticket,
     )
 }
 
@@ -773,6 +789,14 @@ mod tests {
             detect_architecture("OpenAI.Codex_26.707.3748.0_x64__2p2nqsd0c76g0.Msix"),
             Some(CpuArchitecture::X64)
         );
+    }
+
+    #[test]
+    fn initial_cookie_request_uses_an_anonymous_ticket() {
+        let xml = build_get_cookie_xml();
+
+        assert!(xml.contains("<User />"));
+        assert!(!xml.contains("<Device>"));
     }
 
     #[tokio::test]
