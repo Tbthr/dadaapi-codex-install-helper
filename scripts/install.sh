@@ -32,6 +32,30 @@ cleanup() {
   fi
 }
 
+attach_dmg() {
+  image_path="$1"
+
+  if /usr/bin/hdiutil attach "$image_path" -mountpoint "$mount_point" -nobrowse -readonly -quiet; then
+    mounted="1"
+    return 0
+  fi
+  /usr/bin/hdiutil detach "$mount_point" -quiet >/dev/null 2>&1 || true
+
+  # Some managed macOS runners reject an explicitly supplied mount directory.
+  # Let hdiutil choose the system mount point, then retain that exact path for
+  # bundle discovery and cleanup.
+  attach_plist="$temporary_directory/attach.plist"
+  if ! /usr/bin/hdiutil attach "$image_path" -nobrowse -readonly -plist > "$attach_plist"; then
+    return 1
+  fi
+  automatic_mount_point=$(/usr/bin/plutil -p "$attach_plist" 2>/dev/null \
+    | /usr/bin/sed -nE 's/.*"mount-point" => "(.*)"/\1/p' \
+    | /usr/bin/head -n 1)
+  [ -n "$automatic_mount_point" ] || return 1
+  mount_point="$automatic_mount_point"
+  mounted="1"
+}
+
 fail() {
   printf '%s\n' "$1" >&2
   exit 1
@@ -435,8 +459,8 @@ main() {
   print_install_summary
   /usr/bin/hdiutil verify "$downloaded_file" >/dev/null \
     || fail "DMG 结构校验失败，已停止安装。"
-  /usr/bin/hdiutil attach "$downloaded_file" -mountpoint "$mount_point" -nobrowse -readonly -quiet
-  mounted="1"
+  attach_dmg "$downloaded_file" \
+    || fail "DMG 挂载失败，已停止安装。"
 
   app_matches=$(/usr/bin/find "$mount_point" -maxdepth 1 -type d -name '哒哒助手.app' -print)
   app_count=$(printf '%s\n' "$app_matches" | /usr/bin/grep -c . || true)
