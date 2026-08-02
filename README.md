@@ -119,7 +119,7 @@ curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-time
 DADA_ASSISTANT_INSTALL_SOURCE=github /bin/sh "$installer_file"
 ```
 
-安装器稳定参数为 `DADA_ASSISTANT_INSTALL_VERSION=latest|vN.N.N` 与 `DADA_ASSISTANT_INSTALL_SOURCE=auto|gitee|github`。例如在执行下载后的脚本前设置 `DADA_ASSISTANT_INSTALL_VERSION=v1.0.6`，即可固定安装当前正式版本 `v1.0.6`。`v1.0.0` 至 `v1.0.5` 仅保留不可变源码标签；`v1.0.3` 至 `v1.0.5` 的发布候选未通过远程安装门禁。脚本只安装并启动哒哒助手，不写入中文配置或系统代理。
+安装器稳定参数为 `DADA_ASSISTANT_INSTALL_VERSION=latest|vN.N.N` 与 `DADA_ASSISTANT_INSTALL_SOURCE=auto|gitee|github`。例如在执行下载后的脚本前设置 `DADA_ASSISTANT_INSTALL_VERSION=v1.0.7`，即可固定安装当前正式版本 `v1.0.7`。`v1.0.0` 至 `v1.0.6` 仅保留不可变源码标签；`v1.0.3` 至 `v1.0.6` 的发布候选未通过远程安装门禁。脚本只安装并启动哒哒助手，不写入中文配置或系统代理。
 
 ## 配置中文
 
