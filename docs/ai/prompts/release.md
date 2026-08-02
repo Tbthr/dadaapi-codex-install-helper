@@ -6,7 +6,7 @@
 - Rust、Vue、Tauri 检查全部通过
 - Windows x64/ARM64 构建完成
 - Mac Intel/Apple Silicon 构建完成
-- 签名和公证配置正确
+- macOS ad-hoc Universal 与 Windows currentUser 未签名配置正确
 - 安装、升级和卸载流程验证
 - 中文激活成功和失败路径验证
 - 网络恢复验证

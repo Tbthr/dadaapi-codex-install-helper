@@ -1,64 +1,99 @@
-name: 哒哒助手 v1.0 发布冒烟
+name: 哒哒助手版本化安装命令冒烟
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Immutable release tag to install
+        required: true
+        type: string
+      source:
+        description: github or gitee
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to test
+        description: Immutable release tag to install
         required: true
         default: v1.0.0
+        type: string
+      source:
+        description: Release source
+        required: true
+        default: github
+        type: choice
+        options:
+          - github
+          - gitee
 
 permissions:
   contents: read
 
 jobs:
   macos:
-    runs-on: macos-14
+    name: macOS 安装启动 (${{ matrix.architecture }}, ${{ inputs.source }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            architecture: x86_64
+          - runner: macos-15
+            architecture: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
-      - name: Download released macOS package
-        shell: bash
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: 下载并比对不可变标签脚本
         env:
-          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE: ${{ inputs.source }}
           RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-          release=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\")")
-          test -n "$release"
-          asset_id=$(printf '%s' "$release" | jq -r \
-            '[.assets[] | select(.name | endswith("_universal.dmg"))] | if length == 1 then .[0].id else empty end')
-          test -n "$asset_id"
-          gh api "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
-            -H "Accept: application/octet-stream" > installer.dmg
-
-      - name: Verify, install, and launch released macOS application
         shell: bash
         run: |
           set -euo pipefail
-          mount_point="$RUNNER_TEMP/dada-assistant-release-mount"
-          installed_app="$RUNNER_TEMP/哒哒助手.app"
-          mkdir -p "$mount_point"
-          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point" installer.dmg
-          trap 'hdiutil detach "$mount_point" >/dev/null 2>&1 || true' EXIT
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          case "$RELEASE_SOURCE" in
+            github)
+              script_url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RELEASE_TAG/scripts/install.sh"
+              ;;
+            gitee)
+              script_url="https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/$RELEASE_TAG/scripts/install.sh"
+              ;;
+            *) exit 1 ;;
+          esac
+          remote_script="$RUNNER_TEMP/install.sh"
+          curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 \
+            --connect-timeout 10 --max-time 60 \
+            "$script_url" -o "$remote_script"
+          test -s "$remote_script"
+          cmp scripts/install.sh "$remote_script"
+          chmod 700 "$remote_script"
 
-          source_app=$(find "$mount_point" -maxdepth 1 -name '*.app' -print -quit)
-          test -n "$source_app"
-          binary="$source_app/Contents/MacOS/dada-assistant-desktop"
-          archs=$(lipo -archs "$binary")
-          [[ " $archs " == *" arm64 "* ]]
-          [[ " $archs " == *" x86_64 "* ]]
-          codesign --verify --deep --strict "$source_app"
-
-          ditto "$source_app" "$installed_app"
-          codesign --verify --deep --strict "$installed_app"
-          "$installed_app/Contents/MacOS/dada-assistant-desktop" >"$RUNNER_TEMP/dada-assistant.log" 2>&1 &
-          application_pid=$!
+      - name: 通过远程标签脚本安装并启动
+        env:
+          DADA_ASSISTANT_INSTALL_VERSION: ${{ inputs.tag }}
+          DADA_ASSISTANT_INSTALL_SOURCE: ${{ inputs.source }}
+          DADA_ASSISTANT_INSTALL_ARCH: ${{ matrix.architecture }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/sh "$RUNNER_TEMP/install.sh"
+          app="$HOME/Applications/哒哒助手.app"
+          test -d "$app"
+          ! xattr -p com.apple.quarantine "$app" >/dev/null 2>&1
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
+          binary="$app/Contents/MacOS/$executable"
+          test -x "$binary"
           sleep 15
-          kill -0 "$application_pid"
-          kill "$application_pid"
-          wait "$application_pid" || true
+          pgrep -f "$binary" >/dev/null
+          pkill -f "$binary" || true
 
   windows:
+    name: Windows 安装启动 (${{ matrix.architecture }}, ${{ inputs.source }})
     strategy:
       fail-fast: false
       matrix:
@@ -69,72 +104,53 @@ jobs:
             architecture: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - name: 下载已发布安装包
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: 下载并比对不可变标签脚本
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE: ${{ inputs.source }}
           RELEASE_TAG: ${{ inputs.tag }}
-          RELEASE_ARCHITECTURE: ${{ matrix.architecture }}
         run: |
-          $suffix = "_$($env:RELEASE_ARCHITECTURE)-setup.exe"
-          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
-          $release = $releases | Where-Object { $_.tag_name -eq $env:RELEASE_TAG } | Select-Object -First 1
-          if (-not $release) {
-            throw "Release $env:RELEASE_TAG was not found"
+          $ErrorActionPreference = "Stop"
+          if ($env:RELEASE_TAG -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+            throw "Invalid release tag."
           }
-          $releaseAssets = @($release.assets | Where-Object { $_.name.EndsWith($suffix) })
-          if ($releaseAssets.Count -ne 1) {
-            throw "Expected one Windows $env:RELEASE_ARCHITECTURE installer, found $($releaseAssets.Count)"
+          $scriptUrl = switch ($env:RELEASE_SOURCE) {
+            "github" { "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:RELEASE_TAG/scripts/install.ps1" }
+            "gitee" { "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/$env:RELEASE_TAG/scripts/install.ps1" }
+            default { throw "Invalid release source." }
           }
-          $headers = @{
-            Authorization = "Bearer $env:GH_TOKEN"
-            Accept = "application/octet-stream"
-            "X-GitHub-Api-Version" = "2022-11-28"
-          }
-          Invoke-WebRequest -Uri $releaseAssets[0].url -Headers $headers -OutFile installer.exe
-          $signature = Get-AuthenticodeSignature installer.exe
-          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
-            throw "Installer Authenticode status is $($signature.Status)"
-          }
-          if (-not $signature.SignerCertificate) {
-            throw "Installer is missing a signer certificate"
-          }
-          if (-not $signature.TimeStamperCertificate) {
-            throw "Installer is missing a trusted timestamp"
-          }
-          $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
-          & $signtool verify /pa /tw installer.exe
-          if ($LASTEXITCODE -ne 0) {
-            throw "signtool verification failed"
+          $remoteScript = Join-Path $env:RUNNER_TEMP "install.ps1"
+          Invoke-WebRequest -Uri $scriptUrl -OutFile $remoteScript -MaximumRedirection 5 -TimeoutSec 60
+          if ((Get-FileHash scripts/install.ps1 -Algorithm SHA256).Hash -cne
+              (Get-FileHash $remoteScript -Algorithm SHA256).Hash) {
+            throw "Remote tagged installer script differs from the checked-out tag."
           }
 
-      - name: 安装并启动已发布应用
+      - name: 通过远程标签脚本安装并启动
         shell: pwsh
+        env:
+          DADA_ASSISTANT_INSTALL_VERSION: ${{ inputs.tag }}
+          DADA_ASSISTANT_INSTALL_SOURCE: ${{ inputs.source }}
+          DADA_ASSISTANT_INSTALL_ARCH: ${{ matrix.architecture }}
+          DADA_ASSISTANT_INSTALL_CI_SILENT: "1"
         run: |
-          $installer = Start-Process -FilePath "$PWD\installer.exe" -ArgumentList "/S" -Wait -PassThru
-          if ($installer.ExitCode -ne 0) {
-            throw "Installer exited with code $($installer.ExitCode)"
-          }
-
-          $roots = @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)}) |
-            Where-Object { $_ -and (Test-Path $_) }
-          $executables = @(
-            $roots |
-              ForEach-Object {
-                Get-ChildItem -Path $_ -Filter "dada-assistant-desktop.exe" -File -Recurse -ErrorAction SilentlyContinue
-              }
-          )
-          $executable = $executables | Select-Object -First 1
-          if (-not $executable) {
-            throw "Installed Dada Assistant executable was not found"
-          }
-
-          Write-Host "Launching $($executable.FullName)"
+          $ErrorActionPreference = "Stop"
+          $remoteScript = Join-Path $env:RUNNER_TEMP "install.ps1"
+          Unblock-File -LiteralPath $remoteScript -ErrorAction Stop
+          & $remoteScript
+          $roots = @($env:LOCALAPPDATA) | Where-Object { $_ -and (Test-Path $_) }
+          $executable = @(
+            $roots | ForEach-Object {
+              Get-ChildItem -Path $_ -Filter "dada-assistant-desktop.exe" -File -Recurse -ErrorAction SilentlyContinue
+            }
+          ) | Select-Object -First 1
+          if (-not $executable) { throw "Installed application executable was not found." }
           $application = Start-Process -FilePath $executable.FullName -PassThru
           Start-Sleep -Seconds 15
-          if ($application.HasExited) {
-            throw "Released Dada Assistant exited during startup smoke test"
-          }
-
+          if ($application.HasExited) { throw "Installed application exited during startup smoke." }
           Stop-Process -Id $application.Id -Force
-          Write-Host "哒哒助手 remained alive for 15 seconds"

@@ -15,4 +15,4 @@ Pull Request 应包含：
 - Windows/macOS 影响
 - 安全和网络恢复影响
 
-开源许可证尚未最终确定，正式接受外部贡献前需要先完成许可证选择。
+向本仓库提交贡献即表示贡献内容按 Apache License 2.0 提供。提交前还应运行 `bash scripts/check-licenses.sh`；新增依赖必须具有与 Apache-2.0 分发兼容的许可证，并在包含用户可见资产或要求署名时更新 `THIRD_PARTY_NOTICES.md`。

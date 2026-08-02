@@ -1,0 +1,156 @@
+name: 可复用用户态发布构建
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: Exact protected main commit to build
+        required: true
+        type: string
+      artifact_prefix:
+        description: Prefix for private Actions artifacts
+        required: true
+        type: string
+      retention_days:
+        description: Artifact retention in days
+        required: true
+        type: number
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: 用户态构建 (${{ matrix.target }})
+    environment: production-release
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundles: app,dmg
+            release_config: src-tauri/tauri.release.conf.json
+            artifact_suffix: macos-universal
+            asset_architecture: universal
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
+            bundles: nsis
+            release_config: src-tauri/tauri.conf.json
+            artifact_suffix: windows-x64
+            asset_architecture: x64
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            rust_targets: aarch64-pc-windows-msvc
+            bundles: nsis
+            release_config: src-tauri/tauri.conf.json
+            artifact_suffix: windows-arm64
+            asset_architecture: arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      DADAAPI_ROUTE_MANIFEST_URLS: https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/manifest.json,https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/manifest.json
+      DADAAPI_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.DADAAPI_ROUTE_PUBLIC_KEY_PEM }}
+      DADAAPI_ROUTE_KEY_B64: ${{ secrets.DADAAPI_ROUTE_KEY_B64 }}
+      DADAAPI_ROUTE_KEY_ID: v1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+
+      - name: 验证提交和路由构建配置
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ inputs.commit_sha }}"
+          test "${{ inputs.commit_sha }}" = "$(git rev-parse HEAD^{commit})"
+          test -n "$DADAAPI_ROUTE_PUBLIC_KEY_PEM" || {
+            echo "::error title=Missing route signing key::DADAAPI_ROUTE_PUBLIC_KEY_PEM is required in production-release."
+            exit 1
+          }
+          test -n "$DADAAPI_ROUTE_KEY_B64" || {
+            echo "::error title=Missing route encryption key::DADAAPI_ROUTE_KEY_B64 is required in production-release."
+            exit 1
+          }
+          test "$(jq -r '.identifier' apps/desktop/src-tauri/tauri.conf.json)" = com.dadaapi.assistant
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: 安装锁定依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建用户态安装包
+        run: >-
+          pnpm --dir apps/desktop tauri build
+          --config ${{ matrix.release_config }}
+          --target ${{ matrix.target }}
+          --bundles ${{ matrix.bundles }}
+
+      - name: 验证并暂存 macOS Universal DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          applications=(target/universal-apple-darwin/release/bundle/macos/*.app)
+          disk_images=(target/universal-apple-darwin/release/bundle/dmg/*_universal.dmg)
+          test "${#applications[@]}" -eq 1
+          test "${#disk_images[@]}" -eq 1
+
+          codesign --verify --deep --strict --verbose=2 "${applications[0]}"
+          codesign_details=$(codesign -dv --verbose=4 "${applications[0]}" 2>&1)
+          printf '%s\n' "$codesign_details" | grep -Fqx 'Signature=adhoc'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${applications[0]}/Contents/Info.plist")" = com.dadaapi.assistant
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${applications[0]}/Contents/Info.plist")
+          architectures=$(lipo -archs "${applications[0]}/Contents/MacOS/$executable")
+          [[ " $architectures " == *" arm64 "* ]]
+          [[ " $architectures " == *" x86_64 "* ]]
+          hdiutil verify "${disk_images[0]}"
+
+          mkdir release-assets
+          version=$(jq -r '.version' apps/desktop/src-tauri/tauri.conf.json)
+          cp "${disk_images[0]}" "release-assets/Dada-Assistant_${version}_universal.dmg"
+
+      - name: 验证并暂存 Windows 用户态安装器
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installers = @(Get-ChildItem "target/${{ matrix.target }}/release/bundle/nsis" -Filter "*.exe" -File)
+          if ($installers.Count -ne 1) { throw "Expected exactly one NSIS installer." }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installers[0].FullName
+          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned) {
+            throw "The community installer must remain unsigned. Actual status: $($signature.Status)"
+          }
+          $configuration = Get-Content "apps/desktop/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          if ($configuration.bundle.windows.nsis.installMode -cne "currentUser") {
+            throw "Windows NSIS installMode must remain currentUser."
+          }
+          New-Item -ItemType Directory -Path "release-assets" | Out-Null
+          $version = $configuration.version
+          $assetName = "Dada-Assistant_$($version)_${{ matrix.asset_architecture }}-setup.exe"
+          Copy-Item -LiteralPath $installers[0].FullName -Destination (Join-Path "release-assets" $assetName)
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ matrix.artifact_suffix }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}

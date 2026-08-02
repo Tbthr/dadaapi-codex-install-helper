@@ -35,6 +35,8 @@
 - 网络请求使用本地 mock server。
 - 系统代理测试不得修改开发机器真实代理。
 - 发布前在真实 Windows 和 macOS 环境执行冒烟测试。
+- 安装脚本的纯解析和回退策略必须通过本地 fixture 测试；正式发布还必须从两端不可变标签下载脚本，在 Intel/Apple Silicon/x64/ARM64 完成真实安装和启动。
+- 锁定依赖必须通过 `scripts/check-licenses.sh`，用户可见第三方资产必须同步 `THIRD_PARTY_NOTICES.md`。
 
 ## Definition Of Done
 

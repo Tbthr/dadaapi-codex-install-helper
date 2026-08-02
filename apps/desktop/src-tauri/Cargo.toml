@@ -1,6 +1,8 @@
 [package]
 name = "dada-assistant-desktop"
 version.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "Dada Assistant cross-platform AI desktop toolkit"
 authors = ["dadaapi.com"]
 edition.workspace = true

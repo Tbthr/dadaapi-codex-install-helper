@@ -28,6 +28,12 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": false,
+    "license": "Apache-2.0",
+    "licenseFile": "../../../LICENSE",
+    "resources": {
+      "../../../LICENSE": "LICENSE",
+      "../../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    },
     "macOS": {
       "signingIdentity": "-",
       "hardenedRuntime": false

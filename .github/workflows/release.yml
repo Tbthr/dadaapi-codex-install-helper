@@ -9,1112 +9,430 @@ permissions:
   contents: read
 
 concurrency:
-  group: gitee-release-${{ github.ref_name }}
+  group: production-release
   cancel-in-progress: false
 
 jobs:
   preflight:
+    name: 验证标签与生产配置
+    environment: production-release
     permissions:
       contents: read
     runs-on: ubuntu-latest
     env:
+      GH_TOKEN: ${{ github.token }}
       GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
       GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
-      GH_TOKEN: ${{ github.token }}
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
       DADAAPI_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.DADAAPI_ROUTE_PUBLIC_KEY_PEM }}
       DADAAPI_ROUTE_KEY_B64: ${{ secrets.DADAAPI_ROUTE_KEY_B64 }}
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
-      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-      WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Validate production release prerequisites
+      - name: 验证版本、提交与标签
         shell: bash
         run: |
           set -euo pipefail
-
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           desktop_version=$(jq -r '.version // empty' apps/desktop/src-tauri/tauri.conf.json)
           package_version=$(jq -r '.version // empty' apps/desktop/package.json)
+          root_package_version=$(jq -r '.version // empty' package.json)
+          workspace_version=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '[.packages[].version] | unique | if length == 1 then .[0] else empty end')
           test -n "$desktop_version"
           test "$desktop_version" = "$package_version"
+          test "$desktop_version" = "$root_package_version"
+          test "$desktop_version" = "$workspace_version"
           test "$GITHUB_REF_NAME" = "v$desktop_version"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          test "$main_sha" = "$GITHUB_SHA" || {
+            echo "::error title=Release is not current main::The release tag must point to the accepted protected main commit."
+            exit 1
+          }
+
+      - name: 验证发布配置
+        shell: bash
+        run: |
+          set -euo pipefail
           required=(
             GITEE_TOKEN
             DADAAPI_ROUTE_PUBLIC_KEY_PEM
             DADAAPI_ROUTE_KEY_B64
-            APPLE_CERTIFICATE
-            APPLE_CERTIFICATE_PASSWORD
-            APPLE_API_KEY
-            APPLE_API_ISSUER
-            APPLE_API_KEY_BASE64
-            WINDOWS_CERTIFICATE
-            WINDOWS_CERTIFICATE_PASSWORD
-            WINDOWS_TIMESTAMP_URL
           )
           missing=()
-          for variable_name in "${required[@]}"; do
-            if [ -z "${!variable_name}" ]; then
-              missing+=("$variable_name")
-            fi
+          for name in "${required[@]}"; do
+            [ -n "${!name}" ] || missing+=("$name")
           done
           if [ "${#missing[@]}" -ne 0 ]; then
-            printf '::error title=Missing production release configuration::Configure these GitHub Actions secrets or variables before releasing: %s\n' "${missing[*]}"
+            printf '::error title=Missing production release configuration::Configure in production-release: %s\n' "${missing[*]}"
             exit 1
           fi
+          [[ "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]
+          [ -z "$GITEE_USERNAME" ] || [[ "$GITEE_USERNAME" =~ ^[A-Za-z0-9._-]+$ ]]
+          test "$(jq -r '.identifier' apps/desktop/src-tauri/tauri.conf.json)" = com.dadaapi.assistant
+          test "$(jq -r '.bundle.windows.nsis.installMode' apps/desktop/src-tauri/tauri.conf.json)" = currentUser
+          test "$(jq -r '.bundle.macOS.signingIdentity' apps/desktop/src-tauri/tauri.release.conf.json)" = '-'
 
-          if ! [[ "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
-            echo "::error title=Invalid Gitee repository::GITEE_REPOSITORY must use owner/repository format."
-            exit 1
-          fi
-          if [ -n "$GITEE_USERNAME" ] && ! [[ "$GITEE_USERNAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
-            echo "::error title=Invalid Gitee username::GITEE_USERNAME must be a Gitee account path, or be left empty to use the repository owner."
-            exit 1
-          fi
-          if ! [[ "$WINDOWS_TIMESTAMP_URL" =~ ^https://[^[:space:]@]+$ ]]; then
-            echo "::error title=Invalid Windows timestamp URL::WINDOWS_TIMESTAMP_URL must be an HTTPS URL without embedded credentials."
-            exit 1
-          fi
-
-          gitee_repository_response="$RUNNER_TEMP/gitee-repository.json"
-          gitee_repository_is_public=false
-          for attempt in 1 2 3; do
-            rm -f "$gitee_repository_response"
-            if gitee_repository_status=$(curl -sS --connect-timeout 20 --max-time 60 \
-              --retry 1 --retry-all-errors \
-              -o "$gitee_repository_response" \
-              -w '%{http_code}' \
-              --url-query "access_token=$GITEE_TOKEN" \
-              "https://gitee.com/api/v5/repos/$GITEE_REPOSITORY"); then
-              if [ "$gitee_repository_status" = "200" ] && jq -e '.private == false' "$gitee_repository_response" >/dev/null; then
-                gitee_repository_is_public=true
-                break
-              fi
-            else
-              gitee_repository_status=000
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              printf 'Retrying Gitee repository visibility check (%s/3, HTTP %s)\n' "$attempt" "$gitee_repository_status" >&2
-              sleep $((attempt * 3))
-            fi
-          done
-          if [ "$gitee_repository_is_public" != true ]; then
-            echo "::error title=Invalid Gitee release destination::GITEE_REPOSITORY must identify an accessible public Gitee repository."
-            exit 1
-          fi
-
-          github_release_response="$RUNNER_TEMP/github-release.json"
-          github_release_status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            -o "$github_release_response" \
-            -w '%{http_code}' \
+      - name: 拒绝覆盖两端最终 Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          github_response="$RUNNER_TEMP/github-release.json"
+          github_status=$(curl -sS --connect-timeout 20 --max-time 60 \
+            -o "$github_response" -w '%{http_code}' \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME")
-          case "$github_release_status" in
-            200)
-              if ! jq -e '.tag_name == env.GITHUB_REF_NAME and .draft == true' "$github_release_response" >/dev/null; then
-                echo "::error title=Existing GitHub release is final::Refusing to alter an already published GitHub release."
-                exit 1
-              fi
-              ;;
+          case "$github_status" in
             404) ;;
-            *)
-              echo "::error title=GitHub release lookup failed::Could not safely determine the existing release state."
-              exit 1
+            200)
+              jq -e '.tag_name == env.GITHUB_REF_NAME and (.draft == true or .prerelease == true)' "$github_response" >/dev/null || {
+                echo "::error title=Final GitHub release exists::Publish a new patch version; never replace final assets."
+                exit 1
+              }
               ;;
+            *) exit 1 ;;
           esac
 
-          gitee_release_api="https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/releases"
-          gitee_release_response="$RUNNER_TEMP/gitee-release.json"
-          gitee_release_status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            -o "$gitee_release_response" \
-            -w '%{http_code}' \
-            --url-query "access_token=$GITEE_TOKEN" \
-            "$gitee_release_api/tags/$GITHUB_REF_NAME")
-          case "$gitee_release_status" in
-            200)
-              if ! jq -e '.tag_name == env.GITHUB_REF_NAME and .prerelease == true' "$gitee_release_response" >/dev/null; then
-                echo "::error title=Existing Gitee release is final::Refusing to alter, replace, or delete an existing final Gitee release."
-                exit 1
-              fi
-              ;;
+          gitee_response="$RUNNER_TEMP/gitee-release.json"
+          gitee_status=$(curl -sS --connect-timeout 20 --max-time 60 \
+            -o "$gitee_response" -w '%{http_code}' \
+            -H "Authorization: token $GITEE_TOKEN" \
+            "https://gitee.com/api/v5/repos/$GITEE_REPOSITORY/releases/tags/$GITHUB_REF_NAME")
+          case "$gitee_status" in
             404) ;;
-            *)
-              echo "::error title=Gitee release lookup failed::Could not safely determine the existing Gitee release state."
-              exit 1
+            200)
+              jq -e '.tag_name == env.GITHUB_REF_NAME and .prerelease == true' "$gitee_response" >/dev/null || {
+                echo "::error title=Final Gitee release exists::Publish a new patch version; never replace final assets."
+                exit 1
+              }
               ;;
+            *) exit 1 ;;
           esac
 
-  publish:
+  quality:
+    name: 完整代码与安装脚本检查
     needs: preflight
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      # Each target writes assets to the same private GitHub draft release.
-      max-parallel: 1
-      matrix:
-        include:
-          - platform: macos-14
-            target: universal-apple-darwin
-            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
-            bundles: app,dmg
-            release_config: src-tauri/tauri.release.conf.json
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            rust_targets: x86_64-pc-windows-msvc
-            bundles: nsis
-            release_config: src-tauri/tauri.release.windows.conf.json
-          - platform: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            rust_targets: aarch64-pc-windows-msvc
-            bundles: nsis
-            release_config: src-tauri/tauri.release.windows.conf.json
-
-    runs-on: ${{ matrix.platform }}
-
+    runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
-          targets: ${{ matrix.rust_targets }}
+          components: rustfmt,clippy
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          key: ${{ matrix.target }}
+          key: production-release-quality
 
       - run: pnpm install --frozen-lockfile
+      - run: cargo fmt --all -- --check
+      - run: cargo check --workspace
+      - run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: pnpm --dir apps/desktop check
+      - run: pnpm --dir apps/desktop build
+      - run: /bin/sh scripts/tests/install-sh-tests.sh
+      - run: bash scripts/check-licenses.sh
 
-      - name: Ensure the GitHub release remains a draft
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          response="$RUNNER_TEMP/github-release.json"
-          status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            -o "$response" \
-            -w '%{http_code}' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME")
-          case "$status" in
-            404) ;;
-            200)
-              jq -e '.tag_name == env.GITHUB_REF_NAME and .draft == true' "$response" >/dev/null || {
-                echo "::error title=GitHub release is no longer a draft::Refusing to upload more assets to a published release."
-                exit 1
-              }
-              ;;
-            *)
-              echo "::error title=GitHub release lookup failed::Could not safely determine the existing release state."
-              exit 1
-              ;;
-          esac
+  signed-build:
+    name: 生产用户态构建
+    needs:
+      - preflight
+      - quality
+    uses: ./.github/workflows/signed-build.yml
+    with:
+      commit_sha: ${{ github.sha }}
+      artifact_prefix: release
+      retention_days: 7
+    secrets: inherit
 
-      - name: Prepare macOS signing credentials
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
-        run: |
-          set -euo pipefail
-          decode_base64() {
-            if base64 --help 2>&1 | grep -q -- '--decode'; then
-              base64 --decode
-            else
-              base64 -D
-            fi
-          }
-
-          certificate_path="$RUNNER_TEMP/dada-release-certificate.p12"
-          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
-          keychain_path="$RUNNER_TEMP/dada-release-signing.keychain-db"
-          keychain_password=$(openssl rand -base64 48)
-          original_keychains="$RUNNER_TEMP/dada-release-original-keychains.txt"
-          original_default_keychain="$RUNNER_TEMP/dada-release-original-default-keychain.txt"
-          umask 077
-          printf '%s' "$APPLE_CERTIFICATE" | decode_base64 > "$certificate_path"
-          printf '%s' "$APPLE_API_KEY_BASE64" | decode_base64 > "$api_key_path"
-          chmod 600 "$certificate_path" "$api_key_path"
-
-          openssl pkcs12 -in "$certificate_path" \
-            -passin "pass:$APPLE_CERTIFICATE_PASSWORD" \
-            -noout >/dev/null
-          if ! openssl pkcs12 -in "$certificate_path" \
-            -passin "pass:$APPLE_CERTIFICATE_PASSWORD" \
-            -clcerts -nokeys | openssl x509 -noout -subject | grep -q 'Developer ID Application:'; then
-            echo "::error title=Invalid Apple signing certificate::APPLE_CERTIFICATE must contain a Developer ID Application certificate."
-            exit 1
-          fi
-          openssl pkey -in "$api_key_path" -noout >/dev/null
-
-          security list-keychains -d user > "$original_keychains"
-          security default-keychain -d user > "$original_default_keychain"
-          security create-keychain -p "$keychain_password" "$keychain_path"
-          security set-keychain-settings -lut 21600 "$keychain_path"
-          security unlock-keychain -p "$keychain_password" "$keychain_path"
-          security import "$certificate_path" \
-            -k "$keychain_path" \
-            -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/productbuild \
-            -T /usr/bin/productsign
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s \
-            -k "$keychain_password" \
-            "$keychain_path"
-          security list-keychains -d user -s "$keychain_path"
-          security default-keychain -d user -s "$keychain_path"
-
-          signing_identity=$(security find-identity -v -p codesigning "$keychain_path" \
-            | sed -nE 's/.*"(Developer ID Application: [^"]+)".*/\1/p')
-          signing_identity_count=$(printf '%s\n' "$signing_identity" | sed '/^$/d' | wc -l | tr -d ' ')
-          if [ "$signing_identity_count" != "1" ]; then
-            echo "::error title=Invalid Apple signing certificate::Expected exactly one Developer ID Application identity in the temporary keychain."
-            exit 1
-          fi
-
-          printf 'APPLE_API_KEY_PATH=%s\n' "$api_key_path" >> "$GITHUB_ENV"
-          printf 'APPLE_API_KEY=%s\n' "$APPLE_API_KEY" >> "$GITHUB_ENV"
-          printf 'APPLE_API_ISSUER=%s\n' "$APPLE_API_ISSUER" >> "$GITHUB_ENV"
-          printf 'APPLE_SIGNING_IDENTITY=%s\n' "$signing_identity" >> "$GITHUB_ENV"
-
-      - name: Prepare Windows signing certificate
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          $certificateDirectory = Join-Path $env:RUNNER_TEMP "dada-release-signing"
-          $encodedCertificate = Join-Path $certificateDirectory "certificate.txt"
-          $certificatePath = Join-Path $certificateDirectory "certificate.pfx"
-          $releaseConfig = Join-Path $env:GITHUB_WORKSPACE "apps/desktop/src-tauri/tauri.release.windows.conf.json"
-
-          New-Item -ItemType Directory -Force -Path $certificateDirectory | Out-Null
-          [System.IO.File]::WriteAllText($encodedCertificate, $env:WINDOWS_CERTIFICATE)
-          & certutil.exe -f -decode $encodedCertificate $certificatePath | Out-Null
-          if ($LASTEXITCODE -ne 0) {
-            throw "Unable to decode WINDOWS_CERTIFICATE."
-          }
-
-          $password = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
-          $imported = @(Import-PfxCertificate -FilePath $certificatePath -CertStoreLocation "Cert:\CurrentUser\My" -Password $password)
-          Remove-Item -LiteralPath $certificateDirectory -Recurse -Force
-
-          $codeSigningOid = "1.3.6.1.5.5.7.3.3"
-          $certificates = @($imported | Where-Object {
-            $_.HasPrivateKey -and
-            ($_.EnhancedKeyUsageList.ObjectId.Value -contains $codeSigningOid) -and
-            $_.NotAfter -gt (Get-Date).AddDays(30)
-          })
-          if ($certificates.Count -ne 1) {
-            throw "WINDOWS_CERTIFICATE must contain exactly one unexpired code-signing certificate with a private key."
-          }
-
-          $timestampUri = [Uri]$env:WINDOWS_TIMESTAMP_URL
-          if ($timestampUri.Scheme -ne "https" -or $timestampUri.UserInfo) {
-            throw "WINDOWS_TIMESTAMP_URL must be an HTTPS URL without embedded credentials."
-          }
-
-          $thumbprint = ($certificates[0].Thumbprint -replace "\s", "").ToUpperInvariant()
-          if ($thumbprint -notmatch "^[0-9A-F]{40}$") {
-            throw "Imported Windows signing certificate has an invalid thumbprint."
-          }
-
-          $config = @{
-            bundle = @{
-              windows = @{
-                certificateThumbprint = $thumbprint
-                digestAlgorithm = "sha256"
-                timestampUrl = $timestampUri.AbsoluteUri
-                tsp = $true
-              }
-            }
-          }
-          $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $releaseConfig -Encoding utf8
-          "WINDOWS_SIGNING_THUMBPRINT=$thumbprint" | Add-Content -Path $env:GITHUB_ENV
-
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DADAAPI_ROUTE_MANIFEST_URLS: https://gitee.com/lyq_power/dadaapi-routes/raw/main/public/manifest.json,https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/manifest.json
-          DADAAPI_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.DADAAPI_ROUTE_PUBLIC_KEY_PEM }}
-          DADAAPI_ROUTE_KEY_B64: ${{ secrets.DADAAPI_ROUTE_KEY_B64 }}
-          DADAAPI_ROUTE_KEY_ID: v1
-        with:
-          projectPath: apps/desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: 哒哒助手 v1.0
-          releaseBody: 哒哒助手 v1.0 正式版。请根据设备平台下载对应安装包。
-          releaseDraft: true
-          prerelease: false
-          args: --config ${{ matrix.release_config }} --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-
-      - name: Verify macOS signature and notarization
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          applications=(target/universal-apple-darwin/release/bundle/macos/*.app)
-          disk_images=(target/universal-apple-darwin/release/bundle/dmg/*.dmg)
-          test "${#applications[@]}" -eq 1
-          test "${#disk_images[@]}" -eq 1
-
-          codesign --verify --deep --strict --verbose=2 "${applications[0]}"
-          codesign_details=$(codesign -dv --verbose=4 "${applications[0]}" 2>&1)
-          test -n "${APPLE_SIGNING_IDENTITY:-}"
-          printf '%s\n' "$codesign_details" | grep -F -x "Authority=$APPLE_SIGNING_IDENTITY"
-          if printf '%s\n' "$codesign_details" | grep -q '^Signature=adhoc$'; then
-            echo "::error title=Ad-hoc macOS signature::A production release must not use an ad-hoc signature."
-            exit 1
-          fi
-          xcrun stapler validate "${applications[0]}"
-          spctl --assess --type execute --verbose=4 "${applications[0]}"
-          hdiutil verify "${disk_images[0]}"
-
-      - name: Verify Windows Authenticode signature
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $installers = @(Get-ChildItem -Path "target/${{ matrix.target }}/release/bundle/nsis" -Filter "*.exe" -File)
-          if ($installers.Count -ne 1) {
-            throw "Expected one NSIS installer, found $($installers.Count)."
-          }
-
-          $signature = Get-AuthenticodeSignature -FilePath $installers[0].FullName
-          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
-            throw "Installer Authenticode status is $($signature.Status)."
-          }
-          $thumbprint = ($signature.SignerCertificate.Thumbprint -replace "\s", "").ToUpperInvariant()
-          if ($thumbprint -ne $env:WINDOWS_SIGNING_THUMBPRINT) {
-            throw "Installer signer does not match the imported release certificate."
-          }
-          if (-not $signature.TimeStamperCertificate) {
-            throw "Installer does not include a trusted timestamp."
-          }
-
-          $signtool = (Get-Command signtool.exe -ErrorAction Stop).Source
-          & $signtool verify /pa /tw $installers[0].FullName
-          if ($LASTEXITCODE -ne 0) {
-            throw "signtool verification failed."
-          }
-
-      - name: Remove macOS signing material
-        if: ${{ always() && runner.os == 'macOS' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          keychain_path="$RUNNER_TEMP/dada-release-signing.keychain-db"
-          original_keychains="$RUNNER_TEMP/dada-release-original-keychains.txt"
-          original_default_keychain="$RUNNER_TEMP/dada-release-original-default-keychain.txt"
-
-          if [ -f "$original_keychains" ]; then
-            keychains=()
-            while IFS= read -r keychain; do
-              keychain=$(printf '%s' "$keychain" | tr -d '"' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-              if [ -n "$keychain" ]; then
-                keychains+=("$keychain")
-              fi
-            done < "$original_keychains"
-            if [ "${#keychains[@]}" -gt 0 ]; then
-              security list-keychains -d user -s "${keychains[@]}"
-            fi
-          fi
-          if [ -f "$original_default_keychain" ]; then
-            original_default=$(tr -d '"' < "$original_default_keychain" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | head -n 1)
-            if [ -n "$original_default" ]; then
-              security default-keychain -d user -s "$original_default"
-            fi
-          fi
-          if [ -f "$keychain_path" ]; then
-            security delete-keychain "$keychain_path"
-          fi
-          rm -f \
-            "$RUNNER_TEMP/dada-release-certificate.p12" \
-            "$RUNNER_TEMP/AuthKey_"*.p8 \
-            "$original_keychains" \
-            "$original_default_keychain"
-
-      - name: Remove Windows signing material
-        if: ${{ always() && runner.os == 'Windows' }}
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $releaseConfig = Join-Path $env:GITHUB_WORKSPACE "apps/desktop/src-tauri/tauri.release.windows.conf.json"
-          Remove-Item -LiteralPath $releaseConfig -Force -ErrorAction SilentlyContinue
-          if ($env:WINDOWS_SIGNING_THUMBPRINT) {
-            Remove-Item -LiteralPath "Cert:\CurrentUser\My\$env:WINDOWS_SIGNING_THUMBPRINT" -Force -ErrorAction SilentlyContinue
-          }
-
-  checksums:
+  github-draft:
+    name: 创建或验证 GitHub Draft
+    needs: signed-build
     permissions:
+      actions: read
       contents: write
-    needs: publish
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - name: Download signed installers from the GitHub draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          release="$RUNNER_TEMP/github-release.json"
-          status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            -o "$release" \
-            -w '%{http_code}' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME")
-          if [ "$status" != "200" ] || ! jq -e '.tag_name == env.GITHUB_REF_NAME and .draft == true' "$release" >/dev/null; then
-            echo "::error title=GitHub draft is unavailable::Refusing to compute checksums from a non-draft or unknown release."
-            exit 1
-          fi
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
 
-          mkdir release-assets
-          gh release download "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "*_arm64-setup.exe" \
-            --pattern "*_x64-setup.exe" \
-            --pattern "*_universal.dmg" \
-            --dir release-assets
-
-      - name: Generate and upload SHA-256 checksums
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: 生成严格四资产契约
+        shell: bash
         run: |
           set -euo pipefail
           cd release-assets
-          shopt -s nullglob
-          arm64_installers=(*_arm64-setup.exe)
-          x64_installers=(*_x64-setup.exe)
-          universal_dmgs=(*_universal.dmg)
-          test "${#arm64_installers[@]}" -eq 1
-          test "${#x64_installers[@]}" -eq 1
-          test "${#universal_dmgs[@]}" -eq 1
-          sha256sum \
-            "${arm64_installers[0]}" \
-            "${x64_installers[0]}" \
-            "${universal_dmgs[0]}" \
-            > checksums.txt
+          expected_version="${RELEASE_TAG#v}"
+          x64="Dada-Assistant_${expected_version}_x64-setup.exe"
+          arm64="Dada-Assistant_${expected_version}_arm64-setup.exe"
+          macos="Dada-Assistant_${expected_version}_universal.dmg"
+          test -f "$x64"
+          test -f "$arm64"
+          test -f "$macos"
+          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 3
+          sha256sum "$x64" "$arm64" "$macos" > checksums.txt
           sha256sum --check checksums.txt
-          gh release upload "$GITHUB_REF_NAME" checksums.txt \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+          test "$(wc -l < checksums.txt | tr -d ' ')" -eq 3
 
-  gitee-release:
+      - name: 创建或安全复用 Draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          response="$RUNNER_TEMP/github-release.json"
+          status=$(curl -sS --connect-timeout 20 --max-time 60 \
+            -o "$response" -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          if [ "$status" = 404 ]; then
+            gh release create "$RELEASE_TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --draft \
+              --prerelease \
+              --title "哒哒助手 $RELEASE_TAG" \
+              --notes "哒哒助手 $RELEASE_TAG 正式候选。仅包含三个用户态安装包与 checksums.txt；完成两源安装门禁后自动转为正式版。"
+          elif [ "$status" = 200 ] && jq -e '.tag_name == env.RELEASE_TAG and .draft == true' "$response" >/dev/null; then
+            existing="$RUNNER_TEMP/existing-assets"
+            mkdir "$existing"
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$existing"
+            for existing_file in "$existing"/*; do
+              name=$(basename "$existing_file")
+              test -f "release-assets/$name" || {
+                echo "Draft contains an unexpected asset: $name" >&2
+                exit 1
+              }
+              cmp "$existing_file" "release-assets/$name" || {
+                echo "Draft asset differs and will not be replaced: $name" >&2
+                exit 1
+              }
+            done
+            for local_file in release-assets/*; do
+              name=$(basename "$local_file")
+              [ -f "$existing/$name" ] || gh release upload "$RELEASE_TAG" "$local_file" --repo "$GITHUB_REPOSITORY"
+            done
+          else
+            echo "Refusing to alter a non-draft GitHub release." >&2
+            exit 1
+          fi
+
+          verified="$RUNNER_TEMP/github-draft.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$verified"
+          jq -e '
+            .tag_name == env.RELEASE_TAG and
+            .draft == true and
+            .prerelease == true and
+            ([.assets[].name] | length) == 4 and
+            ([.assets[].name] | unique | length) == 4 and
+            ([.assets[].name | select(. == "checksums.txt")] | length == 1) and
+            ([.assets[].name | select(endswith("_x64-setup.exe"))] | length == 1) and
+            ([.assets[].name | select(endswith("_arm64-setup.exe"))] | length == 1) and
+            ([.assets[].name | select(endswith("_universal.dmg"))] | length == 1)
+          ' "$verified" >/dev/null
+
+  github-prerelease:
+    name: 公开 GitHub Prerelease
+    needs: github-draft
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Draft 转为 Prerelease 并验证
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+            --jq 'select(.draft == false and .prerelease == true and (.assets | length) == 4) | .tag_name' \
+            | grep -Fqx "$RELEASE_TAG"
+
+  github-install-smoke:
+    name: GitHub 版本化命令全安装
+    needs: github-prerelease
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      tag: ${{ github.ref_name }}
+      source: github
+
+  gitee-final:
+    name: 同步并公开 Gitee Final
+    needs: github-install-smoke
+    environment: production-release
     permissions:
       contents: read
-    needs: checksums
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
-      RELEASE_TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
       GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
       GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_COMMIT: ${{ github.sha }}
+      RELEASE_ASSETS_DIRECTORY: ${{ github.workspace }}/release-assets
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Validate Gitee release configuration
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "$GITEE_REPOSITORY" ]; then
-            echo "::error title=Missing Gitee repository::Set the GITEE_REPOSITORY Actions variable to your public owner/repository target."
-            exit 1
-          fi
-          if ! [[ "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
-            echo "::error title=Invalid Gitee repository::GITEE_REPOSITORY must use owner/repository format."
-            exit 1
-          fi
-          if [ -n "$GITEE_USERNAME" ] && ! [[ "$GITEE_USERNAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
-            echo "::error title=Invalid Gitee username::GITEE_USERNAME must be a Gitee account path, or be left empty to use the repository owner."
-            exit 1
-          fi
-          if [ -z "$GITEE_TOKEN" ]; then
-            echo "::error title=Missing Gitee token::Add a GITEE_TOKEN Actions secret with write access to $GITEE_REPOSITORY."
-            exit 1
-          fi
-
-          repository_response="$RUNNER_TEMP/gitee-repository.json"
-          repository_is_public=false
-          for attempt in 1 2 3; do
-            rm -f "$repository_response"
-            if repository_status=$(curl -sS --connect-timeout 20 --max-time 60 \
-              --retry 1 --retry-all-errors \
-              -o "$repository_response" \
-              -w '%{http_code}' \
-              --url-query "access_token=$GITEE_TOKEN" \
-              "https://gitee.com/api/v5/repos/$GITEE_REPOSITORY"); then
-              if [ "$repository_status" = "200" ] && jq -e '.private == false' "$repository_response" >/dev/null; then
-                repository_is_public=true
-                break
-              fi
-            else
-              repository_status=000
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              printf 'Retrying Gitee repository visibility check (%s/3, HTTP %s)\n' "$attempt" "$repository_status" >&2
-              sleep $((attempt * 3))
-            fi
-          done
-          if [ "$repository_is_public" != true ]; then
-            echo "::error title=Invalid Gitee release destination::GITEE_REPOSITORY must identify an accessible public Gitee repository."
-            exit 1
-          fi
-
-      - name: Resolve release tag
-        run: |
-          set -euo pipefail
-          release_commit=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
-          release_tag_object=$(git rev-parse --verify "refs/tags/$RELEASE_TAG")
-          printf 'RELEASE_COMMIT=%s\n' "$release_commit" >> "$GITHUB_ENV"
-          printf 'RELEASE_TAG_OBJECT=%s\n' "$release_tag_object" >> "$GITHUB_ENV"
-
-      - name: Refuse to alter a final Gitee Release
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-        run: |
-          set -euo pipefail
-          api="https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/releases"
-          response="$RUNNER_TEMP/gitee-release.json"
-          status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            -o "$response" \
-            -w '%{http_code}' \
-            --url-query "access_token=$GITEE_TOKEN" \
-            "$api/tags/$RELEASE_TAG")
-          case "$status" in
-            200)
-              if ! jq -e '.tag_name == env.RELEASE_TAG and .prerelease == true' "$response" >/dev/null; then
-                echo "::error title=Existing Gitee release is final::Refusing to alter, replace, or delete an existing final Gitee release."
-                exit 1
-              fi
-              ;;
-            404) ;;
-            *)
-              echo "::error title=Gitee release lookup failed::Could not safely determine the existing Gitee release state."
-              exit 1
-              ;;
-          esac
-
-      - name: Push release tag to Gitee without overwriting
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-        run: |
-          set -euo pipefail
-          export GITEE_USERNAME="${GITEE_USERNAME:-${GITEE_REPOSITORY%%/*}}"
-          gitee_url="https://gitee.com/${GITEE_REPOSITORY}.git"
-          askpass="$RUNNER_TEMP/dada-gitee-askpass.sh"
-          umask 077
-          cat > "$askpass" <<'EOF'
-          #!/usr/bin/env sh
-          case "$1" in
-            *Username*) printf '%s\n' "$GITEE_USERNAME" ;;
-            *) printf '%s\n' "$GITEE_TOKEN" ;;
-          esac
-          EOF
-          chmod 700 "$askpass"
-          trap 'rm -f "$askpass"' EXIT
-          remote_tag_object=$(GIT_ASKPASS="$askpass" GIT_ASKPASS_REQUIRE=force GIT_TERMINAL_PROMPT=0 \
-            git ls-remote "$gitee_url" "refs/tags/${RELEASE_TAG}" | awk 'NR == 1 { print $1 }')
-          if [ -n "$remote_tag_object" ] && [ "$remote_tag_object" != "$RELEASE_TAG_OBJECT" ]; then
-            echo "::error title=Gitee tag differs::Refusing to force-push or overwrite the existing Gitee tag."
-            exit 1
-          fi
-          if [ -z "$remote_tag_object" ]; then
-            GIT_ASKPASS="$askpass" GIT_ASKPASS_REQUIRE=force GIT_TERMINAL_PROMPT=0 git \
-              push "$gitee_url" "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
-          fi
-          synced_tag_object=$(GIT_ASKPASS="$askpass" GIT_ASKPASS_REQUIRE=force GIT_TERMINAL_PROMPT=0 \
-            git ls-remote "$gitee_url" "refs/tags/${RELEASE_TAG}" | awk 'NR == 1 { print $1 }')
-          test "$synced_tag_object" = "$RELEASE_TAG_OBJECT"
-
-      - name: Download complete GitHub draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          release="$RUNNER_TEMP/github-release.json"
-          status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            -o "$release" \
-            -w '%{http_code}' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
-          if [ "$status" != "200" ] || ! jq -e '.tag_name == env.RELEASE_TAG and .draft == true' "$release" >/dev/null; then
-            echo "::error title=GitHub draft is unavailable::Refusing to mirror a non-draft or unknown release."
-            exit 1
-          fi
-
-          mkdir release-assets
-          gh release download "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --dir release-assets \
-            --clobber
-
-      - name: Validate GitHub release assets
-        run: |
-          set -euo pipefail
-          cd release-assets
-          shopt -s nullglob
-          arm64_installers=(*_arm64-setup.exe)
-          x64_installers=(*_x64-setup.exe)
-          universal_dmgs=(*_universal.dmg)
-          test "${#arm64_installers[@]}" -eq 1
-          test "${#x64_installers[@]}" -eq 1
-          test "${#universal_dmgs[@]}" -eq 1
-          test -f checksums.txt
-
-          expected_files=("${arm64_installers[0]}" "${x64_installers[0]}" "${universal_dmgs[0]}" checksums.txt)
-          actual_files=(* )
-          test "${#actual_files[@]}" -eq "${#expected_files[@]}"
-          diff -u \
-            <(printf '%s\n' "${expected_files[@]}" | sort) \
-            <(printf '%s\n' "${actual_files[@]}" | sort)
-          test "$(wc -l < checksums.txt | tr -d ' ')" -eq 3
-          sha256sum --check checksums.txt
-          diff -u \
-            <(printf '%s\n' "${arm64_installers[0]}" "${x64_installers[0]}" "${universal_dmgs[0]}" | sort) \
-            <(awk '{print $2}' checksums.txt | sort)
-
-      - name: Prepare Gitee macOS installer
-        run: |
-          set -euo pipefail
-          cd release-assets
-          shopt -s nullglob
-          universal_dmgs=(*_universal.dmg)
-          test "${#universal_dmgs[@]}" -eq 1
-          dmg_name="${universal_dmgs[0]}"
-          zip_name="$dmg_name.zip"
-          zip -q "$zip_name" "$dmg_name"
-          zip_checksum=$(sha256sum "$zip_name" | awk '{print $1}')
-          grep -F -v "  $dmg_name" checksums.txt > checksums.gitee.txt
-          printf '%s  %s\n' "$zip_checksum" "$zip_name" >> checksums.gitee.txt
-          mv checksums.gitee.txt checksums.txt
-          rm -- "$dmg_name"
-          sha256sum --check checksums.txt
-
-      - name: Build expected Gitee asset manifest
-        run: |
-          set -euo pipefail
-          cd release-assets
-          shopt -s nullglob
-          arm64_installers=(*_arm64-setup.exe)
-          x64_installers=(*_x64-setup.exe)
-          universal_archives=(*_universal.dmg.zip)
-          test "${#arm64_installers[@]}" -eq 1
-          test "${#x64_installers[@]}" -eq 1
-          test "${#universal_archives[@]}" -eq 1
-          test -f checksums.txt
-          test "$(wc -l < checksums.txt | tr -d ' ')" -eq 3
-          sha256sum --check checksums.txt
-          diff -u \
-            <(printf '%s\n' "${arm64_installers[0]}" "${x64_installers[0]}" "${universal_archives[0]}" | sort) \
-            <(awk '{print $2}' checksums.txt | sort)
-
-          manifest="$RUNNER_TEMP/gitee-expected-assets.tsv"
-          names="$RUNNER_TEMP/gitee-expected-asset-names.txt"
-          : > "$manifest"
-          for name in "${arm64_installers[0]}" "${x64_installers[0]}" "${universal_archives[0]}" checksums.txt; do
-            case "$name" in
-              */*|*"$'\n'"*)
-                echo "Invalid release asset name." >&2
-                exit 1
-                ;;
-            esac
-            checksum=$(sha256sum -- "$name" | awk '{print $1}')
-            size=$(stat -c '%s' -- "$name")
-            printf '%s\t%s\t%s\n' "$checksum" "$size" "$name" >> "$manifest"
-          done
-          sort -o "$manifest" "$manifest"
-          awk -F '\t' '{print $3}' "$manifest" > "$names"
-          test "$(wc -l < "$manifest" | tr -d ' ')" -eq 4
-          test "$(sort -u "$names" | wc -l | tr -d ' ')" -eq 4
-
-      - name: Create or reuse staged Gitee prerelease
-        id: gitee_release
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-        run: |
-          set -euo pipefail
-          api="https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/releases"
-          existing="$RUNNER_TEMP/gitee-release.json"
-          if status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            -o "$existing" \
-            -w '%{http_code}' \
-            --url-query "access_token=$GITEE_TOKEN" \
-            "$api/tags/$RELEASE_TAG"); then
-            :
-          else
-            status=000
-          fi
-          case "$status" in
-            200)
-              if ! jq -e '.tag_name == env.RELEASE_TAG and .target_commitish == env.RELEASE_COMMIT and .prerelease == true and (.id | type == "number")' "$existing" >/dev/null; then
-                echo "::error title=Existing Gitee release is final or invalid::Refusing to alter, replace, or delete it."
-                exit 1
-              fi
-              release_id=$(jq -r '.id' "$existing")
-              ;;
-            404)
-              created="$RUNNER_TEMP/gitee-release-created.json"
-              if create_status=$(curl -sS --connect-timeout 20 --max-time 60 \
-                -o "$created" \
-                -w '%{http_code}' \
-                -X POST \
-                -F "access_token=$GITEE_TOKEN" \
-                -F "tag_name=$RELEASE_TAG" \
-                -F "name=哒哒助手 v1.0（验证中）" \
-                -F "body=哒哒助手 v1.0 国内发行版正在上传并验证全部资产；验证完成前请勿下载或使用。" \
-                -F "target_commitish=$RELEASE_COMMIT" \
-                -F "prerelease=true" \
-                "$api"); then
-                :
-              else
-                create_status=000
-              fi
-              if [ "$create_status" = "201" ] && jq -e '.tag_name == env.RELEASE_TAG and .target_commitish == env.RELEASE_COMMIT and .prerelease == true and (.id | type == "number")' "$created" >/dev/null; then
-                release_id=$(jq -r '.id' "$created")
-              else
-                if status=$(curl -sS --connect-timeout 20 --max-time 60 \
-                  -o "$existing" \
-                  -w '%{http_code}' \
-                  --url-query "access_token=$GITEE_TOKEN" \
-                  "$api/tags/$RELEASE_TAG"); then
-                  :
-                else
-                  status=000
-                fi
-                if [ "$status" != "200" ] || ! jq -e '.tag_name == env.RELEASE_TAG and .target_commitish == env.RELEASE_COMMIT and .prerelease == true and (.id | type == "number")' "$existing" >/dev/null; then
-                  echo "::error title=Gitee prerelease creation failed::No safe reusable prerelease was found."
-                  exit 1
-                fi
-                release_id=$(jq -r '.id' "$existing")
-              fi
-              ;;
-            *)
-              echo "::error title=Gitee release lookup failed::Could not safely determine the existing Gitee release state."
-              exit 1
-              ;;
-          esac
-          printf 'release_id=%s\n' "$release_id" >> "$GITHUB_OUTPUT"
-
-      - name: Upload only missing Gitee prerelease assets
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
-        run: |
-          set -euo pipefail
-          api="https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/releases/$RELEASE_ID/attach_files"
-          manifest="$RUNNER_TEMP/gitee-expected-assets.tsv"
-          expected_names="$RUNNER_TEMP/gitee-expected-asset-names.txt"
-          attached="$RUNNER_TEMP/gitee-attached-assets.json"
-
-          fetch_assets() {
-            local attempt status
-            for attempt in 1 2 3; do
-              rm -f "$attached"
-              if status=$(curl -sS --connect-timeout 20 --max-time 60 \
-                --retry 1 --retry-all-errors \
-                -o "$attached" \
-                -w '%{http_code}' \
-                --url-query "access_token=$GITEE_TOKEN" \
-                --url-query 'per_page=100' \
-                "$api"); then
-                if [ "$status" = "200" ]; then
-                  if ! jq -e 'type == "array"' "$attached" >/dev/null; then
-                    echo "Gitee prerelease returned an invalid asset list." >&2
-                    return 2
-                  fi
-                  break
-                fi
-              else
-                status=000
-              fi
-              if [ "$attempt" -lt 3 ]; then
-                printf 'Retrying Gitee prerelease asset list (%s/3, HTTP %s)\n' "$attempt" "$status" >&2
-                sleep $((attempt * 3))
-              fi
-            done
-            if [ "${status:-000}" != "200" ]; then
-              echo "Unable to list Gitee prerelease assets safely." >&2
-              return 1
-            fi
-            if ! jq -e 'all(.[]; (.name | type == "string") and (.id | type == "number") and (.size | type == "number"))' "$attached" >/dev/null; then
-              echo "Gitee prerelease returned an invalid asset record." >&2
-              return 2
-            fi
-            if ! jq -e 'group_by(.name) | all(.[]; length == 1)' "$attached" >/dev/null; then
-              echo "Gitee prerelease contains duplicate asset names." >&2
-              return 2
-            fi
-            while IFS= read -r actual_name; do
-              grep -F -x -- "$actual_name" "$expected_names" >/dev/null || {
-                echo "Gitee prerelease contains an unexpected asset." >&2
-                return 2
-              }
-            done < <(jq -r '.[].name' "$attached")
-          }
-
-          fetch_assets
-          while IFS=$'\t' read -r checksum size name; do
-            matches=$(jq --arg name "$name" '[.[] | select(.name == $name)] | length' "$attached")
-            if [ "$matches" -eq 1 ]; then
-              existing_size=$(jq -r --arg name "$name" '.[] | select(.name == $name) | .size' "$attached")
-              if [ "$existing_size" != "$size" ]; then
-                echo "Existing prerelease asset has an unexpected size: $name" >&2
-                exit 1
-              fi
-              continue
-            fi
-            if [ "$matches" -ne 0 ]; then
-              echo "Existing prerelease asset has a duplicate name: $name" >&2
-              exit 1
-            fi
-
-            uploaded=false
-            for attempt in 1 2 3 4; do
-              response="$RUNNER_TEMP/gitee-upload-response.json"
-              if upload_status=$(curl -sS --connect-timeout 30 --max-time 900 \
-                -o "$response" \
-                -w '%{http_code}' \
-                -X POST \
-                -F "access_token=$GITEE_TOKEN" \
-                -F "file=@release-assets/$name" \
-                "$api"); then
-                :
-              else
-                upload_status=000
-              fi
-              if fetch_assets; then
-                matches=$(jq --arg name "$name" '[.[] | select(.name == $name)] | length' "$attached")
-                if [ "$matches" -eq 1 ]; then
-                  uploaded_size=$(jq -r --arg name "$name" '.[] | select(.name == $name) | .size' "$attached")
-                  if [ "$uploaded_size" = "$size" ]; then
-                    uploaded=true
-                    break
-                  fi
-                fi
-              else
-                fetch_status=$?
-                if [ "$fetch_status" -ne 1 ]; then
-                  exit "$fetch_status"
-                fi
-              fi
-              printf 'Retrying %s (%s/4, HTTP %s)\n' "$name" "$attempt" "$upload_status" >&2
-              sleep $((attempt * 5))
-            done
-            if [ "$uploaded" != true ]; then
-              echo "Upload failed or produced an invalid asset: $name" >&2
-              exit 1
-            fi
-          done < "$manifest"
-
-      - name: Verify every staged Gitee prerelease asset
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
-        run: |
-          set -euo pipefail
-          api="https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/releases/$RELEASE_ID/attach_files"
-          manifest="$RUNNER_TEMP/gitee-expected-assets.tsv"
-          attached="$RUNNER_TEMP/gitee-attached-assets.json"
-          expected_count=$(wc -l < "$manifest" | tr -d ' ')
-          status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            -o "$attached" \
-            -w '%{http_code}' \
-            --url-query "access_token=$GITEE_TOKEN" \
-            --url-query 'per_page=100' \
-            "$api")
-          if [ "$status" != "200" ] || ! jq -e 'type == "array"' "$attached" >/dev/null; then
-            echo "Unable to list staged Gitee assets safely." >&2
-            exit 1
-          fi
-          actual_count=$(jq 'length' "$attached")
-          test "$actual_count" -eq "$expected_count"
-          jq -e 'group_by(.name) | all(.[]; length == 1)' "$attached" >/dev/null
-
-          download_dir=$(mktemp -d "$RUNNER_TEMP/gitee-release-assets.XXXXXX")
-          trap 'rm -rf "$download_dir"' EXIT
-          while IFS=$'\t' read -r checksum size name; do
-            record=$(jq -c --arg name "$name" '[.[] | select(.name == $name)]' "$attached")
-            test "$(jq 'length' <<<"$record")" -eq 1
-            attachment_id=$(jq -r '.[0].id' <<<"$record")
-            attachment_size=$(jq -r '.[0].size' <<<"$record")
-            test "$attachment_size" = "$size"
-            curl -fsSL --connect-timeout 30 --max-time 900 \
-              --url-query "access_token=$GITEE_TOKEN" \
-              "$api/$attachment_id/download" \
-              -o "$download_dir/$name"
-            actual_checksum=$(sha256sum "$download_dir/$name" | awk '{print $1}')
-            test "$actual_checksum" = "$checksum"
-          done < "$manifest"
-
-      - name: Finalize verified Gitee prerelease
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
-        run: |
-          set -euo pipefail
-          api="https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/releases/$RELEASE_ID"
-          response="$RUNNER_TEMP/gitee-release-finalized.json"
-          status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            -o "$response" \
-            -w '%{http_code}' \
-            -X PATCH \
-            -F "access_token=$GITEE_TOKEN" \
-            -F "tag_name=$RELEASE_TAG" \
-            -F "name=哒哒助手 v1.0" \
-            -F "body=哒哒助手 v1.0 国内发行版。Windows 可直接下载安装；macOS 使用 ZIP 封装的 DMG，可执行仓库首页的一键安装命令。" \
-            -F "prerelease=false" \
-            "$api")
-          if [ "$status" != "200" ] || ! jq -e --argjson release_id "$RELEASE_ID" \
-            '.id == $release_id and .tag_name == env.RELEASE_TAG and .target_commitish == env.RELEASE_COMMIT and .prerelease == false' "$response" >/dev/null; then
-            echo "::error title=Gitee release finalization failed::The verified prerelease was left intact and was not deleted."
-            exit 1
-          fi
-
-      - name: Verify final public Gitee downloads
-        run: |
-          set -euo pipefail
-          manifest="$RUNNER_TEMP/gitee-expected-assets.tsv"
-          download_dir=$(mktemp -d "$RUNNER_TEMP/gitee-public-release-assets.XXXXXX")
-          trap 'rm -rf "$download_dir"' EXIT
-          while IFS=$'\t' read -r checksum size name; do
-            downloaded=false
-            for attempt in 1 2 3 4; do
-              url="https://gitee.com/${GITEE_REPOSITORY}/releases/download/${RELEASE_TAG}/${name}"
-              if curl -fsSL --connect-timeout 30 --max-time 900 \
-                --retry 1 --retry-all-errors \
-                "$url" -o "$download_dir/$name"; then
-                actual_checksum=$(sha256sum "$download_dir/$name" | awk '{print $1}')
-                if [ "$actual_checksum" = "$checksum" ]; then
-                  downloaded=true
-                  break
-                fi
-              fi
-              sleep $((attempt * 5))
-            done
-            if [ "$downloaded" != true ]; then
-              echo "Final public Gitee download did not match the verified asset: $name" >&2
-              exit 1
-            fi
-          done < "$manifest"
-
-  publish-github-release:
-    permissions:
-      contents: write
-    needs: gitee-release
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      RELEASE_TAG: ${{ github.ref_name }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - name: Publish the verified GitHub draft release
+      - name: 下载 GitHub Prerelease 四资产
         shell: bash
         run: |
           set -euo pipefail
-          draft_response="$RUNNER_TEMP/github-draft-release.json"
-          draft_asset_names="$RUNNER_TEMP/github-draft-asset-names.txt"
-          published_response="$RUNNER_TEMP/github-published-release.json"
-          published_asset_names="$RUNNER_TEMP/github-published-asset-names.txt"
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          jq -e '.tag_name == env.RELEASE_TAG and .draft == false and .prerelease == true and (.assets | length) == 4' <<< "$release" >/dev/null
+          mkdir release-assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets
 
-          validate_release() {
-            local response="$1"
-            local expected_draft="$2"
-            local asset_names="$3"
-            local arm64_count x64_count dmg_count checksum_count
+      - name: 同步、验真并公开 Gitee Release
+        run: bash scripts/release/publish-gitee-release.sh
 
-            jq -e --argjson expected_draft "$expected_draft" '
-              .tag_name == env.RELEASE_TAG and
-              .draft == $expected_draft and
-              .prerelease == false and
-              (.assets | type == "array") and
-              all(.assets[]; (.name | type == "string") and (.size | type == "number") and .size > 0)
-            ' "$response" >/dev/null
+  gitee-install-smoke:
+    name: Gitee 版本化命令全安装
+    needs: gitee-final
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      tag: ${{ github.ref_name }}
+      source: gitee
 
-            jq -r '.assets[].name' "$response" | LC_ALL=C sort > "$asset_names"
-            test "$(wc -l < "$asset_names" | tr -d ' ')" -eq 4
-            test "$(sort -u "$asset_names" | wc -l | tr -d ' ')" -eq 4
-            arm64_count=$(awk '/_arm64-setup\.exe$/ { count++ } END { print count + 0 }' "$asset_names")
-            x64_count=$(awk '/_x64-setup\.exe$/ { count++ } END { print count + 0 }' "$asset_names")
-            dmg_count=$(awk '/_universal\.dmg$/ { count++ } END { print count + 0 }' "$asset_names")
-            checksum_count=$(awk '$0 == "checksums.txt" { count++ } END { print count + 0 }' "$asset_names")
-            test "$arm64_count" -eq 1
-            test "$x64_count" -eq 1
-            test "$dmg_count" -eq 1
-            test "$checksum_count" -eq 1
+  github-final:
+    name: 公开 GitHub Final
+    needs: gitee-install-smoke
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Prerelease 转为 Final 并验证
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$RUNNER_TEMP/before.json"
+          after="$RUNNER_TEMP/after.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$before"
+          jq -e '.draft == false and .prerelease == true and (.assets | length) == 4' "$before" >/dev/null
+          jq -r '.assets[] | [.name, .size] | @tsv' "$before" | LC_ALL=C sort > "$RUNNER_TEMP/before-assets.tsv"
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$after"
+          jq -e '.draft == false and .prerelease == false and (.assets | length) == 4' "$after" >/dev/null
+          jq -r '.assets[] | [.name, .size] | @tsv' "$after" | LC_ALL=C sort > "$RUNNER_TEMP/after-assets.tsv"
+          diff -u "$RUNNER_TEMP/before-assets.tsv" "$RUNNER_TEMP/after-assets.tsv"
+
+  latest-endpoints:
+    name: 验证两源 latest 和资产一致性
+    needs: github-final
+    environment: production-release
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+    steps:
+      - name: 下载 latest 校验和并逐资产比对
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir github gitee
+          github_base="https://github.com/$GITHUB_REPOSITORY/releases/latest/download"
+          github_latest=""
+          for attempt in 1 2 3 4 5 6 7; do
+            if github_latest=$(curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 \
+              --connect-timeout 20 --max-time 60 \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest") \
+              && jq -e --arg tag "$RELEASE_TAG" \
+                '.tag_name == $tag and .draft == false and .prerelease == false' \
+                <<< "$github_latest" >/dev/null; then
+              break
+            fi
+            github_latest=""
+            [ "$attempt" -eq 7 ] || sleep $((attempt * 5))
+          done
+          test -n "$github_latest"
+
+          gitee_latest=""
+          for attempt in 1 2 3 4 5 6 7; do
+            if gitee_latest=$(curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 \
+              --connect-timeout 20 --max-time 60 \
+              "https://gitee.com/api/v5/repos/$GITEE_REPOSITORY/releases/latest") \
+              && jq -e --arg tag "$RELEASE_TAG" \
+                '.tag_name == $tag and .prerelease == false' \
+                <<< "$gitee_latest" >/dev/null; then
+              break
+            fi
+            gitee_latest=""
+            [ "$attempt" -eq 7 ] || sleep $((attempt * 5))
+          done
+          test -n "$gitee_latest"
+          gitee_latest_tag=$(jq -r '.tag_name // empty' <<< "$gitee_latest")
+          gitee_base="https://gitee.com/$GITEE_REPOSITORY/releases/download/$gitee_latest_tag"
+
+          download_with_retries() {
+            url="$1"
+            destination="$2"
+            maximum_bytes="$3"
+            maximum_time="$4"
+            for attempt in 1 2 3 4; do
+              rm -f "$destination"
+              if curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 \
+                --connect-timeout 30 --max-time "$maximum_time" --max-filesize "$maximum_bytes" \
+                "$url" -o "$destination"; then
+                return 0
+              fi
+              [ "$attempt" -eq 4 ] || sleep $((attempt * 5))
+            done
+            return 1
           }
 
-          rm -f "$draft_response"
-          if status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            --retry 2 --retry-all-errors \
-            -o "$draft_response" \
-            -w '%{http_code}' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG"); then
-            :
-          else
-            status=000
-          fi
-          if [ "$status" != "200" ]; then
-            echo "::error title=GitHub draft is unavailable::Refusing to publish an unknown release."
-            exit 1
-          fi
-          validate_release "$draft_response" true "$draft_asset_names"
-
-          gh release edit "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --draft=false \
-            --verify-tag
-
-          rm -f "$published_response"
-          if status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            --retry 2 --retry-all-errors \
-            -o "$published_response" \
-            -w '%{http_code}' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG"); then
-            :
-          else
-            status=000
-          fi
-          if [ "$status" != "200" ]; then
-            echo "::error title=GitHub release lookup failed::Could not verify publication."
-            exit 1
-          fi
-          validate_release "$published_response" false "$published_asset_names"
-          diff -u "$draft_asset_names" "$published_asset_names"
+          download_with_retries "$github_base/checksums.txt" github/checksums.txt 65536 60
+          download_with_retries "$gitee_base/checksums.txt" gitee/checksums.txt 65536 60
+          cmp github/checksums.txt gitee/checksums.txt
+          test "$(wc -l < github/checksums.txt | tr -d ' ')" -eq 3
+          expected_version="${RELEASE_TAG#v}"
+          expected_names=$(printf '%s\n' \
+            "Dada-Assistant_${expected_version}_x64-setup.exe" \
+            "Dada-Assistant_${expected_version}_arm64-setup.exe" \
+            "Dada-Assistant_${expected_version}_universal.dmg" | LC_ALL=C sort)
+          actual_names=$(awk 'NF == 2 { print $2 }' github/checksums.txt | LC_ALL=C sort)
+          test "$actual_names" = "$expected_names"
+          while read -r checksum name extra; do
+            test -z "${extra:-}"
+            [[ "$checksum" =~ ^[0-9a-f]{64}$ ]]
+            case "$name" in */*|*\\*|[-.]*) exit 1 ;; esac
+            download_with_retries "$github_base/$name" "github/$name" 1073741824 900
+            download_with_retries "$gitee_base/$name" "gitee/$name" 1073741824 900
+            test "$(sha256sum "github/$name" | awk '{ print $1 }')" = "$checksum"
+            test "$(sha256sum "gitee/$name" | awk '{ print $1 }')" = "$checksum"
+            cmp "github/$name" "gitee/$name"
+          done < github/checksums.txt
