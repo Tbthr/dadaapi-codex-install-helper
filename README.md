@@ -50,16 +50,16 @@ pnpm --dir apps/desktop tauri build
 
 用户态 Release 仅分发 Windows/macOS 安装包和 `checksums.txt`，客户端不会检查或下载在线更新。GitHub 与 Gitee 必须各自包含且仅包含 `Dada-Assistant_<version>_x64-setup.exe`、`Dada-Assistant_<version>_arm64-setup.exe`、`Dada-Assistant_<version>_universal.dmg` 和 `checksums.txt`。没有 Release 时，安装命令会返回失败，不会伪造成功。
 
-macOS 应用使用 ad-hoc 签名并安装到当前用户的 `~/Applications/哒哒助手.app`，脚本会在该用户目录清除 quarantine；Windows 安装器不含 Authenticode，使用 `currentUser` 模式并在运行前解除下载区块。两端安装均不调用 `sudo`、不请求 UAC 提升，也不修改系统全局执行策略。SHA-256 用于确认下载资产与 Release 清单一致，但不等同于 Apple 或 Windows 的发布者认证。
+macOS 应用使用 ad-hoc 签名并安装到当前用户的 `~/Applications/哒哒助手.app`；首次打开时 macOS 可能显示未验证开发者提示，需要用户在系统提示中确认。Windows 安装器不含 Authenticode，使用 `currentUser` 模式；首次运行时 Windows 可能显示 SmartScreen 提示，需要用户确认运行。两端安装均不调用 `sudo`、不请求 UAC 提升，也不清除 quarantine、解除下载区块或修改系统全局执行策略。SHA-256 用于确认下载资产与 Release 清单一致，但不等同于 Apple 或 Windows 的发布者认证。
 
 生产 Gitee 镜像为 `lyq_power/dadaapi-codex-install-helper`。GitHub Actions 使用 `production-release` Environment 中的 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper`、`GITEE_USERNAME=lyq_power` 和 `GITEE_TOKEN` 同步 `main`、标签、Release 资产和 `msix-links` 元数据分支；该分支仅保存指向 Microsoft 官方短期下载地址的 JSON，不托管安装包。令牌不写入仓库、本地配置或安装脚本。
 
-下列入口脚本固定来自不可变的 `v1.0.0` 标签；脚本默认安装两端最新正式版本。Windows 命令使用系统 `curl.exe` 限制 HTTPS 和重定向，将脚本完整下载到当前用户临时目录，确认真实退出码并按严格 UTF-8 读取到内存后执行，最后清理：
+下列入口脚本固定来自不可变的 `v1.0.7` 标签；脚本默认安装两端最新正式版本。Windows 命令使用系统 `curl.exe` 限制 HTTPS 和重定向，将脚本完整下载到当前用户临时目录，确认真实退出码并按严格 UTF-8 读取到内存后执行，最后清理：
 
 Windows（Gitee 默认入口，严格 Gitee 优先）：
 
 ```powershell
-$u = "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.0/scripts/install.ps1"
+$u = "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.7/scripts/install.ps1"
 $d = Join-Path ([IO.Path]::GetTempPath()) ("DadaBootstrap-" + [Guid]::NewGuid().ToString("N"))
 $p = Join-Path $d "install.ps1"
 try {
@@ -81,7 +81,7 @@ installer_file=$(mktemp "${TMPDIR:-/tmp}/dada-assistant-bootstrap.XXXXXX") || ex
 trap 'rm -f "$installer_file"' EXIT HUP INT TERM
 curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-timeout 10 --max-time 60 \
   --max-filesize 1048576 \
-  https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.0/scripts/install.sh \
+  https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.7/scripts/install.sh \
   -o "$installer_file" || exit $?
 /bin/sh "$installer_file"
 ```
@@ -89,7 +89,7 @@ curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-time
 仅当 Gitee 发生网络错误、超时或 `5xx` 时，默认命令才回退 GitHub。`4xx`、校验和格式、重复资产、版本或 SHA-256 错误会直接停止。GitHub 明确备用入口如下：
 
 ```powershell
-$u = "https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.0/scripts/install.ps1"
+$u = "https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.7/scripts/install.ps1"
 $d = Join-Path ([IO.Path]::GetTempPath()) ("DadaBootstrap-" + [Guid]::NewGuid().ToString("N"))
 $p = Join-Path $d "install.ps1"
 $previousSource = [Environment]::GetEnvironmentVariable("DADA_ASSISTANT_INSTALL_SOURCE", "Process")
@@ -114,7 +114,7 @@ installer_file=$(mktemp "${TMPDIR:-/tmp}/dada-assistant-bootstrap.XXXXXX") || ex
 trap 'rm -f "$installer_file"' EXIT HUP INT TERM
 curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-timeout 10 --max-time 60 \
   --max-filesize 1048576 \
-  https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.0/scripts/install.sh \
+  https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.7/scripts/install.sh \
   -o "$installer_file" || exit $?
 DADA_ASSISTANT_INSTALL_SOURCE=github /bin/sh "$installer_file"
 ```
