@@ -487,7 +487,6 @@ function Invoke-InstallerMain {
             return
         }
 
-        Unblock-File -LiteralPath $release.Path -ErrorAction Stop
         Write-Host "正在启动哒哒助手安装器……"
         $process = if ($env:DADA_ASSISTANT_INSTALL_CI_SILENT -eq "1") {
             Start-Process -FilePath $release.Path -ArgumentList "/S" -Wait -PassThru

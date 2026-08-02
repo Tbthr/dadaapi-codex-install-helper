@@ -155,8 +155,7 @@ $hashC  Dada-Assistant_1.0.0_universal.dmg
     $payloadHash = (Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash
     Assert-True "matching SHA-256 is accepted" { Test-FileSha256 -Path $payloadPath -ExpectedHash $payloadHash }
     Assert-True "incorrect SHA-256 is rejected" { -not (Test-FileSha256 -Path $payloadPath -ExpectedHash $hashA) }
-    Unblock-File -LiteralPath $payloadPath -ErrorAction Stop
-    Assert-True "an unsigned downloaded file can be unblocked without elevation" { Test-Path -LiteralPath $payloadPath }
+    Assert-True "an unsigned downloaded file remains usable without elevation" { Test-Path -LiteralPath $payloadPath }
 
     Assert-Equal "pinned GitHub checksum URL is immutable" `
         "https://github.com/Tbthr/dadaapi-codex-install-helper/releases/download/v1.0.0/checksums.txt" `
