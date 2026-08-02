@@ -54,12 +54,12 @@ macOS 应用使用 ad-hoc 签名并安装到当前用户的 `~/Applications/哒�
 
 生产 Gitee 镜像为 `lyq_power/dadaapi-codex-install-helper`。GitHub Actions 使用 `production-release` Environment 中的 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper`、`GITEE_USERNAME=lyq_power` 和 `GITEE_TOKEN` 同步 `main`、标签、Release 资产和 `msix-links` 元数据分支；该分支仅保存指向 Microsoft 官方短期下载地址的 JSON，不托管安装包。令牌不写入仓库、本地配置或安装脚本。
 
-下列入口脚本固定来自不可变的 `v1.0.8` 标签；脚本默认安装两端最新正式版本。Windows 命令使用系统 `curl.exe` 限制 HTTPS 和重定向，将脚本完整下载到当前用户临时目录，确认真实退出码并按严格 UTF-8 读取到内存后执行，最后清理：
+下列入口脚本固定来自不可变的 `v1.0.9` 标签；脚本默认安装两端最新正式版本。Windows 命令使用系统 `curl.exe` 限制 HTTPS 和重定向，将脚本完整下载到当前用户临时目录，确认真实退出码并按严格 UTF-8 读取到内存后执行，最后清理：
 
 Windows（Gitee 默认入口，严格 Gitee 优先）：
 
 ```powershell
-$u = "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.8/scripts/install.ps1"
+$u = "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.9/scripts/install.ps1"
 $d = Join-Path ([IO.Path]::GetTempPath()) ("DadaBootstrap-" + [Guid]::NewGuid().ToString("N"))
 $p = Join-Path $d "install.ps1"
 try {
@@ -81,7 +81,7 @@ installer_file=$(mktemp "${TMPDIR:-/tmp}/dada-assistant-bootstrap.XXXXXX") || ex
 trap 'rm -f "$installer_file"' EXIT HUP INT TERM
 curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-timeout 10 --max-time 60 \
   --max-filesize 1048576 \
-  https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.8/scripts/install.sh \
+  https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.9/scripts/install.sh \
   -o "$installer_file" || exit $?
 /bin/sh "$installer_file"
 ```
@@ -89,7 +89,7 @@ curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-time
 仅当 Gitee 发生网络错误、超时或 `5xx` 时，默认命令才回退 GitHub。`4xx`、校验和格式、重复资产、版本或 SHA-256 错误会直接停止。GitHub 明确备用入口如下：
 
 ```powershell
-$u = "https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.8/scripts/install.ps1"
+$u = "https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.9/scripts/install.ps1"
 $d = Join-Path ([IO.Path]::GetTempPath()) ("DadaBootstrap-" + [Guid]::NewGuid().ToString("N"))
 $p = Join-Path $d "install.ps1"
 $previousSource = [Environment]::GetEnvironmentVariable("DADA_ASSISTANT_INSTALL_SOURCE", "Process")
@@ -114,12 +114,12 @@ installer_file=$(mktemp "${TMPDIR:-/tmp}/dada-assistant-bootstrap.XXXXXX") || ex
 trap 'rm -f "$installer_file"' EXIT HUP INT TERM
 curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-timeout 10 --max-time 60 \
   --max-filesize 1048576 \
-  https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.8/scripts/install.sh \
+  https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.9/scripts/install.sh \
   -o "$installer_file" || exit $?
 DADA_ASSISTANT_INSTALL_SOURCE=github /bin/sh "$installer_file"
 ```
 
-安装器稳定参数为 `DADA_ASSISTANT_INSTALL_VERSION=latest|vN.N.N` 与 `DADA_ASSISTANT_INSTALL_SOURCE=auto|gitee|github`。例如在执行下载后的脚本前设置 `DADA_ASSISTANT_INSTALL_VERSION=v1.0.8`，即可固定安装当前正式版本 `v1.0.8`。`v1.0.0` 至 `v1.0.7` 仅保留不可变标签。脚本只安装并启动哒哒助手，不写入中文配置或系统代理。
+安装器稳定参数为 `DADA_ASSISTANT_INSTALL_VERSION=latest|vN.N.N` 与 `DADA_ASSISTANT_INSTALL_SOURCE=auto|gitee|github`。例如在执行下载后的脚本前设置 `DADA_ASSISTANT_INSTALL_VERSION=v1.0.9`，即可固定安装当前正式版本 `v1.0.9`。`v1.0.0` 至 `v1.0.8` 仅保留不可变标签。脚本只安装并启动哒哒助手，不写入中文配置或系统代理。
 
 ## 配置中文
 

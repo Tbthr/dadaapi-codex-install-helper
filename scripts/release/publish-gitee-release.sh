@@ -174,22 +174,53 @@ fetch_attachments() {
   ' "$attachments" >/dev/null
 }
 
-fetch_attachments
-while IFS=$'\t' read -r expected_checksum expected_size name; do
+attachment_matches_manifest() {
+  local name="$1"
+  local expected_size="$2"
+  local match_count attached_size
+
   match_count=$(jq --arg name "$name" '[.[] | select(.name == $name)] | length' "$attachments")
-  if [ "$match_count" -eq 0 ]; then
-    upload_response="${RUNNER_TEMP:-/tmp}/gitee-upload.json"
-    upload_status=$(curl -sS --connect-timeout 30 --max-time 900 \
+  [ "$match_count" -eq 1 ] || return 1
+  attached_size=$(jq -r --arg name "$name" '.[] | select(.name == $name) | .size' "$attachments")
+  [ "$attached_size" = "$expected_size" ]
+}
+
+upload_attachment() {
+  local name="$1"
+  local expected_size="$2"
+  local upload_response upload_status attempt
+
+  upload_response="${RUNNER_TEMP:-/tmp}/gitee-upload.json"
+  for attempt in 1 2 3; do
+    upload_status=$(curl -sS --http1.1 --connect-timeout 20 --max-time 180 \
       -o "$upload_response" \
       -w '%{http_code}' \
       -X POST \
       -H "$gitee_authorization" \
+      -H 'Expect:' \
       -F "file=@$RELEASE_ASSETS_DIRECTORY/$name;filename=$name;type=application/octet-stream" \
-      "$attachments_api")
-    if [ "$upload_status" != 201 ] && [ "$upload_status" != 200 ]; then
-      echo "Failed to upload Gitee asset: $name" >&2
-      exit 1
+      "$attachments_api") || upload_status=000
+    if [ "$upload_status" = 201 ] || [ "$upload_status" = 200 ]; then
+      return 0
     fi
+
+    # Gitee can finish storing an asset after the client times out waiting for
+    # the response. Re-read the release before retrying to avoid duplicates.
+    if fetch_attachments && attachment_matches_manifest "$name" "$expected_size"; then
+      return 0
+    fi
+    [ "$attempt" -eq 3 ] || sleep $((attempt * 5))
+  done
+
+  echo "Failed to upload Gitee asset after retries: $name" >&2
+  return 1
+}
+
+fetch_attachments
+while IFS=$'\t' read -r expected_checksum expected_size name; do
+  match_count=$(jq --arg name "$name" '[.[] | select(.name == $name)] | length' "$attachments")
+  if [ "$match_count" -eq 0 ]; then
+    upload_attachment "$name" "$expected_size"
     fetch_attachments
     match_count=$(jq --arg name "$name" '[.[] | select(.name == $name)] | length' "$attachments")
   fi
