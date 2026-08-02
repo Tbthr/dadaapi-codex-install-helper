@@ -203,13 +203,15 @@ jobs:
           response="$RUNNER_TEMP/github-release.json"
           github_release_by_tag "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$response"
           if jq -e '. == null' "$response" >/dev/null; then
-            gh release create "$RELEASE_TAG" release-assets/* \
+            if ! gh release create "$RELEASE_TAG" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --draft \
               --prerelease \
               --title "哒哒助手 $RELEASE_TAG" \
-              --notes "哒哒助手 $RELEASE_TAG 正式候选。仅包含三个用户态安装包与 checksums.txt；完成两源安装门禁后自动转为正式版。"
+              --notes "哒哒助手 $RELEASE_TAG 正式候选。仅包含三个用户态安装包与 checksums.txt；完成两源安装门禁后自动转为正式版。"; then
+              echo "::warning title=GitHub release CLI returned an error::Verifying whether the Draft and all assets were created before failing."
+            fi
           elif jq -e '.tag_name == env.RELEASE_TAG and .draft == true' "$response" >/dev/null; then
             existing="$RUNNER_TEMP/existing-assets"
             mkdir "$existing"

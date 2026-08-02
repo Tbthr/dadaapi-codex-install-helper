@@ -1,6 +1,6 @@
 # User-Scoped Release Runbook
 
-本文档用于首个公开 Release `v1.0.2` 及后续补丁版本。`v1.0.0` 与 `v1.0.1` 仅保留不可变源码标签，没有公开资产。发行包不使用 Apple Developer ID、公证或 Windows Authenticode，安装命令通过用户目录安装和系统下载区块移除实现无管理员密码安装。
+本文档用于首个正式 Release `v1.0.3` 及后续补丁版本。`v1.0.0` 与 `v1.0.1` 仅保留不可变源码标签；`v1.0.2` 未通过远程安装门禁，仅保留为 Prerelease。发行包不使用 Apple Developer ID、公证或 Windows Authenticode，安装命令通过用户目录安装和系统下载区块移除实现无管理员密码安装。
 
 ## 1. Repository Governance
 
@@ -46,8 +46,8 @@ Variables:
 git fetch origin main --tags
 git switch main
 git pull --ff-only origin main
-git tag -a v1.0.2 -m "Release v1.0.2"
-git push origin refs/tags/v1.0.2
+git tag -a v1.0.3 -m "Release v1.0.3"
+git push origin refs/tags/v1.0.3
 ```
 
 不得移动、删除或重新创建任何已推送标签。发布失败时修复根因、统一增加补丁版本，并从新的当前 `main` 创建新标签。
