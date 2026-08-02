@@ -82,6 +82,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          source scripts/release/gitee-api.sh
           github_response="$RUNNER_TEMP/github-release.json"
           github_status=$(curl -sS --connect-timeout 20 --max-time 60 \
             -o "$github_response" -w '%{http_code}' \
@@ -104,16 +105,15 @@ jobs:
             -o "$gitee_response" -w '%{http_code}' \
             -H "Authorization: token $GITEE_TOKEN" \
             "https://gitee.com/api/v5/repos/$GITEE_REPOSITORY/releases/tags/$GITHUB_REF_NAME")
-          case "$gitee_status" in
-            404) ;;
-            200)
-              jq -e '.tag_name == env.GITHUB_REF_NAME and .prerelease == true' "$gitee_response" >/dev/null || {
-                echo "::error title=Final Gitee release exists::Publish a new patch version; never replace final assets."
-                exit 1
-              }
-              ;;
-            *) exit 1 ;;
-          esac
+          if gitee_release_is_absent "$gitee_status" "$gitee_response"; then
+            :
+          elif [ "$gitee_status" = 200 ] &&
+            jq -e '.tag_name == env.GITHUB_REF_NAME and .prerelease == true' "$gitee_response" >/dev/null; then
+            :
+          else
+            echo "::error title=Final Gitee release exists::Publish a new patch version; never replace final assets."
+            exit 1
+          fi
 
   quality:
     name: 完整代码与安装脚本检查
@@ -149,6 +149,7 @@ jobs:
       - run: pnpm --dir apps/desktop check
       - run: pnpm --dir apps/desktop build
       - run: /bin/sh scripts/tests/install-sh-tests.sh
+      - run: bash scripts/tests/gitee-api-tests.sh
       - run: bash scripts/check-licenses.sh
 
   signed-build:

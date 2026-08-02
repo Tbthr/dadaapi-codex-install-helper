@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$script_directory/gitee-api.sh"
+
 required=(
   RELEASE_TAG
   RELEASE_COMMIT
@@ -124,38 +127,34 @@ release_status=$(curl -sS --connect-timeout 20 --max-time 60 \
   -w '%{http_code}' \
   -H "$gitee_authorization" \
   "$release_api/tags/$RELEASE_TAG")
-case "$release_status" in
-  200)
-    if ! jq -e '.tag_name == env.RELEASE_TAG and .target_commitish == env.RELEASE_COMMIT and .prerelease == true and (.id | type == "number")' "$release_response" >/dev/null; then
-      echo "Refusing to alter an existing final or mismatched Gitee release." >&2
-      exit 1
-    fi
-    release_id=$(jq -r '.id' "$release_response")
-    ;;
-  404)
-    created_response="${RUNNER_TEMP:-/tmp}/gitee-release-created.json"
-    create_status=$(curl -sS --connect-timeout 20 --max-time 60 \
-      -o "$created_response" \
-      -w '%{http_code}' \
-      -X POST \
-      -H "$gitee_authorization" \
-      -F "tag_name=$RELEASE_TAG" \
-      -F "name=哒哒助手 $RELEASE_TAG（验证中）" \
-      -F "body=四个正式资产正在完成公开下载校验；验证完成前请勿使用。" \
-      -F "target_commitish=$RELEASE_COMMIT" \
-      -F "prerelease=true" \
-      "$release_api")
-    if [ "$create_status" != 201 ] || ! jq -e '.tag_name == env.RELEASE_TAG and .target_commitish == env.RELEASE_COMMIT and .prerelease == true and (.id | type == "number")' "$created_response" >/dev/null; then
-      echo "Unable to create the staged Gitee release." >&2
-      exit 1
-    fi
-    release_id=$(jq -r '.id' "$created_response")
-    ;;
-  *)
+if gitee_release_is_absent "$release_status" "$release_response"; then
+  created_response="${RUNNER_TEMP:-/tmp}/gitee-release-created.json"
+  create_status=$(curl -sS --connect-timeout 20 --max-time 60 \
+    -o "$created_response" \
+    -w '%{http_code}' \
+    -X POST \
+    -H "$gitee_authorization" \
+    -F "tag_name=$RELEASE_TAG" \
+    -F "name=哒哒助手 $RELEASE_TAG（验证中）" \
+    -F "body=四个正式资产正在完成公开下载校验；验证完成前请勿使用。" \
+    -F "target_commitish=$RELEASE_COMMIT" \
+    -F "prerelease=true" \
+    "$release_api")
+  if [ "$create_status" != 201 ] || ! jq -e '.tag_name == env.RELEASE_TAG and .target_commitish == env.RELEASE_COMMIT and .prerelease == true and (.id | type == "number")' "$created_response" >/dev/null; then
+    echo "Unable to create the staged Gitee release." >&2
+    exit 1
+  fi
+  release_id=$(jq -r '.id' "$created_response")
+elif [ "$release_status" = 200 ]; then
+  if ! jq -e '.tag_name == env.RELEASE_TAG and .target_commitish == env.RELEASE_COMMIT and .prerelease == true and (.id | type == "number")' "$release_response" >/dev/null; then
+    echo "Refusing to alter an existing final or mismatched Gitee release." >&2
+    exit 1
+  fi
+  release_id=$(jq -r '.id' "$release_response")
+else
     echo "Unable to determine existing Gitee release state." >&2
     exit 1
-    ;;
-esac
+fi
 
 attachments_api="$release_api/$release_id/attach_files"
 attachments="${RUNNER_TEMP:-/tmp}/gitee-attachments.json"

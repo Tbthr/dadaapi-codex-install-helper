@@ -59,6 +59,7 @@ jobs:
       - run: /bin/sh -n scripts/tests/install-sh-tests.sh
       - run: /bin/sh scripts/tests/install-sh-tests.sh
       - run: bash -n scripts/release/publish-gitee-release.sh
+      - run: bash scripts/tests/gitee-api-tests.sh
 
   windows-installer:
     name: Windows 安装脚本契约 (${{ matrix.architecture }})
