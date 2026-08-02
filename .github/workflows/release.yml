@@ -237,18 +237,29 @@ jobs:
           fi
 
           verified="$RUNNER_TEMP/github-draft.json"
-          github_release_by_tag "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$verified"
-          jq -e '
-            .tag_name == env.RELEASE_TAG and
-            .draft == true and
-            .prerelease == true and
-            ([.assets[].name] | length) == 4 and
-            ([.assets[].name] | unique | length) == 4 and
-            ([.assets[].name | select(. == "checksums.txt")] | length == 1) and
-            ([.assets[].name | select(endswith("_x64-setup.exe"))] | length == 1) and
-            ([.assets[].name | select(endswith("_arm64-setup.exe"))] | length == 1) and
-            ([.assets[].name | select(endswith("_universal.dmg"))] | length == 1)
-          ' "$verified" >/dev/null
+          valid_draft=0
+          for attempt in 1 2 3 4 5 6; do
+            github_release_by_tag "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$verified"
+            if jq -e '
+              .tag_name == env.RELEASE_TAG and
+              .draft == true and
+              .prerelease == true and
+              ([.assets[].name] | length) == 4 and
+              ([.assets[].name] | unique | length) == 4 and
+              ([.assets[].name | select(. == "checksums.txt")] | length == 1) and
+              ([.assets[].name | select(endswith("_x64-setup.exe"))] | length == 1) and
+              ([.assets[].name | select(endswith("_arm64-setup.exe"))] | length == 1) and
+              ([.assets[].name | select(endswith("_universal.dmg"))] | length == 1)
+            ' "$verified" >/dev/null; then
+              valid_draft=1
+              break
+            fi
+            sleep 5
+          done
+          test "$valid_draft" -eq 1 || {
+            echo "GitHub Draft did not become complete within the verification window." >&2
+            exit 1
+          }
 
   github-prerelease:
     name: 公开 GitHub Prerelease
