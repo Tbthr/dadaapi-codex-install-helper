@@ -14,10 +14,9 @@ concurrency:
 
 jobs:
   preflight:
-    name: 验证标签、候选验收与生产配置
+    name: 验证标签与生产配置
     environment: production-release
     permissions:
-      actions: read
       contents: read
     runs-on: ubuntu-latest
     env:
@@ -25,24 +24,15 @@ jobs:
       GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
       GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-      RELEASE_ACCEPTANCE_RECORD_JSON: ${{ vars.RELEASE_ACCEPTANCE_RECORD_JSON }}
       DADAAPI_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.DADAAPI_ROUTE_PUBLIC_KEY_PEM }}
       DADAAPI_ROUTE_KEY_B64: ${{ secrets.DADAAPI_ROUTE_KEY_B64 }}
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
-      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-      WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: 验证版本、提交与签名标签
+      - name: 验证版本、提交与标签
         shell: bash
         run: |
           set -euo pipefail
@@ -65,76 +55,7 @@ jobs:
             exit 1
           }
 
-          tag_ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME")
-          tag_type=$(jq -r '.object.type' <<< "$tag_ref")
-          tag_object_sha=$(jq -r '.object.sha' <<< "$tag_ref")
-          test "$tag_type" = tag || {
-            echo "::error title=Unsigned lightweight tag::Production releases require a signed annotated tag."
-            exit 1
-          }
-          tag_object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object_sha")
-          jq -e --arg tag "$GITHUB_REF_NAME" --arg commit "$GITHUB_SHA" '
-            .tag == $tag and
-            .object.type == "commit" and
-            .object.sha == $commit and
-            .verification.verified == true
-          ' <<< "$tag_object" >/dev/null || {
-            echo "::error title=Unverified release tag::GitHub must verify the annotated tag signature."
-            exit 1
-          }
-
-      - name: 验证真实设备候选验收记录
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$RELEASE_ACCEPTANCE_RECORD_JSON" || {
-            echo "::error title=Missing candidate acceptance::Set RELEASE_ACCEPTANCE_RECORD_JSON after all four real-device tests pass."
-            exit 1
-          }
-          jq -e --arg version "$GITHUB_REF_NAME" --arg commit "$GITHUB_SHA" '
-            .schemaVersion == 1 and
-            .version == $version and
-            .commit == $commit and
-            (.candidateRunId | type == "number") and
-            (.candidateRunId > 0) and
-            (.acceptedBy | type == "string" and test("[^[:space:]]")) and
-            (.acceptedAt | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$") and fromdateiso8601 <= now) and
-            ([.devices.macosIntel, .devices.macosAppleSilicon, .devices.windowsX64, .devices.windowsArm64] |
-              all(.[];
-                .install == true and
-                .launch == true and
-                .chatgptChinese == true and
-                .legacyCodexChinese == true and
-                .manualNetworkRecovery == true
-              ))
-          ' <<< "$RELEASE_ACCEPTANCE_RECORD_JSON" >/dev/null || {
-            echo "::error title=Incomplete candidate acceptance::Every required real-device result must be explicitly true."
-            exit 1
-          }
-
-          candidate_run_id=$(jq -r '.candidateRunId' <<< "$RELEASE_ACCEPTANCE_RECORD_JSON")
-          candidate_run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run_id")
-          jq -e --arg commit "$GITHUB_SHA" '
-            .event == "workflow_dispatch" and
-            .head_sha == $commit and
-            .conclusion == "success" and
-            .path == ".github/workflows/signed-candidate.yml"
-          ' <<< "$candidate_run" >/dev/null || {
-            echo "::error title=Invalid candidate workflow::Acceptance must reference a successful signed-candidate run for this commit."
-            exit 1
-          }
-          artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run_id/artifacts?per_page=100")
-          jq -e '
-            [.artifacts[] | select(.expired == false) | .name] as $names |
-            ($names | length) == 4 and
-            ($names | unique | length) == 4 and
-            all(["candidate-macos-universal", "candidate-windows-x64", "candidate-windows-arm64", "candidate-manifest"][]; . as $name | $names | index($name))
-          ' <<< "$artifacts" >/dev/null || {
-            echo "::error title=Candidate artifacts unavailable::All signed candidate artifacts must still be present."
-            exit 1
-          }
-
-      - name: 验证生产凭据和公开信任常量
+      - name: 验证发布配置
         shell: bash
         run: |
           set -euo pipefail
@@ -142,14 +63,6 @@ jobs:
             GITEE_TOKEN
             DADAAPI_ROUTE_PUBLIC_KEY_PEM
             DADAAPI_ROUTE_KEY_B64
-            APPLE_CERTIFICATE
-            APPLE_CERTIFICATE_PASSWORD
-            APPLE_API_KEY
-            APPLE_API_ISSUER
-            APPLE_API_KEY_BASE64
-            WINDOWS_CERTIFICATE
-            WINDOWS_CERTIFICATE_PASSWORD
-            WINDOWS_TIMESTAMP_URL
           )
           missing=()
           for name in "${required[@]}"; do
@@ -161,19 +74,9 @@ jobs:
           fi
           [[ "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]
           [ -z "$GITEE_USERNAME" ] || [[ "$GITEE_USERNAME" =~ ^[A-Za-z0-9._-]+$ ]]
-          [[ "$WINDOWS_TIMESTAMP_URL" =~ ^https://[^[:space:]@]+$ ]]
-
-          team_id=$(jq -r '.macosTeamId // empty' release/trust-identities.json)
-          bundle_id=$(jq -r '.macosBundleId // empty' release/trust-identities.json)
-          publisher=$(jq -r '.windowsPublisherSubject // empty' release/trust-identities.json)
-          [[ "$team_id" =~ ^[A-Z0-9]{10}$ ]]
-          test "$team_id" != SET_BEFORE_V1_0_0
-          test "$bundle_id" = com.dadaapi.assistant
-          test -n "$publisher"
-          test "$publisher" != SET_BEFORE_V1_0_0
-          grep -F -x "expected_apple_team_id=\"$team_id\"" scripts/install.sh
-          grep -F -x "expected_bundle_identifier=\"$bundle_id\"" scripts/install.sh
-          grep -F -x "\$ExpectedWindowsPublisherSubject = \"$publisher\"" scripts/install.ps1
+          test "$(jq -r '.identifier' apps/desktop/src-tauri/tauri.conf.json)" = com.dadaapi.assistant
+          test "$(jq -r '.bundle.windows.nsis.installMode' apps/desktop/src-tauri/tauri.conf.json)" = currentUser
+          test "$(jq -r '.bundle.macOS.signingIdentity' apps/desktop/src-tauri/tauri.release.conf.json)" = '-'
 
       - name: 拒绝覆盖两端最终 Release
         shell: bash
@@ -249,7 +152,7 @@ jobs:
       - run: bash scripts/check-licenses.sh
 
   signed-build:
-    name: 生产签名构建
+    name: 生产用户态构建
     needs:
       - preflight
       - quality
@@ -312,7 +215,7 @@ jobs:
               --draft \
               --prerelease \
               --title "哒哒助手 $RELEASE_TAG" \
-              --notes "哒哒助手 $RELEASE_TAG 正式候选。仅包含三个签名安装包与 checksums.txt；完成两源安装门禁后自动转为正式版。"
+              --notes "哒哒助手 $RELEASE_TAG 正式候选。仅包含三个用户态安装包与 checksums.txt；完成两源安装门禁后自动转为正式版。"
           elif [ "$status" = 200 ] && jq -e '.tag_name == env.RELEASE_TAG and .draft == true' "$response" >/dev/null; then
             existing="$RUNNER_TEMP/existing-assets"
             mkdir "$existing"

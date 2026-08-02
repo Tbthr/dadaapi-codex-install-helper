@@ -1,4 +1,4 @@
-name: 生成私有签名候选包
+name: 生成私有用户态候选包
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: signed-candidate-${{ inputs.commit_sha }}
+  group: user-candidate-${{ inputs.commit_sha }}
   cancel-in-progress: false
 
 jobs:
@@ -44,7 +44,7 @@ jobs:
           printf 'sha=%s\n' "$main_sha" >> "$GITHUB_OUTPUT"
 
   signed-build:
-    name: 构建私有签名候选
+    name: 构建私有用户态候选
     needs: validate-main
     uses: ./.github/workflows/signed-build.yml
     with:

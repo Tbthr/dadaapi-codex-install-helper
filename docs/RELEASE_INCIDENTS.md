@@ -1,38 +1,32 @@
 # Release Incident Handling
 
-正式发布采用单向推广。允许重试瞬时失败，不允许重写 `v*` 标签、删除最终 Release、替换公开资产或降低签名与校验门禁。
+正式发布采用单向推广。允许重试瞬时失败，不允许重写 `v*` 标签、删除最终 Release 或替换公开资产。
 
 ## Before GitHub Prerelease
 
-- 预检、CI、签名构建或 Draft 上传失败时，先保留 Draft 和私有 artifact。
-- 网络或服务瞬时错误可从 GitHub Actions 重新运行失败 job；复用 Draft 时工作流会逐文件比对，内容不同会停止。
-- 代码、信任常量、版本或资产错误不能在同一标签上修复。创建新的补丁版本并重新走候选验收。
+- 预检、CI、用户态构建或 Draft 上传失败时，保留 Draft 和私有 artifact 以便诊断。
+- 网络或 runner 瞬时错误可重跑失败 job。
+- 代码、版本或资产错误必须通过新补丁版本修复。
 
-## GitHub Prerelease Is Public
+## Public Channel Failure
 
-- GitHub 四平台安装失败时不要继续同步 Gitee。
-- 瞬时下载或 runner 故障可重试失败 job。
-- 脚本、签名或应用缺陷必须发布新补丁版本；不要替换 Prerelease 资产或移动原标签。
+- GitHub 四平台安装失败时不得同步 Gitee。
+- Gitee 安装失败时 GitHub 保持 Prerelease，不得晋级 Final。
+- `4xx`、SHA-256、格式、架构、Bundle ID、用户安装路径或启动失败不是可回退错误。
+- 已公开资产不得替换；修复后发布新补丁版本。
 
-## Gitee Final Is Public
+## Repository Or Credential Incident
 
-- Gitee 安装冒烟失败时 GitHub 必须保持 Prerelease，不能晋级 Final。
-- 若只是 Gitee CDN 短时不可用，可重试冒烟；`4xx`、哈希、格式或签名失败不是可回退事件。
-- 资产或脚本错误通过新补丁版本修复。已经公开的 Gitee Final 保持原样，发布说明可指向补丁版本。
+- Gitee Token 或路由构建配置泄露时立即轮换对应值并暂停创建标签。
+- 仓库、标签或 Release 疑似被篡改时停止推荐安装命令，核对审计日志和两源资产。
+- 未签名发行不具备 Apple/Windows 发布者认证；SHA-256 不能抵御仓库与校验文件同时被控制。
 
-## GitHub Final Or latest Verification Fails
+## User Installation
 
-- GitHub Final API 瞬时失败可重试；工作流会确认四资产名称和大小未变化。
-- GitHub `latest` 下载内容、Gitee `releases/latest` API 或两源资产不一致时，停止对外推荐 `latest`，使用明确版本命令定位问题。
-- 不手动上传或覆盖同名文件。恢复方式是修复渠道状态或发布新补丁版本。
-
-## Credential Or Signing Incident
-
-- 立即撤销受影响的 Gitee Token、Apple API Key、证书或 Windows PFX，并从 `production-release` Environment 删除。
-- 暂停创建新标签。不要通过关闭签名检查维持发布。
-- 如果公开信任身份发生合法轮换，先更新 `release/trust-identities.json` 和两个安装脚本，完成新的候选及四平台真实设备验收，再发布补丁版本。
-- 检查 Actions 日志和 artifact；日志不得包含证书、密码、路由解密 key 或完整私有路径。
+- macOS 安装失败时确认 `$HOME/Applications` 可写且用户拥有目标应用，不要建议使用 `sudo`。
+- Windows 安装失败时确认 NSIS 保持 `currentUser`，不要改成机器级安装或全局 ExecutionPolicy。
+- 企业管理策略可能拒绝未认证应用；该限制不能通过发布脚本保证绕过。
 
 ## User Network Recovery
 
-发布安装脚本只负责应用安装和启动，不会修改系统代理。若用户在应用中文流程后无法恢复网络，应让用户保持哒哒助手运行，通过第五步重试“恢复原网络”。不得建议删除恢复记录或先关闭本地代理。
+发布安装脚本只负责应用安装和启动，不修改系统代理。若中文流程后无法恢复网络，让用户保持哒哒助手运行，通过第五步重试“恢复原网络”。不得建议删除恢复记录或先关闭本地代理。

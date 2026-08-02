@@ -136,15 +136,11 @@ assert_success "existing application is replaced" replace_application "$new_app"
 assert_equal "new application becomes active" new "$(/bin/cat "$old_app/version")"
 assert_equal "old application remains recoverable" old "$(/bin/cat "$backup_app/version")"
 
-assert_failure "unsigned application is rejected" verify_macos_application "$fixture_directory/not-signed.app"
-saved_team_id="$expected_apple_team_id"
-expected_apple_team_id="ABCDEFGHIJ"
-assert_success "matching Team ID and Bundle ID are accepted" macos_identity_matches ABCDEFGHIJ com.dadaapi.assistant
-assert_failure "wrong Team ID is rejected" macos_identity_matches ZYXWVUTSRQ com.dadaapi.assistant
-assert_failure "wrong Bundle ID is rejected" macos_identity_matches ABCDEFGHIJ com.example.wrong
-expected_apple_team_id="SET_BEFORE_V1_0_0"
-assert_failure "placeholder Apple trust identity is rejected" validate_trust_configuration
-expected_apple_team_id="$saved_team_id"
+assert_failure "an invalid application bundle is rejected" verify_macos_application "$fixture_directory/invalid.app"
+saved_home="$HOME"
+HOME="$fixture_directory/user-home"
+assert_equal "installation is scoped to the current user" "$HOME/Applications" "$(user_applications_directory)"
+HOME="$saved_home"
 
 cleanup_directory="$fixture_directory/cleanup-target"
 /bin/mkdir -p "$cleanup_directory"

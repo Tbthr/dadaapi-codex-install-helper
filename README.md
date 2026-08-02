@@ -46,9 +46,11 @@ pnpm verify
 pnpm --dir apps/desktop tauri build
 ```
 
-## 安装正式版本
+## 安装发布版本
 
-经过签名和校验的正式 Release 仅分发 Windows/macOS 安装包和 `checksums.txt`，客户端不会检查或下载在线更新。GitHub 与 Gitee 必须各自包含且仅包含 `Dada-Assistant_<version>_x64-setup.exe`、`Dada-Assistant_<version>_arm64-setup.exe`、`Dada-Assistant_<version>_universal.dmg` 和 `checksums.txt`。没有正式 Release 时，安装命令会返回失败，不会伪造成功。
+用户态 Release 仅分发 Windows/macOS 安装包和 `checksums.txt`，客户端不会检查或下载在线更新。GitHub 与 Gitee 必须各自包含且仅包含 `Dada-Assistant_<version>_x64-setup.exe`、`Dada-Assistant_<version>_arm64-setup.exe`、`Dada-Assistant_<version>_universal.dmg` 和 `checksums.txt`。没有 Release 时，安装命令会返回失败，不会伪造成功。
+
+macOS 应用使用 ad-hoc 签名并安装到当前用户的 `~/Applications/哒哒助手.app`，脚本会在该用户目录清除 quarantine；Windows 安装器不含 Authenticode，使用 `currentUser` 模式并在运行前解除下载区块。两端安装均不调用 `sudo`、不请求 UAC 提升，也不修改系统全局执行策略。SHA-256 用于确认下载资产与 Release 清单一致，但不等同于 Apple 或 Windows 的发布者认证。
 
 生产 Gitee 镜像为 `lyq_power/dadaapi-codex-install-helper`。GitHub Actions 使用 `production-release` Environment 中的 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper`、`GITEE_USERNAME=lyq_power` 和 `GITEE_TOKEN` 同步 `main`、标签、Release 资产和 `msix-links` 元数据分支；该分支仅保存指向 Microsoft 官方短期下载地址的 JSON，不托管安装包。令牌不写入仓库、本地配置或安装脚本。
 
@@ -84,7 +86,7 @@ curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-time
 /bin/sh "$installer_file"
 ```
 
-仅当 Gitee 发生网络错误、超时或 `5xx` 时，默认命令才回退 GitHub。`4xx`、校验和格式、重复资产、版本、SHA-256 或平台签名错误会直接停止。GitHub 明确备用入口如下：
+仅当 Gitee 发生网络错误、超时或 `5xx` 时，默认命令才回退 GitHub。`4xx`、校验和格式、重复资产、版本或 SHA-256 错误会直接停止。GitHub 明确备用入口如下：
 
 ```powershell
 $u = "https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.0/scripts/install.ps1"
@@ -131,10 +133,10 @@ DADA_ASSISTANT_INSTALL_SOURCE=github /bin/sh "$installer_file"
 ## 发布、镜像与 E2E
 
 - 已配置的生产 Gitee 仓库是 [lyq_power/dadaapi-codex-install-helper](https://gitee.com/lyq_power/dadaapi-codex-install-helper)。向 GitHub `main` 推送后会自动运行“同步哒哒助手 v1.0 代码至 Gitee”。需要手动重试时，在 GitHub Actions 中运行该工作流；目标始终来自受保护的 `GITEE_REPOSITORY` Actions Variable。
-- 正式发布前手动运行“生成私有签名候选包”，且输入必须是当时受保护 `main` 的完整提交 SHA。候选包只保存在 7 天 Actions artifact 中，不创建公开 Release。
-- Intel Mac、Apple Silicon Mac、Windows x64 与 Windows ARM64 完成安装、启动、新版 ChatGPT/旧版 Codex 中文结果和手动网络恢复后，按 [发布 Runbook](docs/RELEASE_RUNBOOK.md) 在无审批的 `production-release` Environment 写入验收记录。
-- 同一提交上的 GitHub 已验证签名标签会自动执行：完整 CI -> 共享签名构建 -> GitHub Draft -> GitHub Prerelease -> GitHub 四平台版本化命令安装 -> Gitee Final -> Gitee 四平台安装 -> GitHub Final -> 两端 `latest` 校验。任何失败都会阻止后续渠道。
-- `production-release` Environment 保存 Gitee、路由、Apple 和 Windows 生产凭据。PR 工作流不会引用该 Environment；发布工作流还会拒绝证书身份与 `release/trust-identities.json`、安装脚本不一致的构建。
+- 可选地在正式发布前运行“生成私有用户态候选包”，输入当时受保护 `main` 的完整提交 SHA。候选包只保存在 7 天 Actions artifact 中，不创建公开 Release。
+- Intel Mac、Apple Silicon Mac、Windows x64 与 Windows ARM64 的远程安装和启动由标签发布流水线强制执行；人工中文结果和网络恢复验收可按 [发布 Runbook](docs/RELEASE_RUNBOOK.md) 作为额外检查。
+- 当前 `main` 提交上的 `v*` 标签会自动执行：完整 CI -> 共享用户态构建 -> GitHub Draft -> GitHub Prerelease -> GitHub 四平台版本化命令安装 -> Gitee Final -> Gitee 四平台安装 -> GitHub Final -> 两端 `latest` 校验。任何失败都会阻止后续渠道。
+- `production-release` Environment 只保存 Gitee 令牌和路由构建配置。Apple、Windows 平台证书、时间戳和公开发布者身份均不再需要。
 - 正式 Release 和标签均不可覆盖。发布后故障必须增加补丁版本，不能重写标签或替换资产。处理步骤见 [发布故障手册](docs/RELEASE_INCIDENTS.md)。
 - Windows x64 中文全链路测试由“Windows locale E2E”在相关 Pull Request 上执行，也可在 Actions 中手动运行。失败时下载 `windows-locale-e2e-diagnostics` 查看截图和 WebDriver 日志。Windows ARM64 继续由“Desktop package smoke”和“哒哒助手 v1.0 发布冒烟”覆盖安装及启动。
 

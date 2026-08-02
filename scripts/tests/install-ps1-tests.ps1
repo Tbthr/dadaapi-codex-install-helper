@@ -110,13 +110,6 @@ try {
     Assert-Throws "Gitee latest is never treated as a download tag" {
         Get-ChecksumsUri -Source "gitee" -Version "latest"
     }
-    Assert-True "matching publisher Subject is accepted" {
-        Test-WindowsPublisherSubject -Actual "CN=Dada API" -Expected "CN=Dada API"
-    }
-    Assert-True "wrong publisher Subject is rejected" {
-        -not (Test-WindowsPublisherSubject -Actual "CN=Other" -Expected "CN=Dada API")
-    }
-
     $asset = Get-ReleaseAsset -Checksums $validChecksums -Architecture "x64" -RequestedVersion "v1.0.0"
     Assert-Equal "x64 asset is selected" "Dada-Assistant_1.0.0_x64-setup.exe" $asset.Name
     Assert-Equal "asset version is selected" "1.0.0" $asset.Version
@@ -162,16 +155,8 @@ $hashC  Dada-Assistant_1.0.0_universal.dmg
     $payloadHash = (Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash
     Assert-True "matching SHA-256 is accepted" { Test-FileSha256 -Path $payloadPath -ExpectedHash $payloadHash }
     Assert-True "incorrect SHA-256 is rejected" { -not (Test-FileSha256 -Path $payloadPath -ExpectedHash $hashA) }
-    Assert-Throws "unsigned installer is rejected" {
-        Assert-WindowsInstallerSignature -Path $payloadPath -ExpectedPublisherSubject "CN=Test Publisher"
-    }
-    $savedPublisher = $ExpectedWindowsPublisherSubject
-    try {
-        $ExpectedWindowsPublisherSubject = "SET_BEFORE_V1_0_0"
-        Assert-Throws "placeholder Windows trust identity is rejected" { Assert-ReleaseTrustConfiguration }
-    } finally {
-        $ExpectedWindowsPublisherSubject = $savedPublisher
-    }
+    Unblock-File -LiteralPath $payloadPath -ErrorAction Stop
+    Assert-True "an unsigned downloaded file can be unblocked without elevation" { Test-Path -LiteralPath $payloadPath }
 
     Assert-Equal "pinned GitHub checksum URL is immutable" `
         "https://github.com/Tbthr/dadaapi-codex-install-helper/releases/download/v1.0.0/checksums.txt" `

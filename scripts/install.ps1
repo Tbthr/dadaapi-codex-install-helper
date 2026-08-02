@@ -4,7 +4,6 @@ $ProgressPreference = "SilentlyContinue"
 $GitHubRepository = "Tbthr/dadaapi-codex-install-helper"
 $GiteeRepository = "lyq_power/dadaapi-codex-install-helper"
 $InstallerUserAgent = "dada-assistant-installer/1.0"
-$ExpectedWindowsPublisherSubject = "SET_BEFORE_V1_0_0"
 $MaximumChecksumBytes = 65536
 $MaximumReleaseMetadataBytes = 1048576
 $MaximumInstallerBytes = 1073741824
@@ -25,13 +24,6 @@ function Assert-InstallSource {
         throw "DADA_ASSISTANT_INSTALL_SOURCE 必须为 auto、gitee 或 github。"
     }
     return $Source
-}
-
-function Assert-ReleaseTrustConfiguration {
-    if ([string]::IsNullOrWhiteSpace($ExpectedWindowsPublisherSubject) -or
-        $ExpectedWindowsPublisherSubject.StartsWith("SET_BEFORE_", [StringComparison]::Ordinal)) {
-        throw "安装脚本尚未固化正式 Windows 发布者 Subject，已拒绝运行。"
-    }
 }
 
 function Get-NativeWindowsArchitecture {
@@ -210,15 +202,6 @@ function Test-ShouldFallbackToGitHub {
     )
 
     return $InstallSource -ceq "auto" -and $CurrentSource -ceq "gitee" -and $ResultKind -ceq "Retryable"
-}
-
-function Test-WindowsPublisherSubject {
-    param(
-        [Parameter(Mandatory = $true)][string]$Actual,
-        [Parameter(Mandatory = $true)][string]$Expected
-    )
-
-    return $Actual -ceq $Expected
 }
 
 function Get-HttpsResource {
@@ -407,59 +390,6 @@ function Test-FileSha256 {
     return $actualHash -ceq $ExpectedHash.ToLowerInvariant()
 }
 
-function Get-CertificateEkus {
-    param([Parameter(Mandatory = $true)][System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate)
-
-    $oids = @()
-    foreach ($extension in $Certificate.Extensions) {
-        if ($extension -is [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]) {
-            foreach ($oid in $extension.EnhancedKeyUsages) {
-                $oids += $oid.Value
-            }
-        }
-    }
-    return $oids
-}
-
-function Assert-WindowsInstallerSignature {
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$ExpectedPublisherSubject
-    )
-
-    $signature = Get-AuthenticodeSignature -LiteralPath $Path
-    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or -not $signature.SignerCertificate) {
-        throw "安装器 Authenticode 签名无效：$($signature.Status)"
-    }
-    if (-not (Test-WindowsPublisherSubject -Actual $signature.SignerCertificate.Subject -Expected $ExpectedPublisherSubject)) {
-        throw "安装器发布者与固定信任标识不一致。"
-    }
-    $codeSigningOid = "1.3.6.1.5.5.7.3.3"
-    if ((Get-CertificateEkus -Certificate $signature.SignerCertificate) -cnotcontains $codeSigningOid) {
-        throw "安装器证书不包含代码签名 EKU。"
-    }
-
-    if (-not $signature.TimeStamperCertificate) {
-        throw "安装器缺少可信时间戳。"
-    }
-    $timestampingOid = "1.3.6.1.5.5.7.3.8"
-    if ((Get-CertificateEkus -Certificate $signature.TimeStamperCertificate) -cnotcontains $timestampingOid) {
-        throw "安装器时间戳证书不包含时间戳 EKU。"
-    }
-
-    $chain = [System.Security.Cryptography.X509Certificates.X509Chain]::new()
-    try {
-        $chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::Online
-        $chain.ChainPolicy.RevocationFlag = [System.Security.Cryptography.X509Certificates.X509RevocationFlag]::EntireChain
-        $chain.ChainPolicy.VerificationFlags = [System.Security.Cryptography.X509Certificates.X509VerificationFlags]::IgnoreNotTimeValid
-        if (-not $chain.Build($signature.TimeStamperCertificate)) {
-            throw "安装器时间戳证书链不受信任。"
-        }
-    } finally {
-        $chain.Dispose()
-    }
-}
-
 function Get-ReleaseFromSource {
     param(
         [Parameter(Mandatory = $true)][string]$Source,
@@ -522,7 +452,6 @@ function Invoke-InstallerMain {
             [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     }
 
-    Assert-ReleaseTrustConfiguration
     $installVersion = Assert-InstallVersion -Version $(if ($env:DADA_ASSISTANT_INSTALL_VERSION) { $env:DADA_ASSISTANT_INSTALL_VERSION } else { "latest" })
     $installSource = Assert-InstallSource -Source $(if ($env:DADA_ASSISTANT_INSTALL_SOURCE) { $env:DADA_ASSISTANT_INSTALL_SOURCE } else { "auto" })
     $assetArchitecture = Get-NativeWindowsArchitecture
@@ -552,13 +481,13 @@ function Invoke-InstallerMain {
         }
 
         Write-Host "下载与 SHA-256 校验完成：v$($release.Asset.Version) / Windows $assetArchitecture（来源：$($release.Source)）"
-        Assert-WindowsInstallerSignature -Path $release.Path -ExpectedPublisherSubject $ExpectedWindowsPublisherSubject
 
         if ($env:DADA_ASSISTANT_INSTALL_DRY_RUN -eq "1") {
             Write-Host "Dry-run 验证成功，未启动安装器。"
             return
         }
 
+        Unblock-File -LiteralPath $release.Path -ErrorAction Stop
         Write-Host "正在启动哒哒助手安装器……"
         $process = if ($env:DADA_ASSISTANT_INSTALL_CI_SILENT -eq "1") {
             Start-Process -FilePath $release.Path -ArgumentList "/S" -Wait -PassThru

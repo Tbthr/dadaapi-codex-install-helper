@@ -5,7 +5,6 @@ set -eu
 github_repository="Tbthr/dadaapi-codex-install-helper"
 gitee_repository="lyq_power/dadaapi-codex-install-helper"
 installer_user_agent="dada-assistant-installer/1.0"
-expected_apple_team_id="SET_BEFORE_V1_0_0"
 expected_bundle_identifier="com.dadaapi.assistant"
 maximum_checksum_bytes=65536
 maximum_release_metadata_bytes=1048576
@@ -60,14 +59,6 @@ normalize_macos_architecture() {
   esac
 }
 
-validate_trust_configuration() {
-  case "$expected_apple_team_id" in
-    SET_BEFORE_*|""|*[!A-Z0-9]*) return 1 ;;
-  esac
-  [ "${#expected_apple_team_id}" -eq 10 ] || return 1
-  [ "$expected_bundle_identifier" = "com.dadaapi.assistant" ]
-}
-
 classify_http_result() {
   curl_exit="$1"
   status="$2"
@@ -99,10 +90,6 @@ classify_http_result() {
 
 should_fallback_to_github() {
   [ "$1" = "auto" ] && [ "$2" = "gitee" ] && [ "$3" -eq 10 ]
-}
-
-macos_identity_matches() {
-  [ "$1" = "$expected_apple_team_id" ] && [ "$2" = "$expected_bundle_identifier" ]
 }
 
 ensure_https_url() {
@@ -344,11 +331,6 @@ verify_macos_application() {
   application_path="$1"
 
   /usr/bin/codesign --verify --deep --strict "$application_path" >/dev/null 2>&1 || return 1
-  codesign_details=$(/usr/bin/codesign -dv --verbose=4 "$application_path" 2>&1) || return 1
-  printf '%s\n' "$codesign_details" | /usr/bin/grep -Eq '^Authority=Developer ID Application:' || return 1
-  signed_team_id=$(printf '%s\n' "$codesign_details" | /usr/bin/sed -n 's/^TeamIdentifier=//p')
-  signed_bundle_identifier=$(printf '%s\n' "$codesign_details" | /usr/bin/sed -n 's/^Identifier=//p')
-  macos_identity_matches "$signed_team_id" "$signed_bundle_identifier" || return 1
 
   info_plist="$application_path/Contents/Info.plist"
   [ -f "$info_plist" ] || return 1
@@ -363,10 +345,14 @@ verify_macos_application() {
   architectures=$(/usr/bin/lipo -archs "$executable_path" 2>/dev/null) || return 1
   case " $architectures " in *" arm64 "*) ;; *) return 1 ;; esac
   case " $architectures " in *" x86_64 "*) ;; *) return 1 ;; esac
+}
 
-  gatekeeper_details=$(/usr/sbin/spctl --assess --type execute --verbose=4 "$application_path" 2>&1) || return 1
-  printf '%s\n' "$gatekeeper_details" | /usr/bin/grep -Fqx 'source=Notarized Developer ID' || return 1
-  printf '%s\n' "$gatekeeper_details" | /usr/bin/grep -Eq '^origin=Developer ID Application:' || return 1
+user_applications_directory() {
+  printf '%s/Applications\n' "$HOME"
+}
+
+clear_application_quarantine() {
+  /usr/bin/xattr -rd com.apple.quarantine "$1"
 }
 
 replace_application() {
@@ -399,7 +385,6 @@ restore_previous_application() {
 
 main() {
   [ "$(/usr/bin/uname -s)" = "Darwin" ] || fail "哒哒助手的 macOS 安装命令只能在 Mac 上运行。"
-  validate_trust_configuration || fail "安装脚本尚未固化正式 Apple Team ID，已拒绝运行。"
 
   install_version="${DADA_ASSISTANT_INSTALL_VERSION:-latest}"
   validate_install_version "$install_version" \
@@ -454,7 +439,7 @@ main() {
   [ "$app_count" = "1" ] || fail "DMG 中没有找到唯一的顶层应用程序。"
   source_app="$app_matches"
   verify_macos_application "$source_app" \
-    || fail "应用签名、Team ID、Bundle ID、Gatekeeper 或公证票据校验失败。"
+    || fail "应用代码完整性、Bundle ID 或 Universal 架构校验失败。"
 
   if [ "${DADA_ASSISTANT_INSTALL_DRY_RUN:-0}" = "1" ]; then
     printf '%s\n' "Dry-run 验证成功，未安装应用。"
@@ -465,17 +450,18 @@ main() {
   staged_app="$temporary_directory/$app_name"
   /usr/bin/ditto "$source_app" "$staged_app"
 
-  if [ -w "/Applications" ]; then
-    applications_directory="/Applications"
-  else
-    applications_directory="$HOME/Applications"
-    /bin/mkdir -p "$applications_directory"
-  fi
+  applications_directory=$(user_applications_directory)
+  /bin/mkdir -p "$applications_directory"
 
   destination_app="$applications_directory/$app_name"
   backup_app="$temporary_directory/previous-$app_name"
   replace_application "$staged_app" "$destination_app" "$backup_app" \
     || fail "无法写入应用目录，原版本已恢复。"
+
+  if ! clear_application_quarantine "$destination_app"; then
+    restore_previous_application "$destination_app" "$backup_app" || true
+    fail "无法清除应用的 macOS 下载隔离属性，原版本已恢复。"
+  fi
 
   if ! /usr/bin/open "$destination_app"; then
     restore_previous_application "$destination_app" "$backup_app" || true

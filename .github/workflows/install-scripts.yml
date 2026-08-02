@@ -10,7 +10,6 @@ on:
       - "scripts/install.ps1"
       - "scripts/install.sh"
       - "scripts/tests/**"
-      - "release/trust-identities.json"
       - ".github/workflows/install-scripts.yml"
   push:
     branches:
@@ -19,7 +18,6 @@ on:
       - "scripts/install.ps1"
       - "scripts/install.sh"
       - "scripts/tests/**"
-      - "release/trust-identities.json"
       - ".github/workflows/install-scripts.yml"
 
 permissions:
