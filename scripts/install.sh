@@ -351,6 +351,10 @@ user_applications_directory() {
   printf '%s/Applications\n' "$HOME"
 }
 
+print_install_summary() {
+  printf '%s\n' "下载与 SHA-256 校验完成：v${release_version} / macOS Universal (${architecture}，来源：${metadata_source})"
+}
+
 clear_application_quarantine() {
   /usr/bin/xattr -rd com.apple.quarantine "$1"
 }
@@ -428,7 +432,7 @@ main() {
       ;;
   esac
 
-  printf '%s\n' "下载与 SHA-256 校验完成：v$release_version / macOS Universal ($architecture，来源：$metadata_source)"
+  print_install_summary
   /usr/bin/hdiutil verify "$downloaded_file" >/dev/null \
     || fail "DMG 结构校验失败，已停止安装。"
   /usr/bin/hdiutil attach "$downloaded_file" -mountpoint "$mount_point" -nobrowse -readonly -quiet

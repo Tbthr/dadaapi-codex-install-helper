@@ -16,7 +16,7 @@ on:
       tag:
         description: Immutable release tag to install
         required: true
-        default: v1.0.0
+        default: v1.0.3
         type: string
       source:
         description: Release source
@@ -70,7 +70,9 @@ jobs:
             --connect-timeout 10 --max-time 60 \
             "$script_url" -o "$remote_script"
           test -s "$remote_script"
-          cmp scripts/install.sh "$remote_script"
+          expected_blob=$(git rev-parse "${RELEASE_TAG}:scripts/install.sh")
+          actual_blob=$(git hash-object --no-filters "$remote_script")
+          test "$actual_blob" = "$expected_blob"
           chmod 700 "$remote_script"
 
       - name: 通过远程标签脚本安装并启动
@@ -126,8 +128,12 @@ jobs:
           }
           $remoteScript = Join-Path $env:RUNNER_TEMP "install.ps1"
           Invoke-WebRequest -Uri $scriptUrl -OutFile $remoteScript -MaximumRedirection 5 -TimeoutSec 60
-          if ((Get-FileHash scripts/install.ps1 -Algorithm SHA256).Hash -cne
-              (Get-FileHash $remoteScript -Algorithm SHA256).Hash) {
+          $expectedBlob = (& git rev-parse "$($env:RELEASE_TAG):scripts/install.ps1").Trim()
+          if ($LASTEXITCODE -ne 0 -or $expectedBlob -cnotmatch '^[0-9a-f]{40,64}$') {
+            throw "Unable to resolve the tagged installer script blob."
+          }
+          $actualBlob = (& git hash-object --no-filters -- $remoteScript).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualBlob -cne $expectedBlob) {
             throw "Remote tagged installer script differs from the checked-out tag."
           }
 
