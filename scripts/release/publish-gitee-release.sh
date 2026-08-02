@@ -184,7 +184,7 @@ while IFS=$'\t' read -r expected_checksum expected_size name; do
       -w '%{http_code}' \
       -X POST \
       -H "$gitee_authorization" \
-      -F "file=@$RELEASE_ASSETS_DIRECTORY/$name" \
+      -F "file=@$RELEASE_ASSETS_DIRECTORY/$name;filename=$name;type=application/octet-stream" \
       "$attachments_api")
     if [ "$upload_status" != 201 ] && [ "$upload_status" != 200 ]; then
       echo "Failed to upload Gitee asset: $name" >&2
