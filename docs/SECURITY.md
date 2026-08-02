@@ -22,3 +22,12 @@
 - 临时系统代理只能指向本机回环地址；恢复记录不得写入日志，且必须使用当前用户私有权限保存。
 - 无法读取并完整恢复的认证代理配置必须阻止激活，不能用不完整状态覆盖用户原配置。
 - 前端不得获得不必要的 Tauri capability。
+- 正式安装脚本只能来自不可变发布标签；README 不得使用裸 `curl | sh` 或 `irm | iex`，下载失败时不得执行部分脚本。
+- 安装脚本仅在 Gitee 网络错误、超时或 `5xx` 时回退 GitHub；`4xx`、格式、版本、重复资产、哈希或签名错误必须直接失败。
+- `checksums.txt` 必须恰好绑定同一版本的 Windows x64、Windows ARM64 和 macOS Universal 三个资产。GitHub 与 Gitee 的四个正式资产必须逐字节一致。
+- macOS 安装前必须验证 DMG、Developer ID、固定 Team ID、`com.dadaapi.assistant`、Universal 架构、Gatekeeper 和公证票据；不得清除 quarantine。
+- Windows 安装前必须使用系统 Authenticode 验证固定发布者 Subject、代码签名 EKU 和可信时间戳；不得依赖终端用户安装 `signtool`，不得调用 `Unblock-File`。
+- 生产密钥只允许存在于无审批、仅接受受保护 `main` 与 `v*` 标签的 `production-release` GitHub Environment。路由和平台签名凭据只供共享签名构建及发布预检读取；`GITEE_TOKEN` 还可供明确的 `main`/元数据镜像任务读取。普通 PR 和 CI 均不得引用该 Environment。
+- Apple Team ID 与 Windows Publisher Subject 是公开信任标识，必须与实际证书一致后再替换 `release/trust-identities.json` 和安装脚本中的 fail-closed 占位值。
+- `v*` 正式标签必须是 GitHub 已验证的签名注释标签，且指向完成四类真实设备候选验收的同一受保护 `main` 提交。
+- GitHub 与 Gitee 都必须在服务端保护 `v*` 标签，禁止删除或更新；发布脚本的“不覆盖”检查不能替代仓库级保护规则。

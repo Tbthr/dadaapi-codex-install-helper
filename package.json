@@ -2,6 +2,8 @@
   "name": "dadaapi-assistant-workspace",
   "private": true,
   "version": "1.0.0",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/Tbthr/dadaapi-codex-install-helper",
   "packageManager": "pnpm@10.24.0",
   "scripts": {
     "dev": "pnpm --dir apps/desktop tauri dev",
@@ -16,6 +18,8 @@
     "tauri:info": "pnpm --dir apps/desktop tauri info"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

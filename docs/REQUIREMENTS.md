@@ -80,6 +80,8 @@
 
 - Cargo、Tauri 和 npm 构建版本统一为 `1.0.0`；首个 Release tag 为 `v1.0.0`，对用户展示为“哒哒助手 v1.0”。
 - GitHub/Gitee Release 仅分发安装包和 SHA-256 校验和，不生成 updater JSON，也不作为客户端在线更新源。
+- 两端正式 Release 各自只能包含 Windows x64、Windows ARM64、macOS Universal DMG 与 `checksums.txt`，对应资产必须逐字节一致。
+- 正式安装入口从不可变标签获取脚本；脚本仅在 Gitee 网络错误、超时或 `5xx` 时回退 GitHub，并在安装前完成平台签名验证。
 - 自有 Gitee 仓库镜像同步 `main`、发布标签和 Release 资产；GitHub Actions 中的目标仓库使用变量配置，写入令牌仅保存为 Actions Secret。
 
 ## Non-Goals For First Release
