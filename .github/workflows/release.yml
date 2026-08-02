@@ -83,22 +83,13 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/release/gitee-api.sh
+          source scripts/release/github-api.sh
           github_response="$RUNNER_TEMP/github-release.json"
-          github_status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            -o "$github_response" -w '%{http_code}' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME")
-          case "$github_status" in
-            404) ;;
-            200)
-              jq -e '.tag_name == env.GITHUB_REF_NAME and (.draft == true or .prerelease == true)' "$github_response" >/dev/null || {
-                echo "::error title=Final GitHub release exists::Publish a new patch version; never replace final assets."
-                exit 1
-              }
-              ;;
-            *) exit 1 ;;
-          esac
+          github_release_by_tag "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$github_response"
+          jq -e '. == null or (.tag_name == env.GITHUB_REF_NAME and (.draft == true or .prerelease == true))' "$github_response" >/dev/null || {
+            echo "::error title=Final GitHub release exists::Publish a new patch version; never replace final assets."
+            exit 1
+          }
 
           gitee_response="$RUNNER_TEMP/gitee-release.json"
           gitee_status=$(curl -sS --connect-timeout 20 --max-time 60 \
@@ -150,6 +141,7 @@ jobs:
       - run: pnpm --dir apps/desktop build
       - run: /bin/sh scripts/tests/install-sh-tests.sh
       - run: bash scripts/tests/gitee-api-tests.sh
+      - run: bash scripts/tests/github-api-tests.sh
       - run: bash scripts/check-licenses.sh
 
   signed-build:
@@ -175,6 +167,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: release-*
@@ -203,13 +199,10 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
+          source scripts/release/github-api.sh
           response="$RUNNER_TEMP/github-release.json"
-          status=$(curl -sS --connect-timeout 20 --max-time 60 \
-            -o "$response" -w '%{http_code}' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
-          if [ "$status" = 404 ]; then
+          github_release_by_tag "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$response"
+          if jq -e '. == null' "$response" >/dev/null; then
             gh release create "$RELEASE_TAG" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
@@ -217,7 +210,7 @@ jobs:
               --prerelease \
               --title "哒哒助手 $RELEASE_TAG" \
               --notes "哒哒助手 $RELEASE_TAG 正式候选。仅包含三个用户态安装包与 checksums.txt；完成两源安装门禁后自动转为正式版。"
-          elif [ "$status" = 200 ] && jq -e '.tag_name == env.RELEASE_TAG and .draft == true' "$response" >/dev/null; then
+          elif jq -e '.tag_name == env.RELEASE_TAG and .draft == true' "$response" >/dev/null; then
             existing="$RUNNER_TEMP/existing-assets"
             mkdir "$existing"
             gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$existing"
@@ -242,7 +235,7 @@ jobs:
           fi
 
           verified="$RUNNER_TEMP/github-draft.json"
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$verified"
+          github_release_by_tag "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$verified"
           jq -e '
             .tag_name == env.RELEASE_TAG and
             .draft == true and

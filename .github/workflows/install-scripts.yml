@@ -10,6 +10,7 @@ on:
       - "scripts/install.ps1"
       - "scripts/install.sh"
       - "scripts/release/gitee-api.sh"
+      - "scripts/release/github-api.sh"
       - "scripts/tests/**"
       - ".github/workflows/install-scripts.yml"
   push:
@@ -19,6 +20,7 @@ on:
       - "scripts/install.ps1"
       - "scripts/install.sh"
       - "scripts/release/gitee-api.sh"
+      - "scripts/release/github-api.sh"
       - "scripts/tests/**"
       - ".github/workflows/install-scripts.yml"
 
@@ -77,6 +79,9 @@ jobs:
 
       - name: 运行 Gitee API 契约测试
         run: bash scripts/tests/gitee-api-tests.sh
+
+      - name: 运行 GitHub API 契约测试
+        run: bash scripts/tests/github-api-tests.sh
 
       - name: 下载并校验已发布 macOS 安装包
         if: ${{ github.event_name == 'release' }}
