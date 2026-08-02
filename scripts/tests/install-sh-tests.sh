@@ -142,11 +142,11 @@ HOME="$fixture_directory/user-home"
 assert_equal "installation is scoped to the current user" "$HOME/Applications" "$(user_applications_directory)"
 HOME="$saved_home"
 
-release_version="1.0.3"
+release_version="1.0.4"
 architecture="arm64"
 metadata_source="github"
 assert_equal "the install summary safely delimits variables before Chinese punctuation" \
-  "下载与 SHA-256 校验完成：v1.0.3 / macOS Universal (arm64，来源：github)" \
+  "下载与 SHA-256 校验完成：v1.0.4 / macOS Universal (arm64，来源：github)" \
   "$(print_install_summary)"
 
 cleanup_directory="$fixture_directory/cleanup-target"
