@@ -183,7 +183,7 @@ https://raw.githubusercontent.com/Tbthr/dadaapi-routes/main/public/routes.enc
 ### Desktop Distribution
 
 - 客户端不装载 Tauri Updater，也不在启动或设置界面发起在线版本检查；桌面端不配置文件日志或导出诊断包。
-- macOS 与 Windows 安装包继续通过发布流水线独立构建和分发。macOS 使用不含 Developer ID 的 ad-hoc 签名，Windows 安装器不含 Authenticode；`v1.0.0` Release 仅包含安装包和 SHA-256 校验和，升级由用户获取新的正式安装包完成。
+- macOS 与 Windows 安装包继续通过发布流水线独立构建和分发。macOS 使用不含 Developer ID 的 ad-hoc 签名，Windows 安装器不含 Authenticode；正式 Release 仅包含安装包和 SHA-256 校验和，升级由用户获取新的正式安装包完成。
 - GitHub 为发布源；自有 Gitee 仓库镜像通过独立工作流同步 `main`，发布工作流使用同一目标同步标签和 Release 资产。目标变量和 `GITEE_TOKEN` 统一保存在无审批的 `production-release` GitHub Environment，普通 PR 不读取该 Environment。
 - 正式发行资产契约固定为 Windows x64 EXE、Windows ARM64 EXE、macOS Universal DMG 和绑定前三者的 `checksums.txt`；GitHub 与 Gitee 不得使用不同封装或不同字节。
 - `signed-build.yml` 是私有候选和标签发布共享的用户态构建边界。它从 `production-release` Environment 读取路由构建配置，并在上传 artifact 前核对 macOS ad-hoc 完整性、Bundle ID、Universal 架构、Windows 未签名状态和 `currentUser` 安装模式。
