@@ -78,11 +78,11 @@
 
 ## Desktop Distribution
 
-- Cargo、Tauri 和 npm 构建版本统一为 `1.0.7`；`v1.0.0` 至 `v1.0.6` 仅保留不可变源码标签，`v1.0.3` 至 `v1.0.6` 未通过远程安装门禁，当前正式 Release 为 `v1.0.7`，对用户展示为“哒哒助手 v1.0”。
+- Cargo、Tauri 和 npm 构建版本统一为 `1.0.8`；`v1.0.0` 至 `v1.0.7` 仅保留不可变标签，当前正式 Release 为 `v1.0.8`，对用户展示为“哒哒助手 v1.0”。
 - GitHub/Gitee Release 仅分发安装包和 SHA-256 校验和，不生成 updater JSON，也不作为客户端在线更新源。
 - 两端正式 Release 各自只能包含 Windows x64、Windows ARM64、macOS Universal DMG 与 `checksums.txt`，对应资产必须逐字节一致。
 - 正式安装入口从不可变标签获取脚本；脚本仅在 Gitee 网络错误、超时或 `5xx` 时回退 GitHub，并在安装前完成严格资产名、版本和 SHA-256 校验。
-- macOS 采用 ad-hoc Universal 应用并固定安装到 `~/Applications`，由安装脚本清除该用户目录应用的 quarantine；Windows 采用未签名的 `currentUser` NSIS 安装器并解除下载区块。两端安装均不得请求管理员密码。
+- macOS 采用 ad-hoc Universal 应用并固定安装到 `~/Applications`，保留系统 quarantine；Windows 采用未签名的 `currentUser` NSIS 安装器并保留下载区块。两端安装均不得请求管理员密码。
 - 自有 Gitee 仓库镜像同步 `main`、发布标签和 Release 资产；GitHub Actions 中的目标仓库使用变量配置，写入令牌仅保存为 Actions Secret。
 
 ## Non-Goals For First Release

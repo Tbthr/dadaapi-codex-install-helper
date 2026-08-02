@@ -1,6 +1,6 @@
 # User-Scoped Release Runbook
 
-本文档用于正式 Release `v1.0.7` 及后续补丁版本。`v1.0.0` 至 `v1.0.6` 仅保留不可变源码标签；`v1.0.3` 至 `v1.0.6` 未通过远程安装门禁，仅保留为 Prerelease/Draft。发行包不使用 Apple Developer ID、公证或 Windows Authenticode，安装命令通过用户目录安装和系统下载区块移除实现无管理员密码安装。
+本文档用于正式 Release `v1.0.8` 及后续补丁版本。`v1.0.0` 至 `v1.0.7` 仅保留不可变标签；发行包不使用 Apple Developer ID、公证或 Windows Authenticode，安装命令通过用户目录安装实现无管理员密码安装，系统安全提示由用户确认。
 
 ## 1. Repository Governance
 
@@ -32,7 +32,7 @@ Variables:
 
 候选检查重点：
 
-- macOS Intel 和 Apple Silicon 均安装到 `~/Applications/哒哒助手.app`，不要求密码，可启动且没有 quarantine。
+- macOS Intel 和 Apple Silicon 均安装到 `~/Applications/哒哒助手.app`，不要求密码，可启动且保留系统 quarantine 状态。
 - Windows x64 和 ARM64 均安装到当前用户目录，不触发管理员提升，可启动。
 - 新版 ChatGPT、旧版 Codex、中文结果和手动网络恢复正常。
 
@@ -46,8 +46,8 @@ Variables:
 git fetch origin main --tags
 git switch main
 git pull --ff-only origin main
-git tag -a v1.0.7 -m "Release v1.0.7"
-git push origin refs/tags/v1.0.7
+git tag -a v1.0.8 -m "Release v1.0.8"
+git push origin refs/tags/v1.0.8
 ```
 
 不得移动、删除或重新创建任何已推送标签。发布失败时修复根因、统一增加补丁版本，并从新的当前 `main` 创建新标签。

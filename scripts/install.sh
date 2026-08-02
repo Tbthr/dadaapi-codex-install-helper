@@ -379,10 +379,6 @@ print_install_summary() {
   printf '%s\n' "下载与 SHA-256 校验完成：v${release_version} / macOS Universal (${architecture}，来源：${metadata_source})"
 }
 
-clear_application_quarantine() {
-  /usr/bin/xattr -rd com.apple.quarantine "$1"
-}
-
 replace_application() {
   staged_path="$1"
   destination_path="$2"
@@ -485,11 +481,6 @@ main() {
   backup_app="$temporary_directory/previous-$app_name"
   replace_application "$staged_app" "$destination_app" "$backup_app" \
     || fail "无法写入应用目录，原版本已恢复。"
-
-  if ! clear_application_quarantine "$destination_app"; then
-    restore_previous_application "$destination_app" "$backup_app" || true
-    fail "无法清除应用的 macOS 下载隔离属性，原版本已恢复。"
-  fi
 
   if ! /usr/bin/open "$destination_app"; then
     restore_previous_application "$destination_app" "$backup_app" || true

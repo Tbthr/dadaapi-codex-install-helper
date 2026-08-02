@@ -25,8 +25,8 @@
 - 正式安装脚本只能来自不可变发布标签；README 不得使用裸 `curl | sh` 或 `irm | iex`，下载失败时不得执行部分脚本。
 - 安装脚本仅在 Gitee 网络错误、超时或 `5xx` 时回退 GitHub；`4xx`、格式、版本、重复资产或哈希错误必须直接失败。
 - `checksums.txt` 必须恰好绑定同一版本的 Windows x64、Windows ARM64 和 macOS Universal 三个资产。GitHub 与 Gitee 的四个正式资产必须逐字节一致。
-- macOS 安装前必须验证 DMG、ad-hoc 代码完整性、`com.dadaapi.assistant` 和 Universal 架构，固定安装到当前用户的 `~/Applications` 后清除 quarantine，不得调用 `sudo`。
-- Windows 安装前必须验证 SHA-256，解除下载区块，并只允许 `currentUser` NSIS 安装模式；不得修改机器级 ExecutionPolicy 或请求提升权限。
+- macOS 安装前必须验证 DMG、ad-hoc 代码完整性、`com.dadaapi.assistant` 和 Universal 架构，固定安装到当前用户的 `~/Applications`；不得清除 quarantine 或调用 `sudo`。
+- Windows 安装前必须验证 SHA-256，并只允许 `currentUser` NSIS 安装模式；不得解除下载区块、修改机器级 ExecutionPolicy 或请求提升权限。
 - 未使用 Developer ID、Apple 公证或 Windows Authenticode，意味着操作系统不会认证发布者。SHA-256 只证明资产与同一 Release 的 `checksums.txt` 一致，不能抵御发布仓库同时被篡改。
 - 生产密钥只允许存在于无审批、仅接受受保护 `main` 与 `v*` 标签的 `production-release` GitHub Environment。路由构建凭据和 `GITEE_TOKEN` 只供发布、镜像或明确的元数据任务读取，普通 PR 和 CI 不得引用该 Environment。
 - `v*` 正式标签必须指向当前受保护 `main` 提交；发布后标签和资产均不可更新或删除。
