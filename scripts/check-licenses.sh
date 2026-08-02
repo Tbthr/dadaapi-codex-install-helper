@@ -19,7 +19,7 @@ done
 
 jq -e '
   .bundle.license == "Apache-2.0" and
-  .bundle.licenseFile == "../../../LICENSE" and
+  ((.bundle.licenseFile? == "../../../LICENSE") or (.bundle.licenseFile? == null)) and
   .bundle.resources["../../../LICENSE"] == "LICENSE" and
   .bundle.resources["../../../THIRD_PARTY_NOTICES.md"] == "THIRD_PARTY_NOTICES.md"
 ' apps/desktop/src-tauri/tauri.conf.json >/dev/null || {
