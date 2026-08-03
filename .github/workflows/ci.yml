@@ -60,6 +60,7 @@ jobs:
       - run: /bin/sh scripts/tests/install-sh-tests.sh
       - run: bash -n scripts/release/publish-gitee-release.sh
       - run: bash scripts/tests/gitee-api-tests.sh
+      - run: bash scripts/tests/gitee-upload-tests.sh
       - run: bash scripts/tests/github-api-tests.sh
 
   windows-installer:

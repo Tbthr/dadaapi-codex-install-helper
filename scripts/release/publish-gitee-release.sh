@@ -4,6 +4,7 @@ set -euo pipefail
 
 script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$script_directory/gitee-api.sh"
+source "$script_directory/gitee-upload.sh"
 
 required=(
   RELEASE_TAG
@@ -188,19 +189,17 @@ attachment_matches_manifest() {
 upload_attachment() {
   local name="$1"
   local expected_size="$2"
-  local upload_response upload_status attempt
+  local upload_response upload_status upload_exit attempt
+  local maximum_attempts=2
 
   upload_response="${RUNNER_TEMP:-/tmp}/gitee-upload.json"
-  for attempt in 1 2 3; do
-    upload_status=$(curl -sS --http1.1 --connect-timeout 20 --max-time 180 \
-      -o "$upload_response" \
-      -w '%{http_code}' \
-      -X POST \
-      -H "$gitee_authorization" \
-      -H 'Expect:' \
-      -F "file=@$RELEASE_ASSETS_DIRECTORY/$name;filename=$name;type=application/octet-stream" \
-      "$attachments_api") || upload_status=000
-    if [ "$upload_status" = 201 ] || [ "$upload_status" = 200 ]; then
+  for attempt in 1 2; do
+    upload_exit=0
+    upload_status=$(gitee_upload_attachment_request \
+      "$RELEASE_ASSETS_DIRECTORY/$name" "$name" "$attachments_api" \
+      "$gitee_authorization" "$upload_response" 900 "$attempt" "$maximum_attempts") \
+      || upload_exit=$?
+    if [ "$upload_exit" -eq 0 ] && { [ "$upload_status" = 201 ] || [ "$upload_status" = 200 ]; }; then
       return 0
     fi
 
@@ -209,7 +208,7 @@ upload_attachment() {
     if fetch_attachments && attachment_matches_manifest "$name" "$expected_size"; then
       return 0
     fi
-    [ "$attempt" -eq 3 ] || sleep $((attempt * 5))
+    [ "$attempt" -eq "$maximum_attempts" ] || sleep $((attempt * 5))
   done
 
   echo "Failed to upload Gitee asset after retries: $name" >&2
