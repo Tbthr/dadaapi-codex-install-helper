@@ -27,7 +27,7 @@ jobs:
       DADAAPI_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.DADAAPI_ROUTE_PUBLIC_KEY_PEM }}
       DADAAPI_ROUTE_KEY_B64: ${{ secrets.DADAAPI_ROUTE_KEY_B64 }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -111,7 +111,7 @@ jobs:
     needs: preflight
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -168,7 +168,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -306,7 +306,7 @@ jobs:
       RELEASE_COMMIT: ${{ github.sha }}
       RELEASE_ASSETS_DIRECTORY: ${{ github.workspace }}/release-assets
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
@@ -369,7 +369,7 @@ jobs:
       GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 

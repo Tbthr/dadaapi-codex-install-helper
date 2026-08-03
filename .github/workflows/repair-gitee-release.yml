@@ -32,7 +32,7 @@ jobs:
       RELEASE_TAG: ${{ inputs.tag }}
       RELEASE_ASSETS_DIRECTORY: ${{ github.workspace }}/release-assets
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -105,7 +105,7 @@ jobs:
       RELEASE_TAG: ${{ inputs.tag }}
       GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag }}
           persist-credentials: false
