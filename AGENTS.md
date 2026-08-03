@@ -2,18 +2,6 @@
 
 本文件适用于整个仓库，是 Codex、Claude 和其他 AI 编程工具的长期开发约束。
 
-## Source Of Truth
-
-开始任务前按需阅读：
-
-1. `docs/REQUIREMENTS.md`
-2. `docs/ARCHITECTURE.md`
-3. `docs/DEVELOPMENT_STANDARDS.md`
-4. `docs/SECURITY.md`
-5. `docs/ROADMAP.md`
-
-如果实现与文档冲突，先更新设计并说明原因，不要默默改变产品范围。
-
 ## Product Invariants
 
 - 最终客户端是 Tauri v2 + Rust，不包含 Go 二进制或 Sidecar。

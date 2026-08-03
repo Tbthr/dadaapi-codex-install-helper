@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "activation-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -543,7 +543,7 @@ dependencies = [
 
 [[package]]
 name = "chatgpt-e2e-fixture"
-version = "1.0.0"
+version = "1.0.1"
 
 [[package]]
 name = "chrono"
@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "cli-tools"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "dirs",
  "shared-types",
@@ -776,7 +776,7 @@ dependencies = [
 
 [[package]]
 name = "dada-assistant-desktop"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "activation-core",
  "async-trait",
@@ -892,7 +892,7 @@ dependencies = [
 
 [[package]]
 name = "desktop-discovery"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "async-trait",
  "dirs",
@@ -1000,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "downloader"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2305,7 +2305,7 @@ checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
 name = "locale-config"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "dirs",
  "serde_json",
@@ -2401,7 +2401,7 @@ dependencies = [
 
 [[package]]
 name = "msix-links"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2917,7 +2917,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "platform"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "async-trait",
  "dirs",
@@ -3094,7 +3094,7 @@ dependencies = [
 
 [[package]]
 name = "proxy-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3451,7 +3451,7 @@ dependencies = [
 
 [[package]]
 name = "route-bundle"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "base64 0.22.1",
  "chacha20poly1305",
@@ -3473,7 +3473,7 @@ dependencies = [
 
 [[package]]
 name = "route-catalog"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "proxy-core",
@@ -3485,7 +3485,7 @@ dependencies = [
 
 [[package]]
 name = "route-e2e"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "activation-core",
  "anyhow",
@@ -3972,7 +3972,7 @@ dependencies = [
 
 [[package]]
 name = "shared-types"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "serde",

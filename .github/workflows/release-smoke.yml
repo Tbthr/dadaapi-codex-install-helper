@@ -16,7 +16,7 @@ on:
       tag:
         description: Immutable release tag to install
         required: true
-        default: v1.0.0
+        default: v1.0.1
         type: string
       source:
         description: Release source
@@ -48,7 +48,7 @@ jobs:
           ref: ${{ inputs.tag }}
           persist-credentials: false
 
-      - name: 下载并比对不可变标签脚本
+      - name: 下载并比对不可变标签 Bootstrap
         env:
           RELEASE_SOURCE: ${{ inputs.source }}
           RELEASE_TAG: ${{ inputs.tag }}
@@ -58,24 +58,24 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           case "$RELEASE_SOURCE" in
             github)
-              script_url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RELEASE_TAG/scripts/install.sh"
+              script_url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RELEASE_TAG/scripts/bootstrap.sh"
               ;;
             gitee)
-              script_url="https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/$RELEASE_TAG/scripts/install.sh"
+              script_url="https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/$RELEASE_TAG/scripts/bootstrap.sh"
               ;;
             *) exit 1 ;;
           esac
-          remote_script="$RUNNER_TEMP/install.sh"
+          remote_script="$RUNNER_TEMP/bootstrap.sh"
           curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 \
             --connect-timeout 10 --max-time 60 \
             "$script_url" -o "$remote_script"
           test -s "$remote_script"
-          expected_blob=$(git rev-parse "${RELEASE_TAG}:scripts/install.sh")
+          expected_blob=$(git rev-parse "${RELEASE_TAG}:scripts/bootstrap.sh")
           actual_blob=$(git hash-object --no-filters "$remote_script")
           test "$actual_blob" = "$expected_blob"
           chmod 700 "$remote_script"
 
-      - name: 通过远程标签脚本安装并启动
+      - name: 通过远程标签 Bootstrap 安装并启动
         env:
           DADA_ASSISTANT_INSTALL_VERSION: ${{ inputs.tag }}
           DADA_ASSISTANT_INSTALL_SOURCE: ${{ inputs.source }}
@@ -83,7 +83,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          /bin/sh "$RUNNER_TEMP/install.sh"
+          /bin/sh "$RUNNER_TEMP/bootstrap.sh"
           app="$HOME/Applications/哒哒助手.app"
           test -d "$app"
           ! xattr -p com.apple.quarantine "$app" >/dev/null 2>&1
@@ -111,7 +111,7 @@ jobs:
           ref: ${{ inputs.tag }}
           persist-credentials: false
 
-      - name: 下载并比对不可变标签脚本
+      - name: 下载并比对不可变标签 Bootstrap
         shell: pwsh
         env:
           RELEASE_SOURCE: ${{ inputs.source }}
@@ -122,22 +122,22 @@ jobs:
             throw "Invalid release tag."
           }
           $scriptUrl = switch ($env:RELEASE_SOURCE) {
-            "github" { "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:RELEASE_TAG/scripts/install.ps1" }
-            "gitee" { "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/$env:RELEASE_TAG/scripts/install.ps1" }
+            "github" { "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:RELEASE_TAG/scripts/bootstrap.ps1" }
+            "gitee" { "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/$env:RELEASE_TAG/scripts/bootstrap.ps1" }
             default { throw "Invalid release source." }
           }
-          $remoteScript = Join-Path $env:RUNNER_TEMP "install.ps1"
+          $remoteScript = Join-Path $env:RUNNER_TEMP "bootstrap.ps1"
           Invoke-WebRequest -Uri $scriptUrl -OutFile $remoteScript -MaximumRedirection 5 -TimeoutSec 60
-          $expectedBlob = (& git rev-parse "$($env:RELEASE_TAG):scripts/install.ps1").Trim()
+          $expectedBlob = (& git rev-parse "$($env:RELEASE_TAG):scripts/bootstrap.ps1").Trim()
           if ($LASTEXITCODE -ne 0 -or $expectedBlob -cnotmatch '^[0-9a-f]{40,64}$') {
-            throw "Unable to resolve the tagged installer script blob."
+            throw "Unable to resolve the tagged Bootstrap script blob."
           }
           $actualBlob = (& git hash-object --no-filters -- $remoteScript).Trim()
           if ($LASTEXITCODE -ne 0 -or $actualBlob -cne $expectedBlob) {
-            throw "Remote tagged installer script differs from the checked-out tag."
+            throw "Remote tagged Bootstrap script differs from the checked-out tag."
           }
 
-      - name: 通过远程标签脚本安装并启动
+      - name: 通过远程标签 Bootstrap 安装并启动
         shell: pwsh
         env:
           DADA_ASSISTANT_INSTALL_VERSION: ${{ inputs.tag }}
@@ -146,7 +146,7 @@ jobs:
           DADA_ASSISTANT_INSTALL_CI_SILENT: "1"
         run: |
           $ErrorActionPreference = "Stop"
-          $remoteScript = Join-Path $env:RUNNER_TEMP "install.ps1"
+          $remoteScript = Join-Path $env:RUNNER_TEMP "bootstrap.ps1"
           Unblock-File -LiteralPath $remoteScript -ErrorAction Stop
           & $remoteScript
           $roots = @($env:LOCALAPPDATA) | Where-Object { $_ -and (Test-Path $_) }

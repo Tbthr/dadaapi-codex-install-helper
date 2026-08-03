@@ -21,8 +21,7 @@ const WU_SECURED_ENDPOINT: &str =
     "https://fe3cr.delivery.mp.microsoft.com/ClientWebService/client.asmx/secured";
 const WU_NS: &str = "http://www.microsoft.com/SoftwareDistribution/Server/ClientWebService";
 const REMOTE_MANIFEST_URL: &str =
-    "https://gitee.com/api/v5/repos/lyq_power/dadaapi-codex-install-helper/releases/tags/v1.0.0";
-const REMOTE_RELEASE_TAG: &str = "v1.0.0";
+    "https://gitee.com/api/v5/repos/lyq_power/dadaapi-codex-install-helper/releases/latest";
 const REMOTE_MANIFEST_BEGIN: &str = "<!-- DADAAPI_MSIX_LINKS_V1\n";
 const REMOTE_MANIFEST_END: &str = "\nDADAAPI_MSIX_LINKS_END -->";
 const MICROSOFT_DELIVERY_HOST: &str = "dl.delivery.mp.microsoft.com";
@@ -231,7 +230,7 @@ async fn resolve_remote_msix_url(architecture: CpuArchitecture) -> Result<Url, M
 fn parse_remote_manifest(body: &[u8]) -> Result<RemoteManifest, MsStoreError> {
     let release =
         serde_json::from_slice::<RemoteRelease>(body).map_err(|_| MsStoreError::InvalidMetadata)?;
-    if release.tag_name != REMOTE_RELEASE_TAG || release.prerelease {
+    if release.prerelease || !is_final_release_tag(&release.tag_name) {
         return Err(MsStoreError::InvalidMetadata);
     }
     if release.body.matches(REMOTE_MANIFEST_BEGIN).count() != 1
@@ -247,6 +246,21 @@ fn parse_remote_manifest(body: &[u8]) -> Result<RemoteManifest, MsStoreError> {
         .split_once(REMOTE_MANIFEST_END)
         .ok_or(MsStoreError::InvalidMetadata)?;
     serde_json::from_str(manifest.trim()).map_err(|_| MsStoreError::InvalidMetadata)
+}
+
+fn is_final_release_tag(tag: &str) -> bool {
+    let Some(version) = tag.strip_prefix('v') else {
+        return false;
+    };
+    let mut parts = version.split('.');
+    let valid = (0..3).all(|_| parts.next().is_some_and(is_semver_component));
+    valid && parts.next().is_none()
+}
+
+fn is_semver_component(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && (value == "0" || !value.starts_with('0'))
 }
 
 fn trusted_microsoft_delivery_url(url: &Url) -> bool {
@@ -430,7 +444,7 @@ mod remote_manifest_tests {
         assert_eq!(url.host_str(), Some("gitee.com"));
         assert_eq!(
             url.path(),
-            "/api/v5/repos/lyq_power/dadaapi-codex-install-helper/releases/tags/v1.0.0"
+            "/api/v5/repos/lyq_power/dadaapi-codex-install-helper/releases/latest"
         );
         assert!(url.query().is_none());
     }
@@ -456,6 +470,18 @@ mod remote_manifest_tests {
 
         let duplicate = br#"{"tag_name":"v1.0.0","prerelease":false,"body":"<!-- DADAAPI_MSIX_LINKS_V1\n{}\nDADAAPI_MSIX_LINKS_END --><!-- DADAAPI_MSIX_LINKS_V1\n{}\nDADAAPI_MSIX_LINKS_END -->"}"#;
         assert!(parse_remote_manifest(duplicate).is_err());
+
+        let invalid_tag = br#"{"tag_name":"latest","prerelease":false,"body":"<!-- DADAAPI_MSIX_LINKS_V1\n{}\nDADAAPI_MSIX_LINKS_END -->"}"#;
+        assert!(parse_remote_manifest(invalid_tag).is_err());
+    }
+
+    #[test]
+    fn accepts_only_final_semantic_release_tags() {
+        assert!(is_final_release_tag("v1.0.1"));
+        assert!(is_final_release_tag("v0.0.0"));
+        assert!(!is_final_release_tag("1.0.1"));
+        assert!(!is_final_release_tag("v01.0.1"));
+        assert!(!is_final_release_tag("v1.0.1-rc.1"));
     }
 
     #[test]

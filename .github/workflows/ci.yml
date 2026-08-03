@@ -55,15 +55,22 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - run: /bin/sh -n scripts/bootstrap.sh
       - run: /bin/sh -n scripts/install.sh
+      - run: /bin/sh -n scripts/tests/bootstrap-sh-tests.sh
+      - run: /bin/sh -n scripts/tests/bootstrap-readme-tests.sh
       - run: /bin/sh -n scripts/tests/install-sh-tests.sh
+      - run: /bin/sh scripts/tests/bootstrap-sh-tests.sh
+      - run: /bin/sh scripts/tests/bootstrap-readme-tests.sh
       - run: /bin/sh scripts/tests/install-sh-tests.sh
       - run: bash -n scripts/release/publish-gitee-release.sh
+      - run: bash -n scripts/release/publish-gitee-msix-metadata.sh
       - run: bash -n scripts/release/prune-old-releases.sh
       - run: bash scripts/tests/prune-old-releases-tests.sh
       - run: bash scripts/tests/gitee-api-tests.sh
       - run: bash scripts/tests/gitee-upload-tests.sh
       - run: bash scripts/tests/github-api-tests.sh
+      - run: bash scripts/tests/publish-gitee-msix-metadata-tests.sh
 
   windows-installer:
     name: Windows 安装脚本契约 (${{ matrix.architecture }})
@@ -84,29 +91,30 @@ jobs:
       - name: PowerShell 语法检查
         shell: pwsh
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $env:GITHUB_WORKSPACE "scripts/install.ps1"),
-            [ref]$tokens,
-            [ref]$errors
-          ) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_.ToString() }
-            exit 1
-          }
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $env:GITHUB_WORKSPACE "scripts/tests/install-ps1-tests.ps1"),
-            [ref]$tokens,
-            [ref]$errors
-          ) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_.ToString() }
-            exit 1
+          $scriptPaths = @(
+            "scripts/bootstrap.ps1",
+            "scripts/install.ps1",
+            "scripts/tests/bootstrap-ps1-tests.ps1",
+            "scripts/tests/install-ps1-tests.ps1"
+          )
+          foreach ($relativePath in $scriptPaths) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $env:GITHUB_WORKSPACE $relativePath),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "${relativePath}: $($_.ToString())" }
+              exit 1
+            }
           }
 
       - name: PowerShell 单元测试
         shell: pwsh
         env:
           DADA_ASSISTANT_INSTALL_ARCH: ${{ matrix.architecture }}
-        run: ./scripts/tests/install-ps1-tests.ps1
+        run: |
+          ./scripts/tests/bootstrap-ps1-tests.ps1
+          ./scripts/tests/install-ps1-tests.ps1
