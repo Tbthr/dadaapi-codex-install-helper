@@ -361,11 +361,18 @@ jobs:
     name: 验证两源 latest 和资产一致性
     needs: github-final
     environment: production-release
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ github.ref_name }}
       GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
       - name: 下载 latest 校验和并逐资产比对
         shell: bash
         run: |
@@ -444,3 +451,8 @@ jobs:
             test "$(sha256sum "gitee/$name" | awk '{ print $1 }')" = "$checksum"
             cmp "github/$name" "gitee/$name"
           done < github/checksums.txt
+
+      - name: 仅保留当前 Final Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release/prune-old-releases.sh

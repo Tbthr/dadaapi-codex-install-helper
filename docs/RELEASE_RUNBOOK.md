@@ -63,10 +63,13 @@ git push origin refs/tags/v1.0.10
 5. GitHub 标签脚本在 Intel、Apple Silicon、Windows x64 和 Windows ARM64 安装并启动。
 6. Gitee Final 通过 macOS runner 同步后，在相同四平台再次安装并启动。
 7. GitHub 转为 Final，并验证两端 `latest` 与四个资产逐字节一致。
+8. 两源验证通过后删除旧 GitHub/Gitee Release 记录，仅保留当前 Final；所有历史 `v*` 标签继续保留且不得改写或删除。
 
 任何步骤失败都不得继续后续渠道、移动标签或替换已经公开的资产。
 
 若 GitHub Prerelease 和四平台安装已通过，但 Gitee 上传因 runner 网络吞吐失败，修复代码合并到 `main` 后运行“修复 Gitee Release 发布”，输入原不可变标签。该工作流只接受仍为 GitHub Prerelease 且标签提交仍在 `main` 历史中的版本，并重新执行 Gitee 资产验真、四平台 Gitee 安装、GitHub Final 和两源 latest 验证。
+
+如需清理发布前已存在的旧 Release 记录，在 Actions 手动运行“仅保留最新 Release”并输入要保留的 Final 标签。工作流会先验证标签属于 `main`、两端均为 Final 且四个正式资产齐全，再删除其他 Release 记录；它不会调用标签删除接口。
 
 ## 6. Final Checks
 

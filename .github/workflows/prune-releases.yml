@@ -1,0 +1,44 @@
+name: 仅保留最新 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_tag:
+        description: Final release tag to retain without deleting any Git tags
+        required: true
+        default: v1.0.10
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: 删除旧 Release 记录并保留标签
+    environment: production-release
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.keep_tag }}
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 验证保留标签来自 main
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          release_commit=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
+          git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main
+
+      - name: 仅保留指定 Final Release
+        run: bash scripts/release/prune-old-releases.sh

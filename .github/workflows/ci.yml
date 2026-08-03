@@ -59,6 +59,8 @@ jobs:
       - run: /bin/sh -n scripts/tests/install-sh-tests.sh
       - run: /bin/sh scripts/tests/install-sh-tests.sh
       - run: bash -n scripts/release/publish-gitee-release.sh
+      - run: bash -n scripts/release/prune-old-releases.sh
+      - run: bash scripts/tests/prune-old-releases-tests.sh
       - run: bash scripts/tests/gitee-api-tests.sh
       - run: bash scripts/tests/gitee-upload-tests.sh
       - run: bash scripts/tests/github-api-tests.sh
