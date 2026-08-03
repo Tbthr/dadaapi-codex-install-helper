@@ -1,5 +1,25 @@
 #!/usr/bin/env bash
 
+gitee_file_size() {
+  wc -c < "$1" | tr -d '[:space:]'
+}
+
+gitee_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum -- "$1" | awk '{ print $1 }'
+  else
+    shasum -a 256 -- "$1" | awk '{ print $1 }'
+  fi
+}
+
+gitee_verify_sha256_manifest() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum --check "$1"
+  else
+    shasum -a 256 --check "$1"
+  fi
+}
+
 gitee_upload_attachment_request() {
   local asset_path="$1"
   local asset_name="$2"
@@ -16,7 +36,7 @@ gitee_upload_attachment_request() {
     return 2
   fi
 
-  asset_size=$(wc -c < "$asset_path" | tr -d '[:space:]')
+  asset_size=$(gitee_file_size "$asset_path")
   printf 'Starting Gitee asset upload: name=%s bytes=%s attempt=%s/%s timeout=%ss\n' \
     "$asset_name" "$asset_size" "$attempt" "$maximum_attempts" "$maximum_seconds" >&2
 

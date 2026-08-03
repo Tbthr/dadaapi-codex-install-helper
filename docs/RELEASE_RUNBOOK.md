@@ -61,10 +61,12 @@ git push origin refs/tags/v1.0.10
 3. macOS Universal ad-hoc DMG、Windows x64/ARM64 currentUser 未签名安装器构建。
 4. GitHub Draft 创建并转为 Prerelease。
 5. GitHub 标签脚本在 Intel、Apple Silicon、Windows x64 和 Windows ARM64 安装并启动。
-6. Gitee Final 同步后在相同四平台再次安装并启动。
+6. Gitee Final 通过 macOS runner 同步后，在相同四平台再次安装并启动。
 7. GitHub 转为 Final，并验证两端 `latest` 与四个资产逐字节一致。
 
 任何步骤失败都不得继续后续渠道、移动标签或替换已经公开的资产。
+
+若 GitHub Prerelease 和四平台安装已通过，但 Gitee 上传因 runner 网络吞吐失败，修复代码合并到 `main` 后运行“修复 Gitee Release 发布”，输入原不可变标签。该工作流只接受仍为 GitHub Prerelease 且标签提交仍在 `main` 历史中的版本，并重新执行 Gitee 资产验真、四平台 Gitee 安装、GitHub Final 和两源 latest 验证。
 
 ## 6. Final Checks
 
