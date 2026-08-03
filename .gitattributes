@@ -1,0 +1,5 @@
+# Integrity-pinned release scripts must preserve their canonical bytes on Windows checkouts.
+scripts/bootstrap.ps1 text eol=lf
+scripts/install.ps1 text eol=lf
+scripts/bootstrap.sh text eol=lf
+scripts/install.sh text eol=lf
