@@ -22,6 +22,14 @@ response="$fixture_directory/response.json"
 arguments="$fixture_directory/arguments.txt"
 log="$fixture_directory/upload.log"
 printf '%4096s' '' > "$asset"
+expected_hash=$(shasum -a 256 "$asset" | awk '{ print $1 }')
+test "$(gitee_file_size "$asset")" = 4096
+test "$(gitee_sha256 "$asset")" = "$expected_hash"
+printf '%s  %s\n' "$expected_hash" "$(basename "$asset")" > "$fixture_directory/checksums.txt"
+(
+  cd "$fixture_directory"
+  gitee_verify_sha256_manifest checksums.txt
+) >/dev/null
 
 PATH="$fixture_directory/bin:$PATH"
 GITEE_UPLOAD_TEST_ARGUMENTS="$arguments"

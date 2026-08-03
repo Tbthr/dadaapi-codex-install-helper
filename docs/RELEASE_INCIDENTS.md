@@ -15,6 +15,12 @@
 - `4xx`、SHA-256、格式、架构、Bundle ID、用户安装路径或启动失败不是可回退错误。
 - 已公开资产不得替换；修复后发布新补丁版本。
 
+### Gitee Upload Throughput
+
+- 若日志显示已快速连接并收到 `HTTP 100 Continue`，但 `uploaded_bytes` 在 900 秒内仍小于资产大小，属于 runner 到 Gitee 的上传吞吐故障，不是令牌或资产格式错误。
+- 正式 Gitee 上传固定使用 macOS runner。不要在同一网络路径上无限增加 Ubuntu runner 重试次数或关闭完整性门禁。
+- 若标签工作流已在 Gitee 阶段停止，先合并传输修复，再对原 GitHub Prerelease 运行“修复 Gitee Release 发布”。不得移动标签、替换 GitHub 资产或跳过 Gitee 四平台安装。
+
 ## Repository Or Credential Incident
 
 - Gitee Token 或路由构建配置泄露时立即轮换对应值并暂停创建标签。

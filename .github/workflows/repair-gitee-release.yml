@@ -1,0 +1,148 @@
+name: 修复 Gitee Release 发布
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing immutable GitHub prerelease tag
+        required: true
+        default: v1.0.10
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  gitee-final:
+    name: 从 macOS runner 续传 Gitee Final
+    environment: production-release
+    permissions:
+      contents: read
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+      GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_ASSETS_DIRECTORY: ${{ github.workspace }}/release-assets
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 验证不可变标签和 GitHub Prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          release_commit=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
+          git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          jq -e '
+            .tag_name == env.RELEASE_TAG and
+            .draft == false and
+            .prerelease == true and
+            (.assets | length) == 4
+          ' <<< "$release" >/dev/null
+          printf 'RELEASE_COMMIT=%s\n' "$release_commit" >> "$GITHUB_ENV"
+
+      - name: 下载 GitHub Prerelease 四资产
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release-assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets
+
+      - name: 同步、验真并公开 Gitee Release
+        run: bash scripts/release/publish-gitee-release.sh
+
+  gitee-install-smoke:
+    name: Gitee 版本化命令全安装
+    needs: gitee-final
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      tag: ${{ inputs.tag }}
+      source: gitee
+
+  github-final:
+    name: 公开 GitHub Final
+    needs: gitee-install-smoke
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Prerelease 转为 Final 并验证
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$RUNNER_TEMP/before.json"
+          after="$RUNNER_TEMP/after.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$before"
+          jq -e '.draft == false and .prerelease == true and (.assets | length) == 4' "$before" >/dev/null
+          jq -r '.assets[] | [.name, .size] | @tsv' "$before" | LC_ALL=C sort > "$RUNNER_TEMP/before-assets.tsv"
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$after"
+          jq -e '.draft == false and .prerelease == false and (.assets | length) == 4' "$after" >/dev/null
+          jq -r '.assets[] | [.name, .size] | @tsv' "$after" | LC_ALL=C sort > "$RUNNER_TEMP/after-assets.tsv"
+          diff -u "$RUNNER_TEMP/before-assets.tsv" "$RUNNER_TEMP/after-assets.tsv"
+
+  latest-endpoints:
+    name: 验证两源 latest 和资产一致性
+    needs: github-final
+    environment: production-release
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: 复用正式 latest 和资产一致性验证
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          github_latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest")
+          test "$(jq -r '.tag_name' <<< "$github_latest")" = "$RELEASE_TAG"
+          gitee_latest=$(curl -fsSL --connect-timeout 20 --max-time 60 \
+            "https://gitee.com/api/v5/repos/$GITEE_REPOSITORY/releases/latest")
+          test "$(jq -r '.tag_name' <<< "$gitee_latest")" = "$RELEASE_TAG"
+
+          temporary_directory=$(mktemp -d "$RUNNER_TEMP/latest-assets.XXXXXX")
+          trap 'rm -rf "$temporary_directory"' EXIT
+          mkdir "$temporary_directory/github" "$temporary_directory/gitee"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$temporary_directory/github"
+          gitee_base="https://gitee.com/$GITEE_REPOSITORY/releases/download/$RELEASE_TAG"
+          curl -fsSL --connect-timeout 20 --max-time 60 \
+            "$gitee_base/checksums.txt" \
+            -o "$temporary_directory/gitee/checksums.txt"
+          version="${RELEASE_TAG#v}"
+          for name in \
+            "Dada-Assistant_${version}_x64-setup.exe" \
+            "Dada-Assistant_${version}_arm64-setup.exe" \
+            "Dada-Assistant_${version}_universal.dmg"; do
+            curl -fsSL --connect-timeout 30 --max-time 900 \
+              "$gitee_base/$name" \
+              -o "$temporary_directory/gitee/$name"
+          done
+          diff -u "$temporary_directory/github/checksums.txt" "$temporary_directory/gitee/checksums.txt"
+          cd "$temporary_directory"
+          while read -r checksum name; do
+            test "$(sha256sum "github/$name" | awk '{ print $1 }')" = "$checksum"
+            test "$(sha256sum "gitee/$name" | awk '{ print $1 }')" = "$checksum"
+            cmp "github/$name" "gitee/$name"
+          done < github/checksums.txt

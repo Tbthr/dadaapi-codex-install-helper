@@ -59,7 +59,7 @@ diff -u \
   <(printf '%s\n' "${expected_names[@]}" | LC_ALL=C sort) \
   <(printf '%s\n' "${actual_names[@]}" | LC_ALL=C sort)
 test "$(wc -l < checksums.txt | tr -d ' ')" -eq 3
-sha256sum --check checksums.txt
+gitee_verify_sha256_manifest checksums.txt
 diff -u \
   <(printf '%s\n' "$x64_installer" "$arm64_installer" "$universal_dmg" | LC_ALL=C sort) \
   <(awk 'NF == 2 { print $2 }' checksums.txt | LC_ALL=C sort)
@@ -73,8 +73,8 @@ for name in "${expected_names[@]}"; do
       exit 1
       ;;
   esac
-  checksum=$(sha256sum -- "$name" | awk '{ print $1 }')
-  size=$(stat -c '%s' -- "$name")
+  checksum=$(gitee_sha256 "$name")
+  size=$(gitee_file_size "$name")
   printf '%s\t%s\t%s\n' "$checksum" "$size" "$name" >> "$manifest"
 done
 LC_ALL=C sort -o "$manifest" "$manifest"
@@ -251,8 +251,8 @@ while IFS=$'\t' read -r expected_checksum expected_size name; do
     -H "$gitee_authorization" \
     "$attachments_api/$attachment_id/download" \
     -o "$verified_directory/$name"
-  test "$(stat -c '%s' "$verified_directory/$name")" = "$expected_size"
-  test "$(sha256sum "$verified_directory/$name" | awk '{ print $1 }')" = "$expected_checksum"
+  test "$(gitee_file_size "$verified_directory/$name")" = "$expected_size"
+  test "$(gitee_sha256 "$verified_directory/$name")" = "$expected_checksum"
 done < "$manifest"
 
 final_response="${RUNNER_TEMP:-/tmp}/gitee-release-final.json"
@@ -282,8 +282,8 @@ while IFS=$'\t' read -r expected_checksum expected_size name; do
     if curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 \
       --connect-timeout 30 --max-time 900 --max-filesize "$expected_size" \
       "$public_url" -o "$public_path" \
-      && [ "$(stat -c '%s' "$public_path")" = "$expected_size" ] \
-      && [ "$(sha256sum "$public_path" | awk '{ print $1 }')" = "$expected_checksum" ]; then
+      && [ "$(gitee_file_size "$public_path")" = "$expected_size" ] \
+      && [ "$(gitee_sha256 "$public_path")" = "$expected_checksum" ]; then
       downloaded=true
       break
     fi
