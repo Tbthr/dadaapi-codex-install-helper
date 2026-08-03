@@ -7,6 +7,7 @@
 - `main` 必须通过完整质量门禁以及 macOS、Windows x64、Windows ARM64 安装脚本契约。
 - 单人仓库允许零批准合并，但仍必须走 PR；管理员同样不得绕过必需 CI。
 - GitHub 与 Gitee 的 `v*` 标签禁止更新和删除。
+- `main` 镜像同步会补齐 Gitee 缺失的 `v*` 标签；同名标签对象不一致时流水线必须失败，禁止强制覆盖。
 - Secret Scanning、Push Protection 和 Dependabot security updates 保持启用。
 
 ## 2. Production Environment
