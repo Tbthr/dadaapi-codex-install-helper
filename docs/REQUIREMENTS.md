@@ -1,0 +1,96 @@
+# Product Requirements
+
+## Product
+
+哒哒助手是哒哒 API 品牌下的开源跨平台桌面工具，支持 Windows 和 macOS。
+
+## Core User Flow
+
+1. 用户安装对应平台的哒哒助手。
+2. App 自动检测 ChatGPT 或旧版 Codex。
+3. App 优先从 Gitee、备用从 GitHub Raw 获取最新签名加密路由包，验签、校验、解密并解析代理节点。
+4. App 在测速前排除香港节点和国内节点。
+5. App 使用 ChatGPT/OpenAI 激活所需地址检测剩余海外节点，选择最优可用节点。
+6. 用户点击“一键中文”。
+7. App 启动使用最优节点的本地临时代理，并保存用户原网络状态。
+8. App 让 ChatGPT/Codex 通过该代理启动，再写入 `localeOverride = "zh-CN"`。
+9. App 等待并验证中文真实生效。
+10. 中文验证完成后继续保留当前代理，明确提示用户代理仍在使用。
+11. 用户点击“恢复原网络”后，App 先恢复并确认原网络配置，再关闭本地代理。
+
+仅写入语言配置或仅重启应用不算中文激活成功。中文激活必须经过已验证的海外代理节点，并完成应用内结果验证。
+中文设置界面按“应用就绪、路由确认、处理旧恢复记录、中文设置验证、恢复原网络”展示五步流程；最后一步只能由用户手动触发。
+
+## Required Features
+
+- ChatGPT/Codex 检测、版本和路径展示
+- 不展示哒哒助手自身版本字段
+- 一键中文配置
+- Gitee 优先、GitHub 备用的静态路由包下载、签名验证、哈希校验、解密和密文本地缓存
+- 遗留代理状态检测和手动网络恢复
+- 官方软件下载中心
+- ChatGPT、Claude Desktop、CC Switch、Node.js LTS 官方安装包下载并打开
+- Codex CLI、Claude Code CLI 状态检测与官方 npm 安装
+- 下载进度、取消、重试、断点续传、打开目录和复制链接
+- 中文设置流程内的手动网络恢复和失败重试
+- Windows x64/ARM64、Mac Intel/Apple Silicon 发布
+- 固定浅色品牌界面，不提供主题切换或客户端在线更新检查
+
+## Route Publishing Features
+
+- 独立 `dadaapi-routes` 仓库通过 GitHub Actions 定时拉取上游订阅。
+- 使用 XChaCha20-Poly1305 加密订阅正文。
+- 发布带版本、生成时间、有效期、文件大小、SHA-256 和 `keyId` 的清单。
+- 使用 Ed25519 私钥签名清单原始字节。
+- GitHub 公开仓库只保存 `manifest.json`、`routes.sig` 和 `routes.enc`，不保存原始订阅地址、Token、签名私钥或解密 key。
+
+## Explicitly Removed
+
+- 卡密和 CZH1 激活码
+- 用户登录和激活验证
+- 使用次数、有效期和 IP 绑定
+- 卡密重置、禁用和激活历史
+- 七牛云和自建软件下载镜像
+- 第三方软件的下载镜像、镜像令牌和镜像回退
+- Go Sidecar 和浏览器式本地向导
+- 远端流量隧道和服务器代理中转
+- SSH 订阅后台、配置服务器和订阅中继
+- 客户端自动或手动在线更新检查
+- 诊断报告、诊断导出和桌面端本地文件日志
+
+## Network Policy
+
+- 中文代理配置优先通过 Gitee、备用通过 GitHub Raw 的固定 HTTPS 静态文件更新。
+- 客户端只接受无内嵌凭据、无查询参数、无片段的 HTTPS `manifest.json` 地址。
+- 客户端先验证 Ed25519 清单签名，再验证有效期、`keyId`、密文大小和 SHA-256，最后才允许解密。
+- 只有网络错误、超时或远端 `5xx` 才允许依次回退到 GitHub 和仍未过期且重新验签、重新校验、重新解密成功的本地密文缓存。
+- 远程签名、格式、哈希或解密错误必须直接失败，不得用缓存掩盖。
+- 客户端获取订阅后在本机解析、筛选和测试节点，本地代理直接连接选中的海外节点。
+- 软件安装包必须从官方来源下载。
+- CLI 只允许从 `https://registry.npmjs.org` 安装固定白名单包，不接受前端传入包名或命令。
+- 软件下载安装流量使用用户本地网络，并遵循系统代理或 VPN。
+- 官方下载失败时展示真实错误，不自动切换自建镜像。
+- 中文激活节点必须排除香港和国内地区。
+- 最优节点必须根据真实代理请求的成功率、延迟和稳定性选择，不能只使用 ICMP Ping。
+- 激活完成或验证失败后不得自动恢复系统代理；中文设置第五步必须提供明确的手动恢复入口和当前代理状态。
+- 客户端重新启动时不得自动改写系统代理；检测到遗留恢复记录后必须阻止再次激活并提示用户手动恢复。
+- 开源客户端内置解密 key 只能阻止公开仓库中的密文被直接浏览，不能对拥有客户端二进制的人保证节点绝对保密。
+
+## Desktop Distribution
+
+- Cargo、Tauri 和 npm 构建版本统一为 `1.0.0`；当前唯一正式标签与 Release 为 `v1.0.0`，对用户展示为“哒哒助手 v1.0”。
+- GitHub/Gitee Release 仅分发安装包和 SHA-256 校验和，不生成 updater JSON，也不作为客户端在线更新源。
+- 两端正式 Release 各自只能包含 Windows x64、Windows ARM64、macOS Universal DMG 与 `checksums.txt`，对应资产必须逐字节一致。
+- Microsoft Store 短期下载元数据只允许写入 Gitee `v1.0.0` Final Release 的说明字段，不得创建额外分支、标签或 Release 资产。
+- 正式安装入口从不可变标签获取脚本；脚本仅在 Gitee 网络错误、超时或 `5xx` 时回退 GitHub，并在安装前完成严格资产名、版本和 SHA-256 校验。
+- macOS 采用 ad-hoc Universal 应用并固定安装到 `~/Applications`，保留系统 quarantine；Windows 采用未签名的 `currentUser` NSIS 安装器并保留下载区块。两端安装均不得请求管理员密码。
+- 自有 Gitee 仓库镜像同步 `main`、发布标签和 Release 资产；GitHub Actions 中的目标仓库使用变量配置，写入令牌仅保存为 Actions Secret。
+
+## Non-Goals For First Release
+
+- 手机端
+- Linux 桌面端
+- 用户账户体系
+- 计费、卡密或权限销售
+- 插件市场
+- 后台远程控制用户电脑

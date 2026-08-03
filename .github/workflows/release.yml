@@ -1,0 +1,460 @@
+name: 发布哒哒助手 v1.0
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: 验证标签与生产配置
+    environment: production-release
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+      GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      DADAAPI_ROUTE_PUBLIC_KEY_PEM: ${{ secrets.DADAAPI_ROUTE_PUBLIC_KEY_PEM }}
+      DADAAPI_ROUTE_KEY_B64: ${{ secrets.DADAAPI_ROUTE_KEY_B64 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 验证版本、提交与标签
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          desktop_version=$(jq -r '.version // empty' apps/desktop/src-tauri/tauri.conf.json)
+          package_version=$(jq -r '.version // empty' apps/desktop/package.json)
+          root_package_version=$(jq -r '.version // empty' package.json)
+          workspace_version=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '[.packages[].version] | unique | if length == 1 then .[0] else empty end')
+          test -n "$desktop_version"
+          test "$desktop_version" = "$package_version"
+          test "$desktop_version" = "$root_package_version"
+          test "$desktop_version" = "$workspace_version"
+          test "$GITHUB_REF_NAME" = "v$desktop_version"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          test "$main_sha" = "$GITHUB_SHA" || {
+            echo "::error title=Release is not current main::The release tag must point to the accepted protected main commit."
+            exit 1
+          }
+
+      - name: 验证发布配置
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            GITEE_TOKEN
+            DADAAPI_ROUTE_PUBLIC_KEY_PEM
+            DADAAPI_ROUTE_KEY_B64
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf '::error title=Missing production release configuration::Configure in production-release: %s\n' "${missing[*]}"
+            exit 1
+          fi
+          [[ "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]
+          [ -z "$GITEE_USERNAME" ] || [[ "$GITEE_USERNAME" =~ ^[A-Za-z0-9._-]+$ ]]
+          test "$(jq -r '.identifier' apps/desktop/src-tauri/tauri.conf.json)" = com.dadaapi.assistant
+          test "$(jq -r '.bundle.windows.nsis.installMode' apps/desktop/src-tauri/tauri.conf.json)" = currentUser
+          test "$(jq -r '.bundle.macOS.signingIdentity' apps/desktop/src-tauri/tauri.release.conf.json)" = '-'
+
+      - name: 拒绝覆盖两端最终 Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/release/gitee-api.sh
+          source scripts/release/github-api.sh
+          github_response="$RUNNER_TEMP/github-release.json"
+          github_release_by_tag "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$github_response"
+          jq -e '. == null or (.tag_name == env.GITHUB_REF_NAME and (.draft == true or .prerelease == true))' "$github_response" >/dev/null || {
+            echo "::error title=Final GitHub release exists::Publish a new patch version; never replace final assets."
+            exit 1
+          }
+
+          gitee_response="$RUNNER_TEMP/gitee-release.json"
+          gitee_status=$(curl -sS --connect-timeout 20 --max-time 60 \
+            -o "$gitee_response" -w '%{http_code}' \
+            -H "Authorization: token $GITEE_TOKEN" \
+            "https://gitee.com/api/v5/repos/$GITEE_REPOSITORY/releases/tags/$GITHUB_REF_NAME")
+          if gitee_release_is_absent "$gitee_status" "$gitee_response"; then
+            :
+          elif [ "$gitee_status" = 200 ] &&
+            jq -e '.tag_name == env.GITHUB_REF_NAME and .prerelease == true' "$gitee_response" >/dev/null; then
+            :
+          else
+            echo "::error title=Final Gitee release exists::Publish a new patch version; never replace final assets."
+            exit 1
+          fi
+
+  quality:
+    name: 完整代码与安装脚本检查
+    needs: preflight
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          components: rustfmt,clippy
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: production-release-quality
+
+      - run: pnpm install --frozen-lockfile
+      - run: cargo fmt --all -- --check
+      - run: cargo check --workspace
+      - run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: pnpm --dir apps/desktop check
+      - run: pnpm --dir apps/desktop build
+      - run: /bin/sh scripts/tests/install-sh-tests.sh
+      - run: bash scripts/tests/gitee-api-tests.sh
+      - run: bash scripts/tests/gitee-upload-tests.sh
+      - run: bash scripts/tests/publish-gitee-msix-metadata-tests.sh
+      - run: bash scripts/tests/shell-portability-tests.sh
+      - run: bash scripts/tests/github-api-tests.sh
+      - run: bash scripts/check-licenses.sh
+
+  signed-build:
+    name: 生产用户态构建
+    needs:
+      - preflight
+      - quality
+    uses: ./.github/workflows/signed-build.yml
+    with:
+      commit_sha: ${{ github.sha }}
+      artifact_prefix: release
+      retention_days: 7
+    secrets: inherit
+
+  github-draft:
+    name: 创建或验证 GitHub Draft
+    needs: signed-build
+    permissions:
+      actions: read
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: 生成严格四资产契约
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          expected_version="${RELEASE_TAG#v}"
+          x64="Dada-Assistant_${expected_version}_x64-setup.exe"
+          arm64="Dada-Assistant_${expected_version}_arm64-setup.exe"
+          macos="Dada-Assistant_${expected_version}_universal.dmg"
+          test -f "$x64"
+          test -f "$arm64"
+          test -f "$macos"
+          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 3
+          sha256sum "$x64" "$arm64" "$macos" > checksums.txt
+          sha256sum --check checksums.txt
+          test "$(wc -l < checksums.txt | tr -d ' ')" -eq 3
+
+      - name: 创建或安全复用 Draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          source scripts/release/github-api.sh
+          response="$RUNNER_TEMP/github-release.json"
+          github_release_by_tag "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$response"
+          if jq -e '. == null' "$response" >/dev/null; then
+            if ! gh release create "$RELEASE_TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --draft \
+              --prerelease \
+              --title "哒哒助手 $RELEASE_TAG" \
+              --notes "哒哒助手 $RELEASE_TAG 正式候选。仅包含三个用户态安装包与 checksums.txt；完成两源安装门禁后自动转为正式版。"; then
+              echo "::warning title=GitHub release CLI returned an error::Verifying whether the Draft and all assets were created before failing."
+            fi
+          elif jq -e '.tag_name == env.RELEASE_TAG and .draft == true' "$response" >/dev/null; then
+            existing="$RUNNER_TEMP/existing-assets"
+            mkdir "$existing"
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$existing"
+            for existing_file in "$existing"/*; do
+              name=$(basename "$existing_file")
+              test -f "release-assets/$name" || {
+                echo "Draft contains an unexpected asset: $name" >&2
+                exit 1
+              }
+              cmp "$existing_file" "release-assets/$name" || {
+                echo "Draft asset differs and will not be replaced: $name" >&2
+                exit 1
+              }
+            done
+            for local_file in release-assets/*; do
+              name=$(basename "$local_file")
+              [ -f "$existing/$name" ] || gh release upload "$RELEASE_TAG" "$local_file" --repo "$GITHUB_REPOSITORY"
+            done
+          else
+            echo "Refusing to alter a non-draft GitHub release." >&2
+            exit 1
+          fi
+
+          verified="$RUNNER_TEMP/github-draft.json"
+          valid_draft=0
+          for attempt in 1 2 3 4 5 6; do
+            github_release_by_tag "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$verified"
+            if jq -e '
+              .tag_name == env.RELEASE_TAG and
+              .draft == true and
+              .prerelease == true and
+              ([.assets[].name] | length) == 4 and
+              ([.assets[].name] | unique | length) == 4 and
+              ([.assets[].name | select(. == "checksums.txt")] | length == 1) and
+              ([.assets[].name | select(endswith("_x64-setup.exe"))] | length == 1) and
+              ([.assets[].name | select(endswith("_arm64-setup.exe"))] | length == 1) and
+              ([.assets[].name | select(endswith("_universal.dmg"))] | length == 1)
+            ' "$verified" >/dev/null; then
+              valid_draft=1
+              break
+            fi
+            sleep 5
+          done
+          test "$valid_draft" -eq 1 || {
+            echo "GitHub Draft did not become complete within the verification window." >&2
+            exit 1
+          }
+
+  github-prerelease:
+    name: 公开 GitHub Prerelease
+    needs: github-draft
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Draft 转为 Prerelease 并验证
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+            --jq 'select(.draft == false and .prerelease == true and (.assets | length) == 4) | .tag_name' \
+            | grep -Fqx "$RELEASE_TAG"
+
+  github-install-smoke:
+    name: GitHub 版本化命令全安装
+    needs: github-prerelease
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      tag: ${{ github.ref_name }}
+      source: github
+
+  gitee-final:
+    name: 同步并公开 Gitee Final
+    needs: github-install-smoke
+    environment: production-release
+    permissions:
+      contents: read
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+      GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_COMMIT: ${{ github.sha }}
+      RELEASE_ASSETS_DIRECTORY: ${{ github.workspace }}/release-assets
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 下载 GitHub Prerelease 四资产
+        shell: bash
+        run: |
+          set -euo pipefail
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          jq -e '.tag_name == env.RELEASE_TAG and .draft == false and .prerelease == true and (.assets | length) == 4' <<< "$release" >/dev/null
+          mkdir release-assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets
+
+      - name: 同步、验真并公开 Gitee Release
+        run: bash scripts/release/publish-gitee-release.sh
+
+  gitee-install-smoke:
+    name: Gitee 版本化命令全安装
+    needs: gitee-final
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      tag: ${{ github.ref_name }}
+      source: gitee
+
+  github-final:
+    name: 公开 GitHub Final
+    needs: gitee-install-smoke
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Prerelease 转为 Final 并验证
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$RUNNER_TEMP/before.json"
+          after="$RUNNER_TEMP/after.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$before"
+          jq -e '.draft == false and .prerelease == true and (.assets | length) == 4' "$before" >/dev/null
+          jq -r '.assets[] | [.name, .size] | @tsv' "$before" | LC_ALL=C sort > "$RUNNER_TEMP/before-assets.tsv"
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$after"
+          jq -e '.draft == false and .prerelease == false and (.assets | length) == 4' "$after" >/dev/null
+          jq -r '.assets[] | [.name, .size] | @tsv' "$after" | LC_ALL=C sort > "$RUNNER_TEMP/after-assets.tsv"
+          diff -u "$RUNNER_TEMP/before-assets.tsv" "$RUNNER_TEMP/after-assets.tsv"
+
+  latest-endpoints:
+    name: 验证两源 latest 和资产一致性
+    needs: github-final
+    environment: production-release
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: 下载 latest 校验和并逐资产比对
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir github gitee
+          github_base="https://github.com/$GITHUB_REPOSITORY/releases/latest/download"
+          github_latest=""
+          for attempt in 1 2 3 4 5 6 7; do
+            if github_latest=$(curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 \
+              --connect-timeout 20 --max-time 60 \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest") \
+              && jq -e --arg tag "$RELEASE_TAG" \
+                '.tag_name == $tag and .draft == false and .prerelease == false' \
+                <<< "$github_latest" >/dev/null; then
+              break
+            fi
+            github_latest=""
+            [ "$attempt" -eq 7 ] || sleep $((attempt * 5))
+          done
+          test -n "$github_latest"
+
+          gitee_latest=""
+          for attempt in 1 2 3 4 5 6 7; do
+            if gitee_latest=$(curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 \
+              --connect-timeout 20 --max-time 60 \
+              "https://gitee.com/api/v5/repos/$GITEE_REPOSITORY/releases/latest") \
+              && jq -e --arg tag "$RELEASE_TAG" \
+                '.tag_name == $tag and .prerelease == false' \
+                <<< "$gitee_latest" >/dev/null; then
+              break
+            fi
+            gitee_latest=""
+            [ "$attempt" -eq 7 ] || sleep $((attempt * 5))
+          done
+          test -n "$gitee_latest"
+          gitee_latest_tag=$(jq -r '.tag_name // empty' <<< "$gitee_latest")
+          gitee_base="https://gitee.com/$GITEE_REPOSITORY/releases/download/$gitee_latest_tag"
+
+          download_with_retries() {
+            url="$1"
+            destination="$2"
+            maximum_bytes="$3"
+            maximum_time="$4"
+            for attempt in 1 2 3 4; do
+              rm -f "$destination"
+              if curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 \
+                --connect-timeout 30 --max-time "$maximum_time" --max-filesize "$maximum_bytes" \
+                "$url" -o "$destination"; then
+                return 0
+              fi
+              [ "$attempt" -eq 4 ] || sleep $((attempt * 5))
+            done
+            return 1
+          }
+
+          download_with_retries "$github_base/checksums.txt" github/checksums.txt 65536 60
+          download_with_retries "$gitee_base/checksums.txt" gitee/checksums.txt 65536 60
+          cmp github/checksums.txt gitee/checksums.txt
+          test "$(wc -l < github/checksums.txt | tr -d ' ')" -eq 3
+          expected_version="${RELEASE_TAG#v}"
+          expected_names=$(printf '%s\n' \
+            "Dada-Assistant_${expected_version}_x64-setup.exe" \
+            "Dada-Assistant_${expected_version}_arm64-setup.exe" \
+            "Dada-Assistant_${expected_version}_universal.dmg" | LC_ALL=C sort)
+          actual_names=$(awk 'NF == 2 { print $2 }' github/checksums.txt | LC_ALL=C sort)
+          test "$actual_names" = "$expected_names"
+          while read -r checksum name extra; do
+            test -z "${extra:-}"
+            [[ "$checksum" =~ ^[0-9a-f]{64}$ ]]
+            case "$name" in */*|*\\*|[-.]*) exit 1 ;; esac
+            download_with_retries "$github_base/$name" "github/$name" 1073741824 900
+            download_with_retries "$gitee_base/$name" "gitee/$name" 1073741824 900
+            test "$(sha256sum "github/$name" | awk '{ print $1 }')" = "$checksum"
+            test "$(sha256sum "gitee/$name" | awk '{ print $1 }')" = "$checksum"
+            cmp "github/$name" "gitee/$name"
+          done < github/checksums.txt
+
+      - name: 仅保留当前 Final Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release/prune-old-releases.sh

@@ -1,0 +1,30 @@
+[package]
+name = "activation-core"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+desktop-discovery = { path = "../desktop-discovery" }
+locale-config = { path = "../locale-config" }
+platform = { path = "../platform" }
+proxy-core = { path = "../proxy-core" }
+route-bundle = { path = "../route-bundle" }
+route-catalog = { path = "../route-catalog" }
+serde.workspace = true
+serde_json.workspace = true
+shared-types = { path = "../shared-types" }
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

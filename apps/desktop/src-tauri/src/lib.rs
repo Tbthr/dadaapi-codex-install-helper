@@ -1,0 +1,430 @@
+pub mod activation_runtime;
+pub mod cli_tools;
+pub mod downloads;
+pub mod software_status;
+
+use activation_core::{
+    ActivationError, LocaleActivationService, NetworkRecoveryService, NetworkRecoveryStore,
+};
+use activation_runtime::DesktopActivationState;
+use platform::NativePlatformAdapter;
+use shared_types::{
+    ActivationEvent, ActivationPhase, CommandError, CpuArchitecture, LocaleActivationResult,
+    LocaleOverview, LocaleRestoreResult, NetworkRecoveryStatus, OperatingSystem, RepairOverview,
+};
+#[cfg(all(feature = "e2e", target_os = "windows"))]
+use std::{io, path::PathBuf};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+const ACTIVATION_PROGRESS_EVENT: &str = "activation-progress";
+#[cfg(all(feature = "e2e", target_os = "windows"))]
+const E2E_REMOTE_DEBUG_PORT_ENV: &str = "DADA_E2E_REMOTE_DEBUG_PORT";
+#[cfg(all(feature = "e2e", target_os = "windows"))]
+const E2E_WEBVIEW2_USER_DATA_FOLDER_ENV: &str = "DADA_E2E_WEBVIEW2_USER_DATA_FOLDER";
+
+#[tauri::command]
+async fn get_locale_overview() -> Result<LocaleOverview, CommandError> {
+    LocaleActivationService::default()
+        .overview()
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+async fn restore_locale_configuration(
+    selected_executable_path: Option<String>,
+) -> Result<LocaleRestoreResult, CommandError> {
+    LocaleActivationService::default()
+        .restore(selected_executable_path)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+async fn get_repair_overview(
+    state: State<'_, DesktopActivationState>,
+) -> Result<RepairOverview, CommandError> {
+    let overview = LocaleActivationService::default()
+        .overview()
+        .await
+        .map_err(command_error)?;
+    Ok(RepairOverview {
+        app: overview.apps.into_iter().next(),
+        locale: overview.locale,
+        activation_available: state.is_available(),
+    })
+}
+
+#[tauri::command]
+fn is_activation_available(state: State<'_, DesktopActivationState>) -> bool {
+    state.is_available()
+}
+
+#[tauri::command]
+async fn activate_chinese(
+    app: AppHandle,
+    state: State<'_, DesktopActivationState>,
+    selected_executable_path: Option<String>,
+) -> Result<LocaleActivationResult, CommandError> {
+    let runtime = state.runtime().ok_or_else(activation_unavailable_error)?;
+    let event_app = app.clone();
+    runtime
+        .coordinator
+        .activate_with_progress(selected_executable_path, move |phase| {
+            let event = ActivationEvent::new(phase, activation_phase_message(phase));
+            if event_app.emit(ACTIVATION_PROGRESS_EVENT, event).is_err() {
+                tracing::warn!(?phase, "could not emit activation progress");
+            }
+        })
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+async fn get_network_recovery_status(
+    state: State<'_, DesktopActivationState>,
+) -> Result<NetworkRecoveryStatus, CommandError> {
+    network_recovery_status(&state).await
+}
+
+async fn network_recovery_status(
+    state: &DesktopActivationState,
+) -> Result<NetworkRecoveryStatus, CommandError> {
+    if let Some(runtime) = state.runtime() {
+        return runtime
+            .coordinator
+            .network_recovery_status()
+            .await
+            .map_err(command_error);
+    }
+
+    let pending = state
+        .fallback_recovery()
+        .has_pending()
+        .map_err(|error| command_error(ActivationError::NetworkSafety(error)))?;
+    Ok(NetworkRecoveryStatus {
+        pending,
+        local_proxy_active: false,
+    })
+}
+
+fn has_pending_recovery_record(state: &DesktopActivationState) -> Result<bool, CommandError> {
+    if let Some(runtime) = state.runtime() {
+        return runtime
+            .coordinator
+            .has_pending_recovery_record()
+            .map_err(command_error);
+    }
+
+    state
+        .fallback_recovery()
+        .has_pending()
+        .map_err(|error| command_error(ActivationError::NetworkSafety(error)))
+}
+
+#[tauri::command]
+async fn restore_network(
+    state: State<'_, DesktopActivationState>,
+) -> Result<NetworkRecoveryStatus, CommandError> {
+    restore_network_internal(&state).await
+}
+
+async fn restore_network_internal(
+    state: &DesktopActivationState,
+) -> Result<NetworkRecoveryStatus, CommandError> {
+    if let Some(runtime) = state.runtime() {
+        return runtime
+            .coordinator
+            .restore_network()
+            .await
+            .map_err(command_error);
+    }
+
+    state
+        .fallback_recovery()
+        .restore_pending()
+        .await
+        .map_err(|error| command_error(ActivationError::NetworkSafety(error)))?;
+    let pending = state
+        .fallback_recovery()
+        .has_pending()
+        .map_err(|error| command_error(ActivationError::NetworkSafety(error)))?;
+    Ok(NetworkRecoveryStatus {
+        pending,
+        local_proxy_active: false,
+    })
+}
+
+#[tauri::command]
+async fn prepare_activation_network(
+    state: State<'_, DesktopActivationState>,
+) -> Result<NetworkRecoveryStatus, CommandError> {
+    if has_pending_recovery_record(&state)? {
+        restore_network_internal(&state).await?;
+    }
+    network_recovery_status(&state).await
+}
+
+fn activation_unavailable_error() -> CommandError {
+    CommandError {
+        code: "activation_unavailable".to_owned(),
+        message: "当前版本未配置中文代理服务".to_owned(),
+    }
+}
+
+fn activation_phase_message(phase: ActivationPhase) -> &'static str {
+    match phase {
+        ActivationPhase::Idle => "准备开始中文激活",
+        ActivationPhase::DetectingApp => "正在重新检测 ChatGPT/Codex",
+        ActivationPhase::FetchingProxyConfig => "正在获取并验证加密路由",
+        ActivationPhase::FilteringProxyNodes => "正在筛选可用的海外节点",
+        ActivationPhase::TestingProxyNodes => "正在并行检测候选节点（最多 15 秒）",
+        ActivationPhase::SelectingProxyNode => "已选出当前最稳定节点",
+        ActivationPhase::StartingLocalProxy => "正在启动临时本地代理",
+        ActivationPhase::SavingNetworkState => "正在保存原网络设置",
+        ActivationPhase::WritingLocale => "正在写入中文配置",
+        ActivationPhase::StoppingDesktopApp => "正在关闭 ChatGPT/Codex",
+        ActivationPhase::LaunchingDesktopApp => "正在通过最优节点启动应用",
+        ActivationPhase::Verifying => "正在验证中文界面是否生效",
+        ActivationPhase::RestoringNetwork => "正在恢复原网络设置",
+        ActivationPhase::StoppingLocalProxy => "正在关闭临时本地代理",
+        ActivationPhase::Succeeded => "中文已生效，代理仍在使用，请按需手动恢复网络",
+        ActivationPhase::Failed => "中文激活未完成",
+    }
+}
+
+fn command_error(error: ActivationError) -> CommandError {
+    let code = match error {
+        ActivationError::DesktopAppNotFound => "desktop_app_not_found",
+        ActivationError::SelectedAppNotFound => "selected_app_not_found",
+        ActivationError::Discovery(_) => "discovery_failed",
+        ActivationError::Locale(_) => "locale_config_failed",
+        ActivationError::Platform(_) => "platform_operation_failed",
+        ActivationError::ProxyPreparation(_) => "proxy_preparation_failed",
+        ActivationError::LocalProxy(_) => "local_proxy_failed",
+        ActivationError::NetworkSafety(_) => "network_safety_failed",
+        ActivationError::ChineseEffect(_) => "locale_verification_failed",
+        ActivationError::InvalidTransition { .. } => "activation_state_failed",
+        ActivationError::BackgroundTask(_) => "background_task_failed",
+        ActivationError::VerificationFailed => "locale_verification_failed",
+        ActivationError::PendingNetworkRecovery => "network_recovery_pending",
+        ActivationError::LocalProxySessionMissing => "local_proxy_session_missing",
+        ActivationError::OperationAndCleanupFailed { .. } => "activation_cleanup_failed",
+    };
+    CommandError {
+        code: code.to_owned(),
+        message: error.to_string(),
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let context = tauri::generate_context!();
+    #[cfg(all(feature = "e2e", target_os = "windows"))]
+    let context = {
+        let mut context = context;
+        // Tauri creates configured windows before running the setup hook.
+        for window_config in &mut context.config_mut().app.windows {
+            window_config.create = false;
+        }
+        context
+    };
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            let app_data_dir =
+                activation_runtime::application_data_dir(app.path().app_data_dir()?)?;
+            let activation_runtime =
+                activation_runtime::DesktopActivationRuntime::from_build_environment(
+                    app_data_dir.clone(),
+                )?;
+            if activation_runtime.is_some() {
+                tracing::info!("desktop activation runtime configured");
+            } else {
+                let configuration_names = activation_runtime::build_configuration_names();
+                tracing::info!(
+                    manifest_url = configuration_names[0],
+                    public_key = configuration_names[1],
+                    encryption_key = configuration_names[2],
+                    key_id = configuration_names[3],
+                    "desktop activation runtime not configured"
+                );
+            }
+            let fallback_recovery = NetworkRecoveryService::new(
+                NativePlatformAdapter,
+                NetworkRecoveryStore::new(app_data_dir.join("recovery.json")),
+                current_operating_system(),
+            );
+            app.manage(DesktopActivationState::new(
+                activation_runtime,
+                fallback_recovery,
+            ));
+            app.manage(downloads::DesktopDownloadState::new(
+                app_data_dir.join("downloads"),
+                app_data_dir.join("downloads.json"),
+            )?);
+            #[cfg(all(feature = "e2e", target_os = "windows"))]
+            {
+                let window_config = app.config().app.windows.first().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "missing configured desktop window",
+                    )
+                })?;
+                let options = e2e_webview_options()?;
+                tauri::WebviewWindowBuilder::from_config(app.handle(), window_config)?
+                    .data_directory(options.data_directory)
+                    .additional_browser_args(&options.additional_browser_args)
+                    .build()?;
+            }
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_locale_overview,
+            get_repair_overview,
+            restore_locale_configuration,
+            is_activation_available,
+            activate_chinese,
+            get_network_recovery_status,
+            restore_network,
+            prepare_activation_network,
+            cli_tools::get_cli_tools_overview,
+            cli_tools::install_cli_tool,
+            software_status::get_software_installation_statuses,
+            downloads::get_download_catalog,
+            downloads::get_official_download_link,
+            downloads::list_download_tasks,
+            downloads::start_download,
+            downloads::cancel_download,
+            downloads::retry_download,
+            downloads::reveal_download,
+            downloads::launch_installer,
+            downloads::open_official_product_page
+        ])
+        .run(context)
+        .expect("failed to run Dada Assistant desktop application");
+}
+
+#[cfg(all(feature = "e2e", target_os = "windows"))]
+struct E2eWebviewOptions {
+    data_directory: PathBuf,
+    additional_browser_args: String,
+}
+
+#[cfg(all(feature = "e2e", target_os = "windows"))]
+fn e2e_webview_options() -> Result<E2eWebviewOptions, io::Error> {
+    let data_directory = std::env::var_os(E2E_WEBVIEW2_USER_DATA_FOLDER_ENV)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "E2E WebView2 user-data folder is not configured",
+            )
+        })?;
+    if !data_directory.is_absolute() || data_directory.parent().is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "E2E WebView2 user-data folder must be an absolute non-root path",
+        ));
+    }
+
+    let remote_debug_port = std::env::var(E2E_REMOTE_DEBUG_PORT_ENV)
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "E2E WebView2 remote-debugging port is not configured",
+            )
+        })?
+        .parse::<u16>()
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "E2E WebView2 remote-debugging port is invalid",
+            )
+        })?;
+    if remote_debug_port == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "E2E WebView2 remote-debugging port must be non-zero",
+        ));
+    }
+
+    Ok(E2eWebviewOptions {
+        data_directory,
+        additional_browser_args: format!(
+            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \\
+             --remote-debugging-address=127.0.0.1 \\
+             --remote-debugging-port={remote_debug_port} \\
+             --remote-allow-origins=*"
+        ),
+    })
+}
+
+fn current_operating_system() -> OperatingSystem {
+    #[cfg(target_os = "macos")]
+    {
+        return OperatingSystem::MacOs;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return OperatingSystem::Windows;
+    }
+
+    #[allow(unreachable_code)]
+    OperatingSystem::MacOs
+}
+
+fn current_cpu_architecture() -> CpuArchitecture {
+    #[cfg(target_arch = "aarch64")]
+    {
+        return CpuArchitecture::Arm64;
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        return CpuArchitecture::X64;
+    }
+
+    #[allow(unreachable_code)]
+    CpuArchitecture::X64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_activation_phase_has_a_user_message() {
+        for phase in [
+            ActivationPhase::Idle,
+            ActivationPhase::DetectingApp,
+            ActivationPhase::FetchingProxyConfig,
+            ActivationPhase::FilteringProxyNodes,
+            ActivationPhase::TestingProxyNodes,
+            ActivationPhase::SelectingProxyNode,
+            ActivationPhase::StartingLocalProxy,
+            ActivationPhase::SavingNetworkState,
+            ActivationPhase::WritingLocale,
+            ActivationPhase::StoppingDesktopApp,
+            ActivationPhase::LaunchingDesktopApp,
+            ActivationPhase::Verifying,
+            ActivationPhase::RestoringNetwork,
+            ActivationPhase::StoppingLocalProxy,
+            ActivationPhase::Succeeded,
+            ActivationPhase::Failed,
+        ] {
+            assert!(!activation_phase_message(phase).is_empty());
+        }
+    }
+
+    #[test]
+    fn unavailable_activation_returns_stable_command_error() {
+        let error = activation_unavailable_error();
+
+        assert_eq!(error.code, "activation_unavailable");
+        assert!(!error.message.is_empty());
+    }
+}

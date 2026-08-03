@@ -1,0 +1,111 @@
+name: 生成私有用户态候选包
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Protected main commit SHA to build
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: user-candidate-${{ inputs.commit_sha }}
+  cancel-in-progress: false
+
+jobs:
+  validate-main:
+    name: 验证受保护 main 提交
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: 验证输入提交等于远端 main
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SHA: ${{ inputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main" || {
+            echo "::error title=Candidate workflow must run from main::Select the protected main branch when dispatching this workflow."
+            exit 1
+          }
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          test "$REQUESTED_SHA" = "$main_sha" || {
+            echo "::error title=Candidate commit is not current main::Build the exact current protected main commit."
+            exit 1
+          }
+          printf 'sha=%s\n' "$main_sha" >> "$GITHUB_OUTPUT"
+
+  signed-build:
+    name: 构建私有用户态候选
+    needs: validate-main
+    uses: ./.github/workflows/signed-build.yml
+    with:
+      commit_sha: ${{ needs.validate-main.outputs.commit_sha }}
+      artifact_prefix: candidate
+      retention_days: 7
+    secrets: inherit
+
+  candidate-manifest:
+    name: 生成候选验收清单
+    needs:
+      - validate-main
+      - signed-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate-main.outputs.commit_sha }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: candidate-*
+          path: candidate-assets
+          merge-multiple: true
+
+      - name: 验证候选资产并生成清单
+        env:
+          CANDIDATE_COMMIT: ${{ needs.validate-main.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd candidate-assets
+          version=$(jq -r '.version' "$GITHUB_WORKSPACE/apps/desktop/src-tauri/tauri.conf.json")
+          x64="Dada-Assistant_${version}_x64-setup.exe"
+          arm64="Dada-Assistant_${version}_arm64-setup.exe"
+          macos="Dada-Assistant_${version}_universal.dmg"
+          test -f "$x64"
+          test -f "$arm64"
+          test -f "$macos"
+          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 3
+          sha256sum "$x64" "$arm64" "$macos" > checksums.txt
+          sha256sum --check checksums.txt
+          jq -n \
+            --arg commit "$CANDIDATE_COMMIT" \
+            --argjson runId "$GITHUB_RUN_ID" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --rawfile checksums checksums.txt \
+            '{
+              schemaVersion: 1,
+              commit: $commit,
+              workflowRunId: $runId,
+              repository: $repository,
+              checksums: ($checksums | split("\n") | map(select(length > 0)))
+            }' > candidate-manifest.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-manifest
+          path: |
+            candidate-assets/candidate-manifest.json
+            candidate-assets/checksums.txt
+          if-no-files-found: error
+          retention-days: 7

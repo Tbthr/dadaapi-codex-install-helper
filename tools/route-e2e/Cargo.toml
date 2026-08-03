@@ -1,0 +1,22 @@
+[package]
+name = "route-e2e"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+activation-core = { path = "../../crates/activation-core" }
+anyhow.workspace = true
+dirs.workspace = true
+proxy-core = { path = "../../crates/proxy-core" }
+route-bundle = { path = "../../crates/route-bundle" }
+tempfile.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true

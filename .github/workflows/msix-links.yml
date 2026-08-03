@@ -1,0 +1,117 @@
+name: Refresh ChatGPT MSIX links
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-msix-links
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    environment: production-release
+    runs-on: ubuntu-latest
+    env:
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+      GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      RELEASE_TAG: v1.0.0
+      MSIX_METADATA_PATH: /tmp/msix-links/msix-links.json
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: msix-links
+
+      - name: Validate Gitee metadata mirror configuration
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$GITEE_REPOSITORY" ]; then
+            echo "::error title=Missing Gitee repository::Set the GITEE_REPOSITORY Actions variable to your public owner/repository target."
+            exit 1
+          fi
+          if ! [[ "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error title=Invalid Gitee repository::GITEE_REPOSITORY must use owner/repository format."
+            exit 1
+          fi
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "::error title=Missing Gitee token::Add a GITEE_TOKEN Actions secret with write access to $GITEE_REPOSITORY."
+            exit 1
+          fi
+
+      - name: Resolve Microsoft Store packages
+        id: resolve
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_attempts=3
+
+          for attempt in $(seq 1 "$max_attempts"); do
+            if cargo run --release -p msix-links -- /tmp/msix-links/msix-links.json; then
+              exit 0
+            fi
+
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "Microsoft Store package resolution is unavailable; retaining the last verified metadata." >&2
+              exit 1
+            fi
+
+            delay_seconds=$((attempt * 10))
+            echo "Microsoft Store package resolution failed (attempt $attempt/$max_attempts); retrying in $delay_seconds seconds." >&2
+            sleep "$delay_seconds"
+          done
+
+      - name: Verify retained public metadata
+        if: steps.resolve.outcome != 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="$MSIX_METADATA_PATH"
+          release="$RUNNER_TEMP/msix-release.json"
+          mkdir -p "$(dirname "$manifest")"
+          public_url="https://gitee.com/api/v5/repos/${GITEE_REPOSITORY}/releases/tags/${RELEASE_TAG}"
+          curl -fsSL --connect-timeout 20 --max-time 60 "$public_url" -o "$release"
+          jq -e --arg tag "$RELEASE_TAG" '
+            .tag_name == $tag and
+            .prerelease == false and
+            (.body | split("<!-- DADAAPI_MSIX_LINKS_V1\n") | length == 2) and
+            (.body | split("\nDADAAPI_MSIX_LINKS_END -->") | length == 2)
+          ' "$release" >/dev/null
+          jq -r '
+            .body
+            | split("<!-- DADAAPI_MSIX_LINKS_V1\n")[1]
+            | split("\nDADAAPI_MSIX_LINKS_END -->")[0]
+          ' "$release" > "$manifest"
+          expires_at=$(jq -r '[.packages.arm64.expiresAt, .packages.x64.expiresAt] | min' "$manifest")
+          test -n "$expires_at"
+          test "$expires_at" != "null"
+          expires_epoch=$(date -u -d "$expires_at" +%s)
+          now_epoch=$(date -u +%s)
+          if [ "$expires_epoch" -le $((now_epoch + 300)) ]; then
+            echo "The retained Microsoft metadata is expired or too close to expiry." >&2
+            exit 1
+          fi
+          jq -e '
+            (.generatedAt | type == "string" and length > 0) and
+            ([.packages.arm64, .packages.x64] | all(
+              (.url | type == "string" and test("^https?://([A-Za-z0-9-]+\\.)*dl\\.delivery\\.mp\\.microsoft\\.com/")) and
+              (.expiresAt | type == "string" and length > 0)
+            ))
+          ' "$manifest" >/dev/null
+          echo "Using the still-valid previously verified Microsoft metadata."
+
+      - name: Publish refreshed links in the Final Release notes
+        if: steps.resolve.outcome == 'success'
+        run: bash scripts/release/publish-gitee-msix-metadata.sh

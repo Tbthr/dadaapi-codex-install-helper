@@ -1,0 +1,16 @@
+[package]
+name = "cli-tools"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+dirs.workspace = true
+shared-types = { path = "../shared-types" }
+thiserror.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

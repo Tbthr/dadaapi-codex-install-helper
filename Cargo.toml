@@ -1,0 +1,74 @@
+[workspace]
+members = [
+  "apps/desktop/src-tauri",
+  "crates/activation-core",
+  "crates/cli-tools",
+  "crates/desktop-discovery",
+  "crates/downloader",
+  "crates/locale-config",
+  "crates/platform",
+  "crates/proxy-core",
+  "crates/route-bundle",
+  "crates/route-catalog",
+  "crates/shared-types",
+  "tools/chatgpt-e2e-fixture",
+  "tools/msix-links",
+  "tools/route-e2e",
+]
+resolver = "2"
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/Tbthr/dadaapi-codex-install-helper"
+rust-version = "1.85"
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+base64 = "0.22"
+chacha20poly1305 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6"
+ed25519-dalek = { version = "2", features = ["pkcs8", "pem"] }
+futures-util = "0.3"
+getrandom = "0.3"
+plist = "=1.7.1"
+percent-encoding = "2.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+roxmltree = "0.20"
+quinn = "0.11"
+rsteria2 = "0.1.1"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "process", "signal", "sync", "time", "fs", "io-util"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+toml_edit = "0.22"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+url = { version = "=2.5.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+webpki-roots = "1"
+zeroize = "1"
+rcgen = "0.13"
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"

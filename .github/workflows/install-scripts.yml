@@ -1,0 +1,90 @@
+name: 验证哒哒助手 v1.0 安装脚本
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+  pull_request:
+    paths:
+      - "scripts/install.ps1"
+      - "scripts/install.sh"
+      - "scripts/release/gitee-api.sh"
+      - "scripts/release/github-api.sh"
+      - "scripts/tests/**"
+      - ".github/workflows/install-scripts.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/install.ps1"
+      - "scripts/install.sh"
+      - "scripts/release/gitee-api.sh"
+      - "scripts/release/github-api.sh"
+      - "scripts/tests/**"
+      - ".github/workflows/install-scripts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - windows-latest
+          - windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: 检查 Windows 安装脚本语法
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $env:GITHUB_WORKSPACE "scripts/install.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
+
+      - name: 运行 Windows 安装脚本单元测试
+        shell: pwsh
+        run: ./scripts/tests/install-ps1-tests.ps1
+
+      - name: 下载并校验已发布 Windows 安装包
+        if: ${{ github.event_name == 'release' }}
+        shell: pwsh
+        env:
+          DADA_ASSISTANT_INSTALL_DRY_RUN: "1"
+        run: ./scripts/install.ps1
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: 检查 macOS 安装脚本语法
+        shell: bash
+        run: /bin/sh -n scripts/install.sh
+
+      - name: 运行 macOS 安装脚本单元测试
+        run: /bin/sh scripts/tests/install-sh-tests.sh
+
+      - name: 运行 Gitee API 契约测试
+        run: bash scripts/tests/gitee-api-tests.sh
+
+      - name: 运行 GitHub API 契约测试
+        run: bash scripts/tests/github-api-tests.sh
+
+      - name: 下载并校验已发布 macOS 安装包
+        if: ${{ github.event_name == 'release' }}
+        env:
+          DADA_ASSISTANT_INSTALL_DRY_RUN: "1"
+        run: /bin/sh scripts/install.sh

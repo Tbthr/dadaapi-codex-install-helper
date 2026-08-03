@@ -1,0 +1,54 @@
+[package]
+name = "dada-assistant-desktop"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Dada Assistant cross-platform AI desktop toolkit"
+authors = ["dadaapi.com"]
+edition.workspace = true
+rust-version.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "dada_assistant_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = []
+e2e = ["locale-config/e2e"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+activation-core = { path = "../../../crates/activation-core" }
+async-trait.workspace = true
+cli-tools = { path = "../../../crates/cli-tools" }
+desktop-discovery = { path = "../../../crates/desktop-discovery" }
+downloader = { path = "../../../crates/downloader" }
+locale-config = { path = "../../../crates/locale-config" }
+platform = { path = "../../../crates/platform" }
+proxy-core = { path = "../../../crates/proxy-core" }
+route-bundle = { path = "../../../crates/route-bundle" }
+shared-types = { path = "../../../crates/shared-types" }
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+ed25519-dalek.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
