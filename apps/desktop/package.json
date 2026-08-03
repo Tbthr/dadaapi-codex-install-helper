@@ -20,7 +20,7 @@
     "@phosphor-icons/vue": "^2.2.1",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
-    "pinia": "^3.0.0",
+    "pinia": "^4.0.2",
     "simple-icons": "^16.25.0",
     "vue": "^3.5.13"
   },
