@@ -32,8 +32,8 @@ importers:
         specifier: ^3.0.0
         version: 3.0.4(typescript@5.6.3)(vue@3.5.39(typescript@5.6.3))
       simple-icons:
-        specifier: ^16.25.0
-        version: 16.25.0
+        specifier: ^16.27.1
+        version: 16.27.1
       vue:
         specifier: ^3.5.13
         version: 3.5.39(typescript@5.6.3)
@@ -1074,8 +1074,8 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  simple-icons@16.25.0:
-    resolution: {integrity: sha512-ReYPfbqjkTBovxjerHw2tf6E1rQdaCqNJKaJbd78Mui8w+78xQlE1aDO/2ekID++n8qa+1t+oaueYLeiSoQsIA==}
+  simple-icons@16.27.1:
+    resolution: {integrity: sha512-slZF8iKxkv7Lb9SF3L1AcIl5iYLNvDrKKm8yV69cG66XvxJ12SX+bYTgxRwCY4bXSmklGXoXaKEyVmEypOCeqw==}
     engines: {node: '>=0.12.18'}
 
   source-map-js@1.2.1:
@@ -2136,7 +2136,7 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  simple-icons@16.25.0: {}
+  simple-icons@16.27.1: {}
 
   source-map-js@1.2.1: {}
 
