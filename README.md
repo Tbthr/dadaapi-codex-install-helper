@@ -172,10 +172,6 @@ cargo run -p route-e2e
 - 中文订阅由独立仓库定时发布为签名加密路由包并同步到 Gitee，客户端优先访问 Gitee、备用访问 GitHub，在本机验签、解密、解析和筛选
 - ChatGPT/Codex 代理流量由客户端直接连接选中的订阅节点，不经过哒哒 API 服务器
 
-## 许可证
-
-本项目使用 [Apache License 2.0](LICENSE)。随应用分发的字体、图标和依赖声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-
 ## 当前可用能力
 
 - 识别 macOS 新版 ChatGPT 与旧版 Codex
@@ -198,5 +194,3 @@ cargo run -p route-e2e
 - 路由配置不可用时仍可检测并由用户手动恢复遗留系统代理
 - 中文配置跨文件事务撤销、部分成功结果和恢复状态聚合 Command
 - 中文验证成功后在第五步手动恢复原网络，并在失败时保留状态以便重试
-
-详细需求见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。
