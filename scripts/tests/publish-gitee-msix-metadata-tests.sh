@@ -94,6 +94,13 @@ export MSIX_METADATA_PATH="$metadata"
 export MOCK_ATTACHMENTS="$attachments"
 export MOCK_RELEASE_BODY="$fixture_directory/release-body.txt"
 
+export RELEASE_TAG=v1.0.0-rc.1
+if bash "$repository_root/scripts/release/publish-gitee-msix-metadata.sh" >/dev/null 2>&1; then
+  echo "Prerelease tag was accepted for MSIX metadata." >&2
+  exit 1
+fi
+export RELEASE_TAG=v1.0.0
+
 bash "$repository_root/scripts/release/publish-gitee-msix-metadata.sh"
 grep -Fq '<!-- DADAAPI_MSIX_LINKS_V1' "$MOCK_RELEASE_BODY"
 grep -Fq 'DADAAPI_MSIX_LINKS_END -->' "$MOCK_RELEASE_BODY"

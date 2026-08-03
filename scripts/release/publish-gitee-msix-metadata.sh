@@ -10,8 +10,8 @@ for name in "${required[@]}"; do
   fi
 done
 
-if [ "$RELEASE_TAG" != v1.0.0 ]; then
-  echo "MSIX metadata is pinned to the v1.0.0 release." >&2
+if ! [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  echo "RELEASE_TAG must be a final semantic version tag." >&2
   exit 1
 fi
 if ! [[ "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then

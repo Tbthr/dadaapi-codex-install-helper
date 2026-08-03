@@ -139,6 +139,8 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: pnpm --dir apps/desktop check
       - run: pnpm --dir apps/desktop build
+      - run: /bin/sh scripts/tests/bootstrap-sh-tests.sh
+      - run: /bin/sh scripts/tests/bootstrap-readme-tests.sh
       - run: /bin/sh scripts/tests/install-sh-tests.sh
       - run: bash scripts/tests/gitee-api-tests.sh
       - run: bash scripts/tests/gitee-upload-tests.sh

@@ -6,7 +6,7 @@ on:
       keep_tag:
         description: Final release tag to retain without deleting any Git tags
         required: true
-        default: v1.0.0
+        default: v1.0.1
         type: string
 
 permissions:

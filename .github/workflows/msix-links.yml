@@ -20,7 +20,6 @@ jobs:
       GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
       GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-      RELEASE_TAG: v1.0.0
       MSIX_METADATA_PATH: /tmp/msix-links/msix-links.json
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -50,6 +49,20 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve current Gitee Final Release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="$RUNNER_TEMP/gitee-latest-release.json"
+          curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 \
+            --connect-timeout 20 --max-time 60 --max-filesize 65536 \
+            "https://gitee.com/api/v5/repos/$GITEE_REPOSITORY/releases/latest" -o "$release"
+          tag=$(jq -r '.tag_name // empty' "$release")
+          [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          jq -e --arg tag "$tag" '.tag_name == $tag and .prerelease == false' "$release" >/dev/null
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
       - name: Resolve Microsoft Store packages
         id: resolve
         continue-on-error: true
@@ -75,6 +88,8 @@ jobs:
 
       - name: Verify retained public metadata
         if: steps.resolve.outcome != 'success'
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -114,4 +129,6 @@ jobs:
 
       - name: Publish refreshed links in the Final Release notes
         if: steps.resolve.outcome == 'success'
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: bash scripts/release/publish-gitee-msix-metadata.sh
