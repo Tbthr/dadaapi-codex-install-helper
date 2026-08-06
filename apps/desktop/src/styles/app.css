@@ -183,6 +183,10 @@ a:focus-visible,
   margin-top: 0;
 }
 
+.home-page > .home-section:first-child {
+  margin-top: 0;
+}
+
 .section-heading {
   display: flex;
   margin-bottom: 10px;

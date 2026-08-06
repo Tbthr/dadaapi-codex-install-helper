@@ -1,10 +1,6 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <title>Dada API favicon redesigned</title>
-  <circle cx="256" cy="256" r="230" fill="#F7F8F6"/>
-  <circle cx="256" cy="256" r="229" stroke="#E5E7EB" stroke-width="2"/>
-  <g transform="translate(55.08 38.08) scale(0.41)">
-    <path d="M191 153H558C737.5 153 877 299.5 877 511.5C877 718.5 733.5 861 552 861H382C315.5 861 263.5 840 218 802L136 846L174 676" stroke="#080D14" stroke-width="112" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M315 407L419 511L315 615" stroke="#080D14" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M512 511H609" stroke="#12CFC3" stroke-width="58" stroke-linecap="round"/>
-  </g>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Dada API logo light variant</title>
+  <path d="M191 153H558C737.5 153 877 299.5 877 511.5C877 718.5 733.5 861 552 861H382C315.5 861 263.5 840 218 802L136 846L174 676" stroke="#080D14" stroke-width="112" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M315 407L419 511L315 615" stroke="#080D14" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M512 511H609" stroke="#12CFC3" stroke-width="58" stroke-linecap="round"/>
 </svg>

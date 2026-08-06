@@ -4,9 +4,9 @@ export const DADA_LINKS = {
   home: "https://dadaapi.com/",
   pricing: "https://dadaapi.com/pricing",
   console: "https://dadaapi.com/console",
-  referral: "https://dadaapi.com/console/referral",
   topup: "https://dadaapi.com/console/topup",
-  docs: "https://docs.dadaapi.com/",
+  guide: "https://my.feishu.cn/wiki/VE6Cwa1LsiKSZLkhZYCcXWSqn3b?from=from_copylink",
+  qqGroup: "https://qm.qq.com/q/JYMSL80HSw",
 } as const;
 
 export async function openExternalLink(url: string): Promise<void> {

@@ -4,7 +4,7 @@ import {
   PhBookOpenText,
   PhCirclesThreePlus,
   PhGlobeSimple,
-  PhGift,
+  PhUsersThree,
   PhWallet,
   PhX,
 } from "@phosphor-icons/vue";
@@ -33,10 +33,10 @@ let returnFocus: globalThis.HTMLElement | null = null;
 
 const serviceLinks = [
   { title: "模型价格", url: DADA_LINKS.pricing, icon: PhCirclesThreePlus },
-  { title: "使用文档", url: DADA_LINKS.docs, icon: PhBookOpenText },
-  { title: "新人福利", url: DADA_LINKS.referral, icon: PhGift },
   { title: "控制台", url: DADA_LINKS.console, icon: PhGlobeSimple },
   { title: "账户充值", url: DADA_LINKS.topup, icon: PhWallet },
+  { title: "新手指南", url: DADA_LINKS.guide, icon: PhBookOpenText },
+  { title: "加入 QQ 群", url: DADA_LINKS.qqGroup, icon: PhUsersThree },
 ];
 
 function openLocale(trigger?: globalThis.HTMLElement): void {
@@ -115,8 +115,6 @@ onUnmounted(() => globalThis.document.removeEventListener("keydown", handleDrawe
     </header>
 
     <main class="page home-page">
-      <SoftwareView @open-locale="openLocale" />
-
       <section class="home-section service-section" aria-labelledby="dada-links-title">
         <div class="section-heading">
           <h2 id="dada-links-title">哒哒 API</h2>
@@ -136,6 +134,8 @@ onUnmounted(() => globalThis.document.removeEventListener("keydown", handleDrawe
           </button>
         </div>
       </section>
+
+      <SoftwareView @open-locale="openLocale" />
     </main>
 
     <Teleport to="body">
