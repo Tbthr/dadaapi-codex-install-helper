@@ -4,6 +4,15 @@ $previousLibraryOnly = $env:DADA_ASSISTANT_BOOTSTRAP_LIBRARY_ONLY
 $env:DADA_ASSISTANT_BOOTSTRAP_LIBRARY_ONLY = "1"
 . (Join-Path $PSScriptRoot "..\bootstrap.ps1")
 
+$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$desktopVersion = (Get-Content -Raw (Join-Path $repositoryRoot "apps\desktop\src-tauri\tauri.conf.json") | ConvertFrom-Json).version
+if ([string]::IsNullOrWhiteSpace($desktopVersion)) {
+    throw "Unable to read the desktop version."
+}
+$expectedReleaseTag = "v$desktopVersion"
+$giteeScriptUrl = "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/$expectedReleaseTag/scripts/install.ps1"
+$githubScriptUrl = "https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/$expectedReleaseTag/scripts/install.ps1"
+
 $script:TestsRun = 0
 
 function Assert-True {
@@ -42,16 +51,16 @@ function Assert-Equal {
 }
 
 try {
-    Assert-Equal "bootstrap installer tag is pinned" "v1.0.1" $InstallerScriptTag
+    Assert-Equal "bootstrap installer tag is pinned" $expectedReleaseTag $InstallerScriptTag
     Assert-Equal "auto source is accepted" "auto" (Assert-InstallSource -Source "auto")
     Assert-Equal "Gitee source is accepted" "gitee" (Assert-InstallSource -Source "gitee")
     Assert-Equal "GitHub source is accepted" "github" (Assert-InstallSource -Source "github")
     Assert-Throws "unknown source is rejected" { Assert-InstallSource -Source "mirror" }
     Assert-Equal "Gitee script URL is immutable" `
-        "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.1/scripts/install.ps1" `
+        $giteeScriptUrl `
         (Get-InstallerScriptUri -Source "gitee").AbsoluteUri
     Assert-Equal "GitHub script URL is immutable" `
-        "https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.1/scripts/install.ps1" `
+        $githubScriptUrl `
         (Get-InstallerScriptUri -Source "github").AbsoluteUri
     Assert-Throws "non-HTTPS installer URLs are rejected" {
         Assert-HttpsUri -Uri ([Uri]"http://example.test/install.ps1")

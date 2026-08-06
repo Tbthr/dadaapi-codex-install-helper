@@ -7,6 +7,17 @@ DADA_ASSISTANT_BOOTSTRAP_LIBRARY_ONLY=1
 export DADA_ASSISTANT_BOOTSTRAP_LIBRARY_ONLY
 . "$script_directory/../bootstrap.sh"
 
+repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+expected_release_tag=$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p' \
+  "$repository_root/apps/desktop/src-tauri/tauri.conf.json" | head -n 1)
+[ -n "$expected_release_tag" ] || {
+  printf 'Unable to read the desktop version.\n' >&2
+  exit 1
+}
+expected_release_tag="v$expected_release_tag"
+gitee_script_url="https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/$expected_release_tag/scripts/install.sh"
+github_script_url="https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/$expected_release_tag/scripts/install.sh"
+
 tests_run=0
 
 assert_success() {
@@ -40,16 +51,16 @@ assert_equal() {
   fi
 }
 
-assert_equal "bootstrap installer tag is pinned" v1.0.1 "$installer_script_tag"
+assert_equal "bootstrap installer tag is pinned" "$expected_release_tag" "$installer_script_tag"
 assert_success "auto source is accepted" validate_install_source auto
 assert_success "Gitee source is accepted" validate_install_source gitee
 assert_success "GitHub source is accepted" validate_install_source github
 assert_failure "unknown source is rejected" validate_install_source mirror
 assert_equal "Gitee script URL is immutable" \
-  'https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.1/scripts/install.sh' \
+  "$gitee_script_url" \
   "$(installer_script_url gitee)"
 assert_equal "GitHub script URL is immutable" \
-  'https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.1/scripts/install.sh' \
+  "$github_script_url" \
   "$(installer_script_url github)"
 assert_failure "non-HTTPS installer URLs are rejected" ensure_https_url 'http://example.test/install.sh'
 assert_equal "transport failures may fall back" retryable "$(classify_http_result 18 000)"
