@@ -53,14 +53,14 @@ pnpm build
 
 macOS 应用使用 ad-hoc 签名并安装到当前用户的 `~/Applications/哒哒助手.app`；首次打开时 macOS 可能显示未验证开发者提示，需要用户在系统提示中确认。Windows 安装器不含 Authenticode，使用 `currentUser` 模式；首次运行时 Windows 可能显示 SmartScreen 提示，需要用户确认运行。两端安装均不调用 `sudo`、不请求 UAC 提升，也不清除 quarantine、解除下载区块或修改系统全局执行策略。SHA-256 用于确认下载资产与 Release 清单一致，但不等同于 Apple 或 Windows 的发布者认证。
 
-生产 Gitee 镜像为 `lyq_power/dadaapi-codex-install-helper`。GitHub Actions 使用仓库级 `GITEE_TOKEN` Secret，以及 `production-release` Environment 中的 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper` 和 `GITEE_USERNAME=lyq_power` 变量，同步 `main`、`v1.0.0` 标签与正式 Release 资产。Microsoft Store 短期下载元数据由定时工作流写入 Gitee Final Release 的说明字段，不创建额外分支或 Release 资产。令牌不写入仓库、本地配置或安装脚本，普通 PR 工作流也不引用它。
+生产 Gitee 镜像为 `lyq_power/dadaapi-codex-install-helper`。GitHub Actions 使用仓库级 `GITEE_TOKEN` Secret，以及 `production-release` Environment 中的 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper` 和 `GITEE_USERNAME=lyq_power` 变量，同步 `main`、`v1.0.1` 标签与正式 Release 资产。Microsoft Store 短期下载元数据由定时工作流写入 Gitee Final Release 的说明字段，不创建额外分支或 Release 资产。令牌不写入仓库、本地配置或安装脚本，普通 PR 工作流也不引用它。
 
-当前可安装的正式版本是 `v1.0.0`。下面的入口直接下载并校验不可变标签中的安装脚本；安装器固定安装 `v1.0.0`，默认从 Gitee 获取安装包，网络错误、超时或 `5xx` 才回退 GitHub。`4xx`、脚本哈希、发布契约或安装包 SHA-256 错误会直接停止。
+当前可安装的正式版本是 `v1.0.1`。下面的入口直接下载并校验不可变标签中的安装脚本；安装器固定安装 `v1.0.1`，默认从 Gitee 获取安装包，网络错误、超时或 `5xx` 才回退 GitHub。`4xx`、脚本哈希、发布契约或安装包 SHA-256 错误会直接停止。
 
 Windows（在 PowerShell 中粘贴）：
 
 ```powershell
-$u = "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.0/scripts/install.ps1"
+$u = "https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.1/scripts/install.ps1"
 $scriptHash = "99ce3a2b09fbbd15523799fc6f9389207cec9632b959ad754b59ce6bc5bd270d"
 $p = Join-Path ([IO.Path]::GetTempPath()) ("DadaInstaller-" + [Guid]::NewGuid().ToString("N") + ".ps1")
 $previousVersion = [Environment]::GetEnvironmentVariable("DADA_ASSISTANT_INSTALL_VERSION", "Process")
@@ -68,7 +68,7 @@ $previousSource = [Environment]::GetEnvironmentVariable("DADA_ASSISTANT_INSTALL_
 try {
   & curl.exe --fail --silent --show-error --location --max-redirs 5 --proto "=https" --proto-redir "=https" --tlsv1.2 --connect-timeout 10 --max-time 60 --max-filesize 1048576 --output $p $u
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $p) -or (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ine $scriptHash) { throw "安装脚本下载或 SHA-256 校验失败。" }
-  $env:DADA_ASSISTANT_INSTALL_VERSION = "v1.0.0"
+  $env:DADA_ASSISTANT_INSTALL_VERSION = "v1.0.1"
   $env:DADA_ASSISTANT_INSTALL_SOURCE = "auto"
   & ([ScriptBlock]::Create([IO.File]::ReadAllText($p, [Text.UTF8Encoding]::new($false, $true))))
 } finally {
@@ -83,24 +83,24 @@ macOS（在终端中粘贴）：
 ```sh
 (
   umask 077
-  u='https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.0/scripts/install.sh'
+  u='https://gitee.com/lyq_power/dadaapi-codex-install-helper/raw/v1.0.1/scripts/install.sh'
   script_hash='410984f39ad07e00e3e891e1a425cca3a5bbe98d6462a999d0128e838f6c6b2f'
   p=$(mktemp "${TMPDIR:-/tmp}/dada-assistant-installer.XXXXXX") || exit 1
   trap 'rm -f "$p"' EXIT HUP INT TERM
   curl -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 --tlsv1.2 --connect-timeout 10 --max-time 60 --max-filesize 1048576 -o "$p" "$u" &&
     printf '%s  %s\n' "$script_hash" "$p" | /usr/bin/shasum -a 256 -c - &&
-    DADA_ASSISTANT_INSTALL_SOURCE=auto DADA_ASSISTANT_INSTALL_VERSION=v1.0.0 /bin/sh "$p"
+    DADA_ASSISTANT_INSTALL_SOURCE=auto DADA_ASSISTANT_INSTALL_VERSION=v1.0.1 /bin/sh "$p"
 )
 ```
 
 如果 Gitee 安装脚本无法下载，将上面对应的 `$u` / `u` URL 替换为 GitHub Raw 地址，并将安装源改为 `github`。两端使用相同的脚本 SHA-256：
 
 ```text
-https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.0/scripts/install.ps1
-https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.0/scripts/install.sh
+https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.1/scripts/install.ps1
+https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.1/scripts/install.sh
 ```
 
-安装器稳定参数为 `DADA_ASSISTANT_INSTALL_VERSION=latest|vN.N.N` 与 `DADA_ASSISTANT_INSTALL_SOURCE=auto|gitee|github`。例如设置 `DADA_ASSISTANT_INSTALL_VERSION=v1.0.0`，即可固定安装当前正式版本。脚本只安装并启动哒哒助手，不写入中文配置或系统代理。
+安装器稳定参数为 `DADA_ASSISTANT_INSTALL_VERSION=latest|vN.N.N` 与 `DADA_ASSISTANT_INSTALL_SOURCE=auto|gitee|github`。例如设置 `DADA_ASSISTANT_INSTALL_VERSION=v1.0.1`，即可固定安装当前正式版本。脚本只安装并启动哒哒助手，不写入中文配置或系统代理。
 
 ## 配置中文
 
