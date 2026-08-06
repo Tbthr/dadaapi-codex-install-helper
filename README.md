@@ -53,7 +53,7 @@ pnpm build
 
 macOS 应用使用 ad-hoc 签名并安装到当前用户的 `~/Applications/哒哒助手.app`；首次打开时 macOS 可能显示未验证开发者提示，需要用户在系统提示中确认。Windows 安装器不含 Authenticode，使用 `currentUser` 模式；首次运行时 Windows 可能显示 SmartScreen 提示，需要用户确认运行。两端安装均不调用 `sudo`、不请求 UAC 提升，也不清除 quarantine、解除下载区块或修改系统全局执行策略。SHA-256 用于确认下载资产与 Release 清单一致，但不等同于 Apple 或 Windows 的发布者认证。
 
-生产 Gitee 镜像为 `lyq_power/dadaapi-codex-install-helper`。GitHub Actions 使用仓库级 `GITEE_TOKEN` Secret，以及 `production-release` Environment 中的 `GITEE_REPOSITORY=lyq_power/dadaapi-codex-install-helper` 和 `GITEE_USERNAME=lyq_power` 变量，同步 `main`、`v1.0.1` 标签与正式 Release 资产。Microsoft Store 短期下载元数据由定时工作流写入 Gitee Final Release 的说明字段，不创建额外分支或 Release 资产。令牌不写入仓库、本地配置或安装脚本，普通 PR 工作流也不引用它。
+生产 Gitee 镜像为 `lyq_power/dadaapi-codex-install-helper`。GitHub Actions 使用 `production-release` Environment 中的 `GITEE_REPOSITORY` 与 `GITEE_USERNAME` 变量，把 `main` 和缺失的 `v*` 标签同步到 Gitee；正式 Release 的四项资产由本机脚本 `scripts/release/sync-gitee-locally.sh` 从 GitHub 下载后，经国内网络直连 Gitee 上传（GitHub Actions 位于美国，向 Gitee 跨国上传会限速/超时），CI 的 `gitee-wait` job 轮询等待本地同步完成并公开后，自动继续 Gitee 安装冒烟与 GitHub Final。`GITEE_TOKEN` 只存在于 GitHub Actions Secret 与本地仓库根目录 `.env`（已被 `.gitignore` 忽略）中，不写入仓库或安装脚本，普通 PR 工作流不引用它。Microsoft Store 短期下载元数据由定时工作流写入 Gitee Final Release 的说明字段，不创建额外分支或 Release 资产。
 
 当前可安装的正式版本是 `v1.0.1`。下面的入口直接下载并校验不可变标签中的安装脚本；安装器固定安装 `v1.0.1`，默认从 Gitee 获取安装包，网络错误、超时或 `5xx` 才回退 GitHub。`4xx`、脚本哈希、发布契约或安装包 SHA-256 错误会直接停止。
 
@@ -116,7 +116,8 @@ https://raw.githubusercontent.com/Tbthr/dadaapi-codex-install-helper/v1.0.1/scri
 - 已配置的生产 Gitee 仓库是 [lyq_power/dadaapi-codex-install-helper](https://gitee.com/lyq_power/dadaapi-codex-install-helper)。向 GitHub `main` 推送后会自动运行“同步哒哒助手 v1.0 代码至 Gitee”。需要手动重试时，在 GitHub Actions 中运行该工作流；目标始终来自受保护的 `GITEE_REPOSITORY` Actions Variable。
 - 可选地在正式发布前运行“生成私有用户态候选包”，输入当时受保护 `main` 的完整提交 SHA。候选包只保存在 7 天 Actions artifact 中，不创建公开 Release。
 - Intel Mac、Apple Silicon Mac、Windows x64 与 Windows ARM64 的远程安装和启动由标签发布流水线强制执行；人工中文结果和网络恢复验收可按 [发布 Runbook](docs/RELEASE_RUNBOOK.md) 作为额外检查。
-- 当前 `main` 提交上的 `v*` 标签会自动执行：完整 CI -> 共享用户态构建 -> GitHub Draft -> GitHub Prerelease -> GitHub 四平台版本化命令安装 -> Gitee Final -> Gitee 四平台安装 -> GitHub Final -> 两端 `latest` 校验。任何失败都会阻止后续渠道。
+- 当前 `main` 提交上的 `v*` 标签会自动执行：完整 CI -> 共享用户态构建 -> GitHub Draft -> GitHub Prerelease -> GitHub 四平台版本化命令安装 -> 等待本地 `sync-gitee-locally.sh` 同步并公开 Gitee Final（CI 轮询，最长 6 小时）-> Gitee 四平台安装 -> GitHub Final -> 两端 `latest` 校验。任何失败都会阻止后续渠道。
+- 标签推送到 GitHub 且 Prerelease 就绪后，在可访问 GitHub 与 Gitee 的本机运行 `bash scripts/release/sync-gitee-locally.sh v1.0.1`（首次需在仓库根目录 `.env` 填写 `GITEE_REPOSITORY` 与 `GITEE_TOKEN`）：脚本从 GitHub Release 下载四项资产、校验 SHA-256 后直连 Gitee 上传、验真并公开；CI 检测到 Gitee Release 已公开后自动接管后续冒烟与收尾，无需人工干预 GitHub。
 - `production-release` Environment 只保存 Gitee 令牌和路由构建配置。Apple、Windows 平台证书、时间戳和公开发布者身份均不再需要。
 - 正式 Release 和标签均不可覆盖。发布后故障必须增加补丁版本，不能重写标签或替换资产。处理步骤见 [发布故障手册](docs/RELEASE_INCIDENTS.md)。
 - Windows x64 中文全链路测试由“Windows locale E2E”在相关 Pull Request 上执行，也可在 Actions 中手动运行。失败时下载 `windows-locale-e2e-diagnostics` 查看截图和 WebDriver 日志。Windows ARM64 继续由“Desktop package smoke”和“哒哒助手 v1.0 发布冒烟”覆盖安装及启动。
