@@ -66,10 +66,14 @@ jobs:
       - run: bash -n scripts/release/publish-gitee-release.sh
       - run: bash -n scripts/release/publish-gitee-msix-metadata.sh
       - run: bash -n scripts/release/prune-old-releases.sh
+      - run: bash -n scripts/release/sync-gitee-locally.sh
+      - run: bash -n scripts/release/wait-gitee-sync.sh
       - run: bash scripts/tests/prune-old-releases-tests.sh
       - run: bash scripts/tests/gitee-api-tests.sh
       - run: bash scripts/tests/gitee-upload-tests.sh
       - run: bash scripts/tests/github-api-tests.sh
+      - run: bash scripts/tests/gitee-wait-sync-tests.sh
+      - run: bash scripts/tests/sync-gitee-locally-tests.sh
       - run: bash scripts/tests/publish-gitee-msix-metadata-tests.sh
 
   windows-installer:

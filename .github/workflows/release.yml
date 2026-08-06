@@ -293,44 +293,32 @@ jobs:
       tag: ${{ github.ref_name }}
       source: github
 
-  gitee-final:
-    name: 同步并公开 Gitee Final
+  gitee-wait:
+    name: 等待本地同步 Gitee Release
     needs: github-install-smoke
     environment: production-release
     permissions:
       contents: read
-    runs-on: macos-15
-    timeout-minutes: 90
+    runs-on: ubuntu-latest
+    # Gitee 资产由本地 sync-gitee-locally.sh 上传（国内直连），
+    # 本 job 轮询等待其完成并公开，最长等待 6 小时（公共仓库 job 上限）。
+    timeout-minutes: 360
     env:
-      GH_TOKEN: ${{ github.token }}
       GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
-      GITEE_USERNAME: ${{ vars.GITEE_USERNAME }}
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
       RELEASE_TAG: ${{ github.ref_name }}
-      RELEASE_COMMIT: ${{ github.sha }}
-      RELEASE_ASSETS_DIRECTORY: ${{ github.workspace }}/release-assets
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: 下载 GitHub Prerelease 四资产
+      - name: 等待本地脚本完成 Gitee 上传与公开
         shell: bash
-        run: |
-          set -euo pipefail
-          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
-          jq -e '.tag_name == env.RELEASE_TAG and .draft == false and .prerelease == true and (.assets | length) == 4' <<< "$release" >/dev/null
-          mkdir release-assets
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets
-
-      - name: 同步、验真并公开 Gitee Release
-        run: bash scripts/release/publish-gitee-release.sh
+        run: bash scripts/release/wait-gitee-sync.sh
 
   gitee-install-smoke:
     name: Gitee 版本化命令全安装
-    needs: gitee-final
+    needs: gitee-wait
     uses: ./.github/workflows/release-smoke.yml
     with:
       tag: ${{ github.ref_name }}
