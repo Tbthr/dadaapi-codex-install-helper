@@ -393,7 +393,11 @@ function errorMessage(error: unknown, fallback: string): string {
               class="software-progress"
               aria-hidden="true"
             >
-              <i :style="{ width: `${progressFor(taskFor(tool.productId))}%` }" />
+              <i
+                :style="{
+                  transform: `scaleX(${progressFor(taskFor(tool.productId)) / 100})`,
+                }"
+              />
             </div>
           </div>
           <div class="software-actions">
