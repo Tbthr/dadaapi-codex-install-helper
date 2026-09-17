@@ -17,7 +17,7 @@ import type { LocaleOverview } from "../types/locale";
 import LocaleSetupView from "./LocaleSetupView.vue";
 import SoftwareView from "./SoftwareView.vue";
 
-defineProps<{
+const props = defineProps<{
   overview: LocaleOverview | null;
   loading: boolean;
   error: string;
@@ -25,10 +25,28 @@ defineProps<{
 
 const emit = defineEmits<{ refresh: [] }>();
 const activation = useActivationStore();
-const { running, recoveryRunning } = storeToRefs(activation);
+const { networkPending, recoveryRunning, result, running } = storeToRefs(activation);
 const drawerOpen = ref(false);
 const drawer = ref<globalThis.HTMLElement | null>(null);
 const drawerLocked = computed(() => running.value || recoveryRunning.value);
+const trackedApps = computed(() => [
+  {
+    key: "chatGpt",
+    name: "ChatGPT",
+    app: props.overview?.apps.find((item) => item.product === "chatGpt") ?? null,
+  },
+  {
+    key: "codex",
+    name: "Codex",
+    app: props.overview?.apps.find((item) => item.product === "codex") ?? null,
+  },
+]);
+const configurationLabel = computed(() => (networkPending.value ? "恢复原网络" : "配置中文"));
+const configurationSummary = computed(() => {
+  if (networkPending.value) return "中文已经生效 · 等待手动恢复原网络";
+  if (result.value) return "中文已经生效 · 可重新设置";
+  return "五步本地流程 · 状态可验证、网络可恢复";
+});
 let returnFocus: globalThis.HTMLElement | null = null;
 
 const serviceLinks = [
@@ -87,6 +105,19 @@ function handleDrawerKeydown(event: globalThis.KeyboardEvent): void {
   }
 }
 
+function appStatusLabel(app: (typeof trackedApps.value)[number]): string {
+  if (props.loading) return "检测中";
+  if (props.error) return "检测失败";
+  if (!app.app) return "未安装";
+  return app.app.running ? "运行中" : "已安装";
+}
+
+function appStatusDetail(app: (typeof trackedApps.value)[number]): string {
+  if (app.app?.version) return `版本 ${app.app.version}`;
+  if (app.app?.running) return "进程正在运行";
+  return app.app ? "已找到本机安装" : "等待本机检测";
+}
+
 watch(drawerOpen, async (open) => {
   if (open) {
     await nextTick();
@@ -111,10 +142,100 @@ onUnmounted(() => globalThis.document.removeEventListener("keydown", handleDrawe
         <img :src="brandLogo" alt="" />
         <span><strong>哒哒助手</strong><small>DADA API</small></span>
       </button>
-      <p>让好模型，更好用。</p>
+      <div class="brand-rail-meta" aria-label="当前工作区">
+        <span>LOCAL CONFIGURATION</span>
+        <strong>本机工作台 / SIDE A</strong>
+      </div>
     </header>
 
     <main class="page home-page">
+      <section class="record-sleeve" aria-labelledby="record-sleeve-title">
+        <div class="record-sleeve-art" aria-hidden="true">
+          <div class="record-disc">
+            <span>SIDE A</span>
+            <i />
+          </div>
+          <p>LOCAL CONFIGURATION</p>
+          <strong>01 / SIDE A</strong>
+        </div>
+
+        <div class="record-sleeve-main">
+          <div class="record-sleeve-topline">
+            <span>哒哒助手 / 本地配置唱片</span>
+            <span>ORIGINAL SIGNAL · #12CFC3</span>
+          </div>
+
+          <div class="record-intro">
+            <div>
+              <h1 id="record-sleeve-title">让好模型，更好用。</h1>
+              <p>为 ChatGPT 与 Codex 完成本地中文配置，所有步骤都能看见、验证和恢复。</p>
+            </div>
+            <span class="record-edition">DADA API<br />UTILITY EDITION</span>
+          </div>
+
+          <div class="record-status-grid" aria-label="ChatGPT 与 Codex 状态">
+            <article v-for="app in trackedApps" :key="app.key" class="record-status-strip">
+              <span class="record-track-number">{{ app.key === "chatGpt" ? "01" : "02" }}</span>
+              <div>
+                <strong>{{ app.name }}</strong>
+                <span>{{ appStatusDetail(app) }}</span>
+              </div>
+              <span :class="['record-status', { active: app.app?.running }]">
+                <i />
+                {{ appStatusLabel(app) }}
+              </span>
+            </article>
+          </div>
+
+          <div class="record-action-band">
+            <div>
+              <h2>配置中文</h2>
+              <span class="record-label">NOW PLAYING / PRIMARY TRACK</span>
+              <p>{{ configurationSummary }}</p>
+            </div>
+            <button type="button" class="record-play-button" @click="openLocale()">
+              {{ configurationLabel }}
+              <PhArrowUpRight :size="18" />
+            </button>
+          </div>
+
+          <ol class="record-step-strip" aria-label="中文配置五步流程">
+            <li
+              v-for="(step, index) in ['打开应用', '路由确认', '旧记录', '中文验证', '恢复原网络']"
+              :key="step"
+            >
+              <span>{{ String(index + 1).padStart(2, "0") }}</span>
+              <strong>{{ step }}</strong>
+            </li>
+          </ol>
+        </div>
+
+        <aside class="record-track-list" aria-label="哒哒助手工作区">
+          <span class="record-label">TRACK LIST / SIDE A</span>
+          <div class="record-track-row active">
+            <span>01</span>
+            <strong>配置中文</strong>
+            <small>PRIMARY</small>
+          </div>
+          <div class="record-track-row">
+            <span>02</span>
+            <strong>桌面应用</strong>
+            <small>TOOLS</small>
+          </div>
+          <div class="record-track-row">
+            <span>03</span>
+            <strong>命令行工具</strong>
+            <small>CLI</small>
+          </div>
+          <div class="record-track-row">
+            <span>04</span>
+            <strong>恢复原网络</strong>
+            <small>SAFE EXIT</small>
+          </div>
+          <p class="record-track-note">青绿色只在需要你注意的状态和动作上亮起。</p>
+        </aside>
+      </section>
+
       <section class="home-section service-section" aria-labelledby="dada-links-title">
         <div class="section-heading">
           <h2 id="dada-links-title">哒哒 API</h2>
@@ -151,8 +272,8 @@ onUnmounted(() => globalThis.document.removeEventListener("keydown", handleDrawe
           >
             <header class="locale-drawer-header">
               <div>
-                <span>ChatGPT / Codex</span>
                 <h2 id="locale-drawer-title">配置中文</h2>
+                <span>ChatGPT / Codex</span>
               </div>
               <button
                 data-drawer-close

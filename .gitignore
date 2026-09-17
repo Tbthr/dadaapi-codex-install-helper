@@ -12,6 +12,9 @@ design-system/
 coverage/
 apps/desktop/src-tauri/gen/
 services/config-server/data/
+.agents/skills/impeccable/
+.claude/
+.codex/
 **/route-encryption-key.bin
 **/route-signing-private.pem
 *.p12

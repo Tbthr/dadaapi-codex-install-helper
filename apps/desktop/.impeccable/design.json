@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-18T02:05:00+08:00",
+  "title": "Design System: 哒哒助手",
+  "extensions": {
+    "colorMeta": {
+      "canvas": {
+        "role": "neutral",
+        "displayName": "画布青灰",
+        "canonical": "#d9f3f0",
+        "tonalRamp": [
+          "#102426",
+          "#17363a",
+          "#28575a",
+          "#4d7778",
+          "#709595",
+          "#9db9b7",
+          "#c0dedb",
+          "#f8fffd"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "纸张白",
+        "canonical": "#f8fffd",
+        "tonalRamp": [
+          "#102426",
+          "#17363a",
+          "#28575a",
+          "#4d7778",
+          "#709595",
+          "#9db9b7",
+          "#d9f3f0",
+          "#f8fffd"
+        ]
+      },
+      "surface-soft": {
+        "role": "neutral",
+        "displayName": "薄荷浅层",
+        "canonical": "#e5f8f6",
+        "tonalRamp": [
+          "#102426",
+          "#17363a",
+          "#28575a",
+          "#4d7778",
+          "#709595",
+          "#a8d2ce",
+          "#c8e9e5",
+          "#e5f8f6"
+        ]
+      },
+      "signal-teal": {
+        "role": "primary",
+        "displayName": "信号青深色",
+        "canonical": "#0b8a83",
+        "tonalRamp": [
+          "#062e2d",
+          "#075c59",
+          "#08766f",
+          "#0b8a83",
+          "#2ba39b",
+          "#66b9b1",
+          "#a1d9d4",
+          "#e5f8f6"
+        ]
+      },
+      "signal-bright": {
+        "role": "primary",
+        "displayName": "哒哒青绿",
+        "canonical": "#12cfc3",
+        "tonalRamp": [
+          "#063a37",
+          "#075c59",
+          "#08766f",
+          "#0b8a83",
+          "#12cfc3",
+          "#66dcd4",
+          "#b5eee9",
+          "#f1fffd"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "原始 Logo 黑",
+        "canonical": "#080d14",
+        "tonalRamp": [
+          "#080d14",
+          "#17202b",
+          "#293541",
+          "#3d4a56",
+          "#55616d",
+          "#707b85",
+          "#9ca5ac",
+          "#e4e7e9"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "低对比说明",
+        "canonical": "#4d6a6d",
+        "tonalRamp": [
+          "#102426",
+          "#17363a",
+          "#28575a",
+          "#4d6a6d",
+          "#709595",
+          "#9db9b7",
+          "#c0dedb",
+          "#f8fffd"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "细边青灰",
+        "canonical": "#8bbdb8",
+        "tonalRamp": [
+          "#17363a",
+          "#28575a",
+          "#4d7778",
+          "#709595",
+          "#8bbdb8",
+          "#a8d2ce",
+          "#c8e9e5",
+          "#e5f8f6"
+        ]
+      },
+      "danger": {
+        "role": "status",
+        "displayName": "错误红",
+        "canonical": "#a3313e",
+        "tonalRamp": [
+          "#351019",
+          "#5d1a24",
+          "#7e2530",
+          "#a3313e",
+          "#bf5962",
+          "#d78b91",
+          "#efc2c5",
+          "#fff1f2"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "封套标题",
+        "purpose": "首屏品牌主标题，保持压缩的编辑感。"
+      },
+      "body": {
+        "displayName": "工作台正文",
+        "purpose": "状态、恢复提示、来源和操作说明。"
+      },
+      "label": {
+        "displayName": "曲目索引",
+        "purpose": "DADA API、Side A、状态槽位和工作区微标签。"
+      }
+    },
+    "shadows": [
+      {
+        "name": "sleeve-shadow",
+        "value": "0 18px 36px rgb(8 13 20 / 12%)",
+        "purpose": "让首屏唱片封套从青灰画布中脱离。"
+      },
+      {
+        "name": "drawer-shadow",
+        "value": "-18px 0 42px rgb(8 13 20 / 18%)",
+        "purpose": "让受保护的中文配置抽屉脱离主页面。"
+      },
+      {
+        "name": "backdrop-veil",
+        "value": "rgb(8 13 20 / 48%)",
+        "purpose": "抽屉打开时降低主页面对比度。"
+      }
+    ],
+    "motion": [
+      {
+        "name": "sleeve-enter",
+        "value": "480ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "首屏唱片从裁切状态进入工作区。"
+      },
+      {
+        "name": "drawer-transition",
+        "value": "180ms ease",
+        "purpose": "配置抽屉和遮罩的受保护进入/退出。"
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion",
+        "purpose": "减少动效时关闭封套进入与抽屉过渡。"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sleeve-stack",
+        "value": "1180px",
+        "purpose": "曲目索引降到唱片封套底部。"
+      },
+      {
+        "name": "sleeve-compact",
+        "value": "960px",
+        "purpose": "左侧唱片区移到顶部，工作区改为两段。"
+      },
+      {
+        "name": "single-column",
+        "value": "760px",
+        "purpose": "状态、步骤和软件目录改为单列。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Track",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "主动作带中的配置中文或恢复原网络。",
+      "html": "<button class=\"ds-primary-track\">配置中文 <span aria-hidden=\"true\">↗</span></button>",
+      "css": ".ds-primary-track { display:inline-flex; min-height:45px; padding:0 14px; gap:12px; align-items:center; border:1px solid #080d14; border-radius:0; color:#080d14; background:#12cfc3; font:760 12px/1.2 'PingFang SC', sans-serif; transition:color 150ms ease, background-color 150ms ease, transform 150ms ease; } .ds-primary-track:hover { color:#fff; background:#0b8a83; transform:translateY(-2px); } .ds-primary-track:focus-visible { outline:2px solid #080d14; outline-offset:3px; }"
+    },
+    {
+      "name": "Status Strip",
+      "kind": "custom",
+      "refersTo": "status-strip",
+      "description": "ChatGPT/Codex 的真实本机状态槽位。",
+      "html": "<div class=\"ds-status-strip\"><span class=\"ds-status-index\">01</span><div><strong>ChatGPT</strong><small>等待本机检测</small></div><span class=\"ds-status-state\"><i></i>检测中</span></div>",
+      "css": ".ds-status-strip { display:grid; min-height:65px; padding:12px; grid-template-columns:28px minmax(0,1fr) auto; gap:9px; align-items:center; border-top:1px solid #080d14; border-bottom:1px solid #080d14; background:#f8fffd; color:#080d14; } .ds-status-index { color:#0b8a83; font:700 11px/1 'Instrument Sans Variable', sans-serif; } .ds-status-strip div { display:grid; gap:3px; } .ds-status-strip strong { font:720 13px/1.2 'PingFang SC', sans-serif; } .ds-status-strip small { color:#4d6a6d; font:560 10px/1.2 'PingFang SC', sans-serif; } .ds-status-state { display:inline-flex; padding:4px 6px; gap:5px; border:1px solid #8bbdb8; color:#4d6a6d; font:700 9px/1 'PingFang SC', sans-serif; } .ds-status-state i { width:6px; height:6px; border:1px solid currentColor; border-radius:50%; }"
+    },
+    {
+      "name": "Record Sleeve",
+      "kind": "custom",
+      "refersTo": "record-sleeve",
+      "description": "一体化首屏组合：唱片、主动作、状态和曲目索引。",
+      "html": "<section class=\"ds-record-sleeve\"><div class=\"ds-record-art\"><span>SIDE A</span></div><div class=\"ds-record-page\"><p>哒哒助手 / 本地配置唱片</p><h1>让好模型，更好用。</h1><button class=\"ds-primary-track\">配置中文</button></div><aside class=\"ds-track-list\"><strong>01 配置中文</strong><span>02 桌面应用</span><span>03 命令行工具</span><span>04 恢复原网络</span></aside></section>",
+      "css": ".ds-record-sleeve { display:grid; grid-template-columns:190px minmax(0,1fr) 190px; min-height:420px; border:1.5px solid #080d14; background:#12cfc3; color:#080d14; } .ds-record-art { display:grid; place-items:center; background:#080d14; color:#12cfc3; font:700 12px/1 'Instrument Sans Variable', sans-serif; letter-spacing:.16em; } .ds-record-page { padding:25px 27px; background:#f8fffd; } .ds-record-page p { color:#0b8a83; font:700 9px/1.4 'Instrument Sans Variable', sans-serif; letter-spacing:.12em; } .ds-record-page h1 { margin:80px 0 40px; max-width:11ch; font:780 clamp(30px,3.3vw,51px)/.98 'PingFang SC', sans-serif; letter-spacing:-.045em; } .ds-track-list { display:grid; align-content:start; gap:0; padding:25px 20px; background:#e5f8f6; } .ds-track-list > * { padding:15px 0; border-bottom:1px solid #8bbdb8; font:700 12px/1.3 'PingFang SC', sans-serif; }"
+    },
+    {
+      "name": "Catalog Row",
+      "kind": "card",
+      "refersTo": "software-card",
+      "description": "官方下载与 CLI 的真实目录单元。",
+      "html": "<article class=\"ds-catalog-row\"><span class=\"ds-catalog-mark\">D</span><div><strong>ChatGPT</strong><small>OpenAI · 可安装</small></div><button>下载</button></article>",
+      "css": ".ds-catalog-row { display:grid; min-height:92px; padding:16px; grid-template-columns:42px minmax(0,1fr) auto; gap:13px; align-items:center; border-bottom:1px solid #8bbdb8; background:#f8fffd; color:#080d14; } .ds-catalog-mark { display:grid; width:42px; height:42px; place-items:center; border:1px solid #080d14; background:#e5f8f6; font:700 16px/1 'Instrument Sans Variable', sans-serif; } .ds-catalog-row div { display:grid; gap:4px; } .ds-catalog-row strong { font:760 14px/1.2 'PingFang SC', sans-serif; } .ds-catalog-row small { color:#4d6a6d; font:560 10px/1.2 'PingFang SC', sans-serif; } .ds-catalog-row button { min-height:31px; border:0; border-radius:0; color:#0b8a83; background:transparent; font:700 11px/1 'PingFang SC', sans-serif; } .ds-catalog-row button:focus-visible { outline:2px solid #080d14; outline-offset:3px; }"
+    },
+    {
+      "name": "Chinese Setup Drawer",
+      "kind": "custom",
+      "refersTo": "setup-drawer",
+      "description": "保护焦点的中文配置与网络恢复流程。",
+      "html": "<aside class=\"ds-setup-drawer\"><header><h2>配置中文</h2><span>ChatGPT / Codex</span></header><ol><li><b>1</b><strong>打开桌面应用</strong></li><li><b>2</b><strong>路由确认</strong></li><li><b>3</b><strong>处理旧恢复记录</strong></li><li><b>4</b><strong>中文设置验证</strong></li><li><b>5</b><strong>恢复原网络</strong></li></ol><button class=\"ds-primary-track\">配置中文</button></aside>",
+      "css": ".ds-setup-drawer { width:min(560px,calc(100vw - 48px)); min-height:100%; padding:20px; border-left:1.5px solid #080d14; background:#f8fffd; color:#080d14; box-shadow:-18px 0 42px rgb(8 13 20 / 18%); } .ds-setup-drawer header { padding-bottom:14px; border-bottom:1.5px solid #080d14; } .ds-setup-drawer header span { color:#0b8a83; font:700 9px/1.4 'Instrument Sans Variable', sans-serif; letter-spacing:.12em; } .ds-setup-drawer h2 { margin:6px 0 0; font:740 22px/1.2 'PingFang SC', sans-serif; } .ds-setup-drawer ol { margin:0; padding:0; list-style:none; } .ds-setup-drawer li { display:grid; min-height:58px; grid-template-columns:29px 1fr; gap:12px; align-items:center; border-bottom:1px solid #8bbdb8; } .ds-setup-drawer li b { display:grid; width:29px; height:29px; place-items:center; border:1px solid #17363a; font:700 11px/1 'Instrument Sans Variable', sans-serif; } .ds-setup-drawer li strong { font:660 13px/1.2 'PingFang SC', sans-serif; } .ds-setup-drawer .ds-primary-track { width:100%; margin-top:20px; justify-content:center; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "青色唱片封套",
+    "overview": "哒哒助手不再把自己表现成通用 SaaS 后台，而是一张可以工作的本地配置唱片：青绿色是整张封套的品牌场域，深墨色是唱片与文字的骨架，白色是承载真实状态的内页。原始 src/assets/brand/dada-logo.svg 是唯一品牌标记，不绘制新 Logo。\n\n首屏用一个完整的封套构图把检测 ChatGPT/Codex、配置中文、验证与恢复原网络串成闭合集合。软件、CLI、哒哒 API 服务链接属于封套的 B-side 目录；它们仍然真实、可用，但不抢走首屏主动作。",
+    "keyCharacteristics": [
+      "青绿色平涂是识别场域，不是点缀；深墨色负责稳定和可读性。",
+      "唱片圆面、曲目索引、封套侧栏和反白当前曲目构成信息架构，不是装饰贴图。",
+      "页面主结构使用零圆角、细黑边和明确的平面切割，避免圆角卡片堆叠。",
+      "状态同时由文字、规则、位置和色彩表达；失败与恢复不能只靠颜色。"
+    ],
+    "rules": [
+      {
+        "name": "The Original Mark Rule",
+        "body": "使用 src/assets/brand/dada-logo.svg；任何新页面都不能用生成图形替换它。",
+        "section": "colors"
+      },
+      {
+        "name": "The Signal-State Rule",
+        "body": "青绿色标记动作和已确认状态，文字与结构必须同时承担语义。",
+        "section": "colors"
+      },
+      {
+        "name": "The Closed-Set Type Rule",
+        "body": "主标题、状态、曲目和步骤使用清晰的字重差，不靠无限放大的标题或大量 eyebrow 形成层级。",
+        "section": "typography"
+      },
+      {
+        "name": "The Sleeve-First Layout Rule",
+        "body": "第一视口先读成一张完整的工作唱片，再读到目录；同等权重的重复卡片不能成为页面骨架。",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-by-Default Rule",
+        "body": "没有明确层级关系的区域不使用阴影；深度只服务于封套和受保护的抽屉。",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do 使用原始哒哒 Logo 和现有青绿色品牌信号。",
+      "Do 让唱片、曲目、反白和闭合集合承担信息层级。",
+      "Do 把真实状态、官方下载和网络恢复放在用户几秒内可找到的位置。",
+      "Do 让失败原因和恢复动作使用产品自己的简体中文。"
+    ],
+    "donts": [
+      "Don't 回到白底圆角卡片加大量状态 pill 的泛化 SaaS 结构。",
+      "Don't 用新图形替换 Logo，不要让生成的插画成为品牌标记。",
+      "Don't 展示假指标、假进度、未实现模块、Coming Soon 或技术说明。",
+      "Don't 隐藏网络恢复状态，也不要把中文激活成功与网络恢复成功混为一谈。"
+    ]
+  }
+}
