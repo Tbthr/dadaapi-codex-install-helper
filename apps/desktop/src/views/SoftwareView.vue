@@ -363,23 +363,25 @@ function errorMessage(error: unknown, fallback: string): string {
         <h2 id="desktop-tools-title">桌面应用</h2>
         <span>5 个软件</span>
       </div>
-      <div class="software-grid">
+      <div class="software-grid desktop-grid">
         <article v-for="tool in desktopTools" :key="tool.name" class="software-card">
-          <div class="software-card-top">
+          <div class="software-card-head">
             <span :class="['software-logo', `brand-${tool.brand}`]">
               <BrandIcon :brand="tool.brand" :size="30" />
             </span>
+            <div class="software-copy">
+              <strong>{{ tool.name }}</strong>
+              <span>{{ tool.publisher }}</span>
+              <span v-if="statusFor(tool.id)?.installed">
+                版本 {{ statusFor(tool.id)?.version ?? "未知" }}
+              </span>
+            </div>
             <span :class="['software-state', { installed: installedState(tool.id) }]">
               <PhCheck v-if="installedState(tool.id)" :size="13" weight="bold" />
               {{ desktopStatusLabel(tool) }}
             </span>
           </div>
-          <div class="software-copy">
-            <strong>{{ tool.name }}</strong>
-            <span>{{ tool.publisher }}</span>
-            <span v-if="statusFor(tool.id)?.installed">
-              版本 {{ statusFor(tool.id)?.version ?? "未知" }}
-            </span>
+          <div class="software-card-body">
             <small
               v-if="desktopMessage(tool)"
               :class="{
@@ -399,30 +401,30 @@ function errorMessage(error: unknown, fallback: string): string {
                 }"
               />
             </div>
-          </div>
-          <div class="software-actions">
-            <button
-              type="button"
-              class="software-action"
-              :disabled="desktopActionBusy(tool)"
-              @click="handleDesktop(tool)"
-            >
-              <PhSpinnerGap v-if="desktopActionBusy(tool)" class="spinning" :size="16" />
-              <PhDownloadSimple v-else :size="16" />
-              {{ desktopActionLabel(tool) }}
-            </button>
-            <button
-              v-if="tool.id === 'chatGpt'"
-              type="button"
-              class="software-action locale-action"
-              data-testid="configure-chinese"
-              :disabled="!installedState(tool.id)"
-              @click="openLocale"
-            >
-              <PhSpinnerGap v-if="running || recoveryRunning" class="spinning" :size="16" />
-              <PhTranslate v-else :size="16" />
-              {{ networkPending ? "恢复原网络" : running ? "查看进度" : "配置中文" }}
-            </button>
+            <div class="software-actions">
+              <button
+                type="button"
+                class="software-action"
+                :disabled="desktopActionBusy(tool)"
+                @click="handleDesktop(tool)"
+              >
+                <PhSpinnerGap v-if="desktopActionBusy(tool)" class="spinning" :size="16" />
+                <PhDownloadSimple v-else :size="16" />
+                {{ desktopActionLabel(tool) }}
+              </button>
+              <button
+                v-if="tool.id === 'chatGpt'"
+                type="button"
+                class="software-action locale-action"
+                data-testid="configure-chinese"
+                :disabled="!installedState(tool.id)"
+                @click="openLocale"
+              >
+                <PhSpinnerGap v-if="running || recoveryRunning" class="spinning" :size="16" />
+                <PhTranslate v-else :size="16" />
+                {{ networkPending ? "恢复原网络" : running ? "查看进度" : "配置中文" }}
+              </button>
+            </div>
           </div>
         </article>
       </div>
@@ -435,34 +437,36 @@ function errorMessage(error: unknown, fallback: string): string {
       </div>
       <div class="software-grid cli-grid">
         <article v-for="tool in cliTools" :key="tool.name" class="software-card cli-card">
-          <div class="software-card-top">
+          <div class="software-card-head">
             <span :class="['software-logo', `brand-${tool.brand}`]">
               <BrandIcon :brand="tool.brand" :size="30" />
             </span>
+            <div class="software-copy">
+              <strong>{{ tool.name }}</strong>
+              <span>{{ cliMessage(tool.id, tool.publisher) }}</span>
+            </div>
             <span :class="['software-state', { installed: cliStatus(tool.id)?.installed }]">
               <PhCheck v-if="cliStatus(tool.id)?.installed" :size="13" weight="bold" />
               {{ cliStatusLabel(tool.id) }}
             </span>
           </div>
-          <div class="software-copy">
-            <strong>{{ tool.name }}</strong>
-            <span>{{ cliMessage(tool.id, tool.publisher) }}</span>
+          <div class="software-actions">
+            <button
+              type="button"
+              class="software-action"
+              :disabled="cliBusy[tool.id]"
+              @click="handleCli(tool.id)"
+            >
+              <PhSpinnerGap v-if="cliBusy[tool.id]" class="spinning" :size="16" />
+              {{
+                cliStatus(tool.id)?.installed
+                  ? "重新安装"
+                  : cliOverview?.nodeVersion && cliOverview?.npmVersion
+                    ? "安装"
+                    : "安装 Node"
+              }}
+            </button>
           </div>
-          <button
-            type="button"
-            class="software-action"
-            :disabled="cliBusy[tool.id]"
-            @click="handleCli(tool.id)"
-          >
-            <PhSpinnerGap v-if="cliBusy[tool.id]" class="spinning" :size="16" />
-            {{
-              cliStatus(tool.id)?.installed
-                ? "重新安装"
-                : cliOverview?.nodeVersion && cliOverview?.npmVersion
-                  ? "安装"
-                  : "安装 Node"
-            }}
-          </button>
         </article>
       </div>
     </section>
