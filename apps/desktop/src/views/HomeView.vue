@@ -200,7 +200,10 @@ onUnmounted(() => globalThis.document.removeEventListener("keydown", handleDrawe
           </div>
 
           <ol class="record-step-strip" aria-label="中文配置五步流程">
-            <li v-for="(step, index) in ['打开应用', '路由确认', '旧记录', '中文验证', '恢复原网络']" :key="step">
+            <li
+              v-for="(step, index) in ['打开应用', '路由确认', '旧记录', '中文验证', '恢复原网络']"
+              :key="step"
+            >
               <span>{{ String(index + 1).padStart(2, "0") }}</span>
               <strong>{{ step }}</strong>
             </li>

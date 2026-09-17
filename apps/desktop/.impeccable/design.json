@@ -8,55 +8,136 @@
         "role": "neutral",
         "displayName": "画布青灰",
         "canonical": "#d9f3f0",
-        "tonalRamp": ["#102426", "#17363a", "#28575a", "#4d7778", "#709595", "#9db9b7", "#c0dedb", "#f8fffd"]
+        "tonalRamp": [
+          "#102426",
+          "#17363a",
+          "#28575a",
+          "#4d7778",
+          "#709595",
+          "#9db9b7",
+          "#c0dedb",
+          "#f8fffd"
+        ]
       },
       "surface": {
         "role": "neutral",
         "displayName": "纸张白",
         "canonical": "#f8fffd",
-        "tonalRamp": ["#102426", "#17363a", "#28575a", "#4d7778", "#709595", "#9db9b7", "#d9f3f0", "#f8fffd"]
+        "tonalRamp": [
+          "#102426",
+          "#17363a",
+          "#28575a",
+          "#4d7778",
+          "#709595",
+          "#9db9b7",
+          "#d9f3f0",
+          "#f8fffd"
+        ]
       },
       "surface-soft": {
         "role": "neutral",
         "displayName": "薄荷浅层",
         "canonical": "#e5f8f6",
-        "tonalRamp": ["#102426", "#17363a", "#28575a", "#4d7778", "#709595", "#a8d2ce", "#c8e9e5", "#e5f8f6"]
+        "tonalRamp": [
+          "#102426",
+          "#17363a",
+          "#28575a",
+          "#4d7778",
+          "#709595",
+          "#a8d2ce",
+          "#c8e9e5",
+          "#e5f8f6"
+        ]
       },
       "signal-teal": {
         "role": "primary",
         "displayName": "信号青深色",
         "canonical": "#0b8a83",
-        "tonalRamp": ["#062e2d", "#075c59", "#08766f", "#0b8a83", "#2ba39b", "#66b9b1", "#a1d9d4", "#e5f8f6"]
+        "tonalRamp": [
+          "#062e2d",
+          "#075c59",
+          "#08766f",
+          "#0b8a83",
+          "#2ba39b",
+          "#66b9b1",
+          "#a1d9d4",
+          "#e5f8f6"
+        ]
       },
       "signal-bright": {
         "role": "primary",
         "displayName": "哒哒青绿",
         "canonical": "#12cfc3",
-        "tonalRamp": ["#063a37", "#075c59", "#08766f", "#0b8a83", "#12cfc3", "#66dcd4", "#b5eee9", "#f1fffd"]
+        "tonalRamp": [
+          "#063a37",
+          "#075c59",
+          "#08766f",
+          "#0b8a83",
+          "#12cfc3",
+          "#66dcd4",
+          "#b5eee9",
+          "#f1fffd"
+        ]
       },
       "ink": {
         "role": "neutral",
         "displayName": "原始 Logo 黑",
         "canonical": "#080d14",
-        "tonalRamp": ["#080d14", "#17202b", "#293541", "#3d4a56", "#55616d", "#707b85", "#9ca5ac", "#e4e7e9"]
+        "tonalRamp": [
+          "#080d14",
+          "#17202b",
+          "#293541",
+          "#3d4a56",
+          "#55616d",
+          "#707b85",
+          "#9ca5ac",
+          "#e4e7e9"
+        ]
       },
       "ink-muted": {
         "role": "neutral",
         "displayName": "低对比说明",
         "canonical": "#4d6a6d",
-        "tonalRamp": ["#102426", "#17363a", "#28575a", "#4d6a6d", "#709595", "#9db9b7", "#c0dedb", "#f8fffd"]
+        "tonalRamp": [
+          "#102426",
+          "#17363a",
+          "#28575a",
+          "#4d6a6d",
+          "#709595",
+          "#9db9b7",
+          "#c0dedb",
+          "#f8fffd"
+        ]
       },
       "border": {
         "role": "neutral",
         "displayName": "细边青灰",
         "canonical": "#8bbdb8",
-        "tonalRamp": ["#17363a", "#28575a", "#4d7778", "#709595", "#8bbdb8", "#a8d2ce", "#c8e9e5", "#e5f8f6"]
+        "tonalRamp": [
+          "#17363a",
+          "#28575a",
+          "#4d7778",
+          "#709595",
+          "#8bbdb8",
+          "#a8d2ce",
+          "#c8e9e5",
+          "#e5f8f6"
+        ]
       },
       "danger": {
         "role": "status",
         "displayName": "错误红",
         "canonical": "#a3313e",
-        "tonalRamp": ["#351019", "#5d1a24", "#7e2530", "#a3313e", "#bf5962", "#d78b91", "#efc2c5", "#fff1f2"]
+        "tonalRamp": [
+          "#351019",
+          "#5d1a24",
+          "#7e2530",
+          "#a3313e",
+          "#bf5962",
+          "#d78b91",
+          "#efc2c5",
+          "#fff1f2"
+        ]
       }
     },
     "typographyMeta": {
@@ -177,11 +258,31 @@
       "状态同时由文字、规则、位置和色彩表达；失败与恢复不能只靠颜色。"
     ],
     "rules": [
-      { "name": "The Original Mark Rule", "body": "使用 src/assets/brand/dada-logo.svg；任何新页面都不能用生成图形替换它。", "section": "colors" },
-      { "name": "The Signal-State Rule", "body": "青绿色标记动作和已确认状态，文字与结构必须同时承担语义。", "section": "colors" },
-      { "name": "The Closed-Set Type Rule", "body": "主标题、状态、曲目和步骤使用清晰的字重差，不靠无限放大的标题或大量 eyebrow 形成层级。", "section": "typography" },
-      { "name": "The Sleeve-First Layout Rule", "body": "第一视口先读成一张完整的工作唱片，再读到目录；同等权重的重复卡片不能成为页面骨架。", "section": "layout" },
-      { "name": "The Flat-by-Default Rule", "body": "没有明确层级关系的区域不使用阴影；深度只服务于封套和受保护的抽屉。", "section": "elevation" }
+      {
+        "name": "The Original Mark Rule",
+        "body": "使用 src/assets/brand/dada-logo.svg；任何新页面都不能用生成图形替换它。",
+        "section": "colors"
+      },
+      {
+        "name": "The Signal-State Rule",
+        "body": "青绿色标记动作和已确认状态，文字与结构必须同时承担语义。",
+        "section": "colors"
+      },
+      {
+        "name": "The Closed-Set Type Rule",
+        "body": "主标题、状态、曲目和步骤使用清晰的字重差，不靠无限放大的标题或大量 eyebrow 形成层级。",
+        "section": "typography"
+      },
+      {
+        "name": "The Sleeve-First Layout Rule",
+        "body": "第一视口先读成一张完整的工作唱片，再读到目录；同等权重的重复卡片不能成为页面骨架。",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-by-Default Rule",
+        "body": "没有明确层级关系的区域不使用阴影；深度只服务于封套和受保护的抽屉。",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do 使用原始哒哒 Logo 和现有青绿色品牌信号。",

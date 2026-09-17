@@ -808,8 +808,14 @@ a:focus-visible,
 
 .brand-bar {
   min-height: 72px;
-  padding-right: max(var(--content-gutter), calc((100vw - var(--content-max-width)) / 2 + var(--content-gutter)));
-  padding-left: max(var(--content-gutter), calc((100vw - var(--content-max-width)) / 2 + var(--content-gutter)));
+  padding-right: max(
+    var(--content-gutter),
+    calc((100vw - var(--content-max-width)) / 2 + var(--content-gutter))
+  );
+  padding-left: max(
+    var(--content-gutter),
+    calc((100vw - var(--content-max-width)) / 2 + var(--content-gutter))
+  );
   border-bottom: 1.5px solid var(--ink);
   background: #f8fffd;
 }
