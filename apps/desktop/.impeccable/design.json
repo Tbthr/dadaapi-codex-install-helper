@@ -1,0 +1,321 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-18T00:38:41+08:00",
+  "title": "Design System: 哒哒助手",
+  "extensions": {
+    "colorMeta": {
+      "dada-signal-teal": {
+        "role": "primary",
+        "displayName": "哒哒信号青",
+        "canonical": "#0b8a83",
+        "tonalRamp": [
+          "oklch(22% 0.07 178)",
+          "oklch(30% 0.09 178)",
+          "oklch(39% 0.11 178)",
+          "oklch(48% 0.13 178)",
+          "oklch(58% 0.14 178)",
+          "oklch(68% 0.12 178)",
+          "oklch(80% 0.08 178)",
+          "oklch(94% 0.03 178)"
+        ]
+      },
+      "signal-bright": {
+        "role": "primary",
+        "displayName": "青色进度光",
+        "canonical": "#12cfc3",
+        "tonalRamp": [
+          "oklch(24% 0.08 178)",
+          "oklch(34% 0.11 178)",
+          "oklch(44% 0.14 178)",
+          "oklch(54% 0.17 178)",
+          "oklch(64% 0.18 178)",
+          "oklch(74% 0.15 178)",
+          "oklch(84% 0.10 178)",
+          "oklch(95% 0.04 178)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "白色画布",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.01 178)",
+          "oklch(25% 0.01 178)",
+          "oklch(35% 0.01 178)",
+          "oklch(45% 0.01 178)",
+          "oklch(55% 0.01 178)",
+          "oklch(68% 0.008 178)",
+          "oklch(82% 0.006 178)",
+          "oklch(98% 0.003 178)"
+        ]
+      },
+      "surface-soft": {
+        "role": "neutral",
+        "displayName": "冷灰表面",
+        "canonical": "#f3f6f5",
+        "tonalRamp": [
+          "oklch(18% 0.015 178)",
+          "oklch(28% 0.015 178)",
+          "oklch(38% 0.014 178)",
+          "oklch(49% 0.013 178)",
+          "oklch(60% 0.012 178)",
+          "oklch(71% 0.010 178)",
+          "oklch(84% 0.008 178)",
+          "oklch(96% 0.006 178)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "深墨文字",
+        "canonical": "#080d14",
+        "tonalRamp": [
+          "#080d14",
+          "#17202b",
+          "#293541",
+          "#3d4a56",
+          "#55616d",
+          "#707b85",
+          "#9ca5ac",
+          "#e4e7e9"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "静音灰文字",
+        "canonical": "#768391",
+        "tonalRamp": [
+          "#1c242b",
+          "#2e3943",
+          "#414d58",
+          "#56636e",
+          "#6d7a85",
+          "#87939c",
+          "#aeb7bd",
+          "#e7eaec"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "细灰边框",
+        "canonical": "#e5e9e8",
+        "tonalRamp": [
+          "#202827",
+          "#353e3c",
+          "#4c5754",
+          "#65716e",
+          "#7f8b87",
+          "#9ba6a2",
+          "#bcc5c2",
+          "#e5e9e8"
+        ]
+      },
+      "success": {
+        "role": "status",
+        "displayName": "成功绿",
+        "canonical": "#14745e",
+        "tonalRamp": [
+          "oklch(25% 0.08 165)",
+          "oklch(34% 0.10 165)",
+          "oklch(43% 0.12 165)",
+          "oklch(53% 0.13 165)",
+          "oklch(63% 0.12 165)",
+          "oklch(73% 0.10 165)",
+          "oklch(84% 0.07 165)",
+          "oklch(95% 0.03 165)"
+        ]
+      },
+      "warning": {
+        "role": "status",
+        "displayName": "警示琥珀",
+        "canonical": "#99631e",
+        "tonalRamp": [
+          "oklch(27% 0.08 70)",
+          "oklch(36% 0.10 70)",
+          "oklch(45% 0.12 70)",
+          "oklch(55% 0.13 70)",
+          "oklch(65% 0.12 70)",
+          "oklch(75% 0.10 70)",
+          "oklch(85% 0.07 70)",
+          "oklch(95% 0.03 70)"
+        ]
+      },
+      "danger": {
+        "role": "status",
+        "displayName": "错误红",
+        "canonical": "#ba3f48",
+        "tonalRamp": [
+          "oklch(26% 0.10 20)",
+          "oklch(35% 0.13 20)",
+          "oklch(45% 0.15 20)",
+          "oklch(55% 0.16 20)",
+          "oklch(65% 0.15 20)",
+          "oklch(75% 0.12 20)",
+          "oklch(85% 0.08 20)",
+          "oklch(95% 0.04 20)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "任务标题",
+        "purpose": "Current task titles such as the Chinese configuration drawer heading."
+      },
+      "body": {
+        "displayName": "工作台正文",
+        "purpose": "Compact operational copy, statuses, version text, and action labels."
+      },
+      "brand-micro": {
+        "displayName": "品牌微标签",
+        "purpose": "The DADA API wordmark sub-label uses Instrument Sans Variable."
+      }
+    },
+    "shadows": [
+      {
+        "name": "drawer-shadow",
+        "value": "-12px 0 36px rgb(8 13 20 / 14%)",
+        "purpose": "Separates the right-side Chinese configuration drawer from the page."
+      },
+      {
+        "name": "backdrop-veil",
+        "value": "rgb(8 13 20 / 34%)",
+        "purpose": "Temporarily lowers page contrast while the drawer is open."
+      }
+    ],
+    "motion": [
+      {
+        "name": "interface-transition",
+        "value": "150ms ease",
+        "purpose": "Default color, border, and one-pixel hover feedback."
+      },
+      {
+        "name": "drawer-transition",
+        "value": "180ms ease",
+        "purpose": "Backdrop fade and right-side drawer slide."
+      },
+      {
+        "name": "progress-transition",
+        "value": "180ms ease",
+        "purpose": "Download progress width changes."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-grid",
+        "value": "1040px",
+        "purpose": "Switch software cards from three columns to two and reduce page gutters."
+      },
+      {
+        "name": "service-reflow",
+        "value": "940px",
+        "purpose": "Reflow service links from five columns to three."
+      },
+      {
+        "name": "short-viewport",
+        "value": "700px",
+        "purpose": "Reduce top and section spacing for shorter desktop windows."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Full-width action for the main configuration or recovery step.",
+      "html": "<button class=\"ds-btn-primary\"><span>配置中文</span><svg viewBox=\"0 0 16 16\" aria-hidden=\"true\"><path d=\"M3 8h9M8 4l4 4-4 4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></button>",
+      "css": ".ds-btn-primary { display: inline-flex; width: 100%; min-height: 42px; padding: 0 16px; gap: 8px; align-items: center; justify-content: center; border: 1px solid var(--accent); border-radius: 6px; color: #fff; background: var(--accent); font: 650 14px/1.2 \"PingFang SC\", \"Microsoft YaHei UI\", sans-serif; transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease; } .ds-btn-primary:hover:not(:disabled) { border-color: var(--accent-hover); background: var(--accent-hover); transform: translateY(-1px); } .ds-btn-primary:focus-visible { outline: 3px solid rgb(18 207 195 / 34%); outline-offset: 2px; } .ds-btn-primary svg { width: 16px; height: 16px; }"
+    },
+    {
+      "name": "Quiet Action",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Low-emphasis download or install action that stays inside the card hierarchy.",
+      "html": "<button class=\"ds-btn-quiet\"><svg viewBox=\"0 0 16 16\" aria-hidden=\"true\"><path d=\"M8 2v8m0 0 3-3m-3 3L5 7M3 13h10\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg><span>下载</span></button>",
+      "css": ".ds-btn-quiet { display: inline-flex; min-height: 30px; padding: 0; gap: 6px; align-items: center; border: 0; color: var(--accent-hover); background: transparent; font: 680 12px/1.2 \"PingFang SC\", \"Microsoft YaHei UI\", sans-serif; white-space: nowrap; transition: color 150ms ease; } .ds-btn-quiet:hover:not(:disabled) { color: var(--accent); } .ds-btn-quiet:focus-visible { outline: 3px solid rgb(18 207 195 / 34%); outline-offset: 2px; } .ds-btn-quiet svg { width: 16px; height: 16px; }"
+    },
+    {
+      "name": "Software Card",
+      "kind": "card",
+      "refersTo": "software-card",
+      "description": "Compact installation and status container for desktop or CLI tools.",
+      "html": "<article class=\"ds-card\"><div class=\"ds-card-top\"><span class=\"ds-mark\">D</span><span class=\"ds-status\">可安装</span></div><div class=\"ds-card-copy\"><strong>ChatGPT</strong><span>OpenAI</span></div><div class=\"ds-card-actions\"><button class=\"ds-btn-quiet\">下载</button></div></article>",
+      "css": ".ds-card { display: flex; min-height: 184px; padding: 15px; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; color: var(--ink); background: var(--surface); transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease; } .ds-card:hover { border-color: #b9ceca; background: #fcfefd; transform: translateY(-1px); } .ds-card-top, .ds-card-actions { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; } .ds-mark { display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid var(--border); border-radius: 8px; color: #fff; background: #171d1c; font: 700 18px/1 \"Instrument Sans Variable\", sans-serif; } .ds-status { display: inline-flex; min-height: 25px; padding: 0 8px; align-items: center; border: 1px solid var(--border); border-radius: 999px; color: var(--ink-muted); background: var(--surface-soft); font: 650 10px/1 \"PingFang SC\", sans-serif; } .ds-card-copy { display: grid; gap: 3px; margin-top: 13px; } .ds-card-copy strong { font: 690 15px/1.2 \"PingFang SC\", sans-serif; } .ds-card-copy span { color: var(--ink-muted); font: 560 11px/1.2 \"PingFang SC\", sans-serif; } .ds-card-actions { margin-top: auto; align-items: center; }"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "Low-noise status marker that becomes green only when the state is confirmed.",
+      "html": "<span class=\"ds-status-pill ds-status-pill-success\"><svg viewBox=\"0 0 16 16\" aria-hidden=\"true\"><path d=\"m3 8 3 3 7-7\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>已安装</span>",
+      "css": ".ds-status-pill { display: inline-flex; min-height: 25px; padding: 0 8px; gap: 4px; align-items: center; border: 1px solid var(--border); border-radius: 999px; color: var(--ink-muted); background: var(--surface-soft); font: 650 10px/1 \"PingFang SC\", sans-serif; white-space: nowrap; } .ds-status-pill-success { color: var(--success); border-color: var(--success-border); background: var(--success-soft); } .ds-status-pill svg { width: 13px; height: 13px; }"
+    },
+    {
+      "name": "Service Link",
+      "kind": "nav",
+      "refersTo": "button-quiet",
+      "description": "A segmented external-service entry in the Dada API strip.",
+      "html": "<button class=\"ds-service-link\"><svg viewBox=\"0 0 16 16\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"5.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.2\"/><path d=\"M2.5 8h11M8 2.5c1.5 1.5 2.2 3.3 2.2 5.5S9.5 12 8 13.5C6.5 12 5.8 10.2 5.8 8S6.5 4 8 2.5Z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.1\"/></svg><span>控制台</span><svg class=\"ds-external\" viewBox=\"0 0 16 16\" aria-hidden=\"true\"><path d=\"M5 3h8v8M13 3 7 9M11 13H3V5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></button>",
+      "css": ".ds-service-link { display: grid; min-height: 52px; padding: 0 13px; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; border: 0; border-right: 1px solid var(--border); color: var(--ink-secondary); background: transparent; font: 620 12px/1.2 \"PingFang SC\", sans-serif; text-align: left; transition: color 150ms ease, background-color 150ms ease; } .ds-service-link:hover { color: var(--accent-hover); background: var(--accent-soft); } .ds-service-link:focus-visible { outline: 3px solid rgb(18 207 195 / 34%); outline-offset: -3px; } .ds-service-link svg { width: 18px; height: 18px; } .ds-service-link .ds-external { width: 14px; height: 14px; }"
+    },
+    {
+      "name": "Chinese Setup Drawer",
+      "kind": "custom",
+      "refersTo": "locale-action",
+      "description": "The signature right-side flow for detection, verification, Chinese setup, and network recovery.",
+      "html": "<aside class=\"ds-drawer\"><header class=\"ds-drawer-header\"><div><span>ChatGPT / Codex</span><h2>配置中文</h2></div><button class=\"ds-icon-button\" aria-label=\"关闭\">×</button></header><ol class=\"ds-steps\"><li class=\"ds-step-complete\"><span>✓</span><div><strong>应用已经就绪</strong><small>已找到正在运行的应用进程</small></div></li><li><span>2</span><div><strong>路由确认</strong><small>正在确认当前构建配置</small></div></li></ol><div class=\"ds-action-bar\"><p>设置完成后验证应用进程语言</p><button class=\"ds-btn-primary\">配置中文</button></div></aside>",
+      "css": ".ds-drawer { width: min(560px, calc(100vw - 48px)); min-height: 100%; border-left: 1px solid var(--border-strong); color: var(--ink); background: var(--surface); box-shadow: -12px 0 36px rgb(8 13 20 / 14%); } .ds-drawer-header { display: flex; min-height: 74px; padding: 13px 18px 12px 20px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: rgb(255 255 255 / 96%); } .ds-drawer-header div { display: grid; gap: 2px; } .ds-drawer-header span { color: var(--accent-hover); font: 700 10px/1 \"PingFang SC\", sans-serif; } .ds-drawer-header h2 { margin: 0; font: 720 19px/1.2 \"PingFang SC\", sans-serif; } .ds-icon-button { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid transparent; border-radius: 6px; color: var(--ink-secondary); background: transparent; font: 400 22px/1 \"PingFang SC\", sans-serif; } .ds-icon-button:hover { border-color: var(--border); background: var(--surface-soft); } .ds-steps { display: grid; margin: 0; padding: 5px 17px; list-style: none; } .ds-steps li { display: grid; min-height: 62px; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; border-bottom: 1px solid var(--border); } .ds-steps li > span { display: grid; width: 27px; height: 27px; place-items: center; border: 1px solid var(--border-strong); border-radius: 999px; color: var(--ink-muted); background: var(--surface); font: 700 11px/1 \"PingFang SC\", sans-serif; } .ds-steps .ds-step-complete > span { color: #fff; border-color: var(--accent); background: var(--accent); } .ds-steps li div { display: grid; gap: 3px; } .ds-steps strong { font: 660 13px/1.2 \"PingFang SC\", sans-serif; } .ds-steps small { color: var(--ink-muted); font: 560 11px/1.4 \"PingFang SC\", sans-serif; } .ds-action-bar { display: grid; min-height: 88px; padding: 13px 17px; gap: 12px; border-top: 1px solid var(--border); background: var(--surface-soft); } .ds-action-bar p { margin: 0; color: var(--ink-secondary); font: 560 12px/1.45 \"PingFang SC\", sans-serif; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "青色信号台",
+    "overview": "哒哒助手当前是一套轻量的桌面操作界面：白色画布承载紧凑的工具卡片，深墨色文字负责清晰阅读，哒哒信号青只在动作、进度和状态确认处发出信号。它更像一座安静、可信的本地工作台，而不是需要被浏览的营销页面。\n\n信息密度是实用而克制的。固定桌面网格、细边框、柔和的冷灰表面和右侧滑入的配置抽屉共同建立层级；状态和恢复路径始终优先于装饰。现有风格明确避免暗黑霓虹、强渐变、过度玻璃拟态和营销化大标题。",
+    "keyCharacteristics": [
+      "浅色优先，以白色和冷灰绿色表面建立秩序。",
+      "哒哒信号青是稀缺的操作与状态信号，不是大面积背景。",
+      "紧凑的卡片网格承载软件和 CLI 工具，右侧抽屉承载中文配置流程。",
+      "中文 UI 使用明确的状态、进度、步骤和恢复反馈。",
+      "交互反馈精准而有触感，但不以动画或阴影制造噪声。"
+    ],
+    "rules": [
+      {
+        "name": "The Signal-Sparingly Rule",
+        "body": "哒哒信号青只出现在行动、状态和进度等需要用户注意的地方；大部分面积必须保持中性。",
+        "section": "colors"
+      },
+      {
+        "name": "The Compact Hierarchy Rule",
+        "body": "用字重、颜色和位置先建立层级，再使用字号差异；不要通过巨型标题或夸张字重改变桌面工作台的密度。",
+        "section": "typography"
+      },
+      {
+        "name": "The Task-First Layout Rule",
+        "body": "页面空间优先留给可检测、可下载、可配置和可恢复的真实操作；服务链接保持轻量，中文设置流程在抽屉中保持连续。",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "静止状态不使用泛滥阴影；只有浮层或明确的交互状态才获得额外深度。",
+        "section": "elevation"
+      },
+      {
+        "name": "The Soft-Corner Rule",
+        "body": "圆角负责减轻工具界面的硬度，但不能削弱网格边界；优先使用 6px/8px 和细边框，不引入大型圆角面板。",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do 让哒哒信号青承担明确的动作、进度或成功语义。",
+      "Do 使用白色/冷灰表面、1px 边框和 6px/8px 圆角维持轻量桌面密度。",
+      "Do 保持软件卡片、服务链接和右侧配置抽屉的紧凑网格关系。",
+      "Do 用真实的安装、下载、中文配置、网络恢复状态驱动视觉反馈。",
+      "Do 为键盘焦点、悬停、下载进度和步骤完成提供与现有系统同等级的反馈。"
+    ],
+    "donts": [
+      "Don't 把哒哒信号青铺满页面，或用它替代所有中性层级。",
+      "Don't 引入暗黑霓虹、强渐变、过度玻璃拟态或大面积装饰性阴影。",
+      "Don't 添加营销化的大标题、虚构数据或与当前任务无关的展示模块。",
+      "Don't 把每个按钮都做成胶囊形，也不要用大型圆角取代细边框网格。",
+      "Don't 在没有真实状态支撑时添加“成功”、进度或可用性视觉。"
+    ]
+  }
+}
