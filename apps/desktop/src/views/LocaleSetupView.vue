@@ -161,7 +161,7 @@ async function handlePrimaryAction(): Promise<void> {
       <ol class="setup-steps" aria-label="中文配置步骤">
         <li
           v-for="(step, index) in setupSteps"
-          :key="step.title"
+          :key="index"
           :data-testid="`locale-step-${index + 1}`"
           :class="{ complete: step.complete }"
         >
