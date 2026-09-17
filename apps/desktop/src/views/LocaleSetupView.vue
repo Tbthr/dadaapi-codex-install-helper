@@ -42,6 +42,18 @@ const appStatusLabel = computed(() => {
   return app.value.running ? "运行中" : "已安装";
 });
 
+const appMeta = computed(() => {
+  if (app.value) {
+    const version = app.value.version ?? "未知";
+    return app.value.product === "codex"
+      ? `兼容旧版 Codex · 版本 ${version}`
+      : `ChatGPT 与 Codex 已合并 · 版本 ${version}`;
+  }
+  if (props.loading) return "正在检测本机应用";
+  if (props.error) return props.error;
+  return "未检测到 ChatGPT 桌面应用";
+});
+
 const primaryLabel = computed(() => {
   if (!appInstalled.value) return "请先安装";
   if (running.value) return "正在设置";
@@ -69,6 +81,39 @@ const staleRecoveryHandled = computed(
   () => networkPending.value === false || Boolean(result.value),
 );
 const networkRestored = computed(() => Boolean(result.value) && networkPending.value === false);
+const setupSteps = computed(() => [
+  {
+    title: appReady.value ? "应用已就绪" : "启动 ChatGPT",
+    detail: appReady.value ? "已找到正在运行的 ChatGPT 桌面应用" : "应用必须处于运行状态",
+    complete: appReady.value,
+  },
+  {
+    title: "确认配置来源",
+    detail: routeConfirmed.value ? "配置可用，执行时会再次验签" : "正在确认当前构建配置",
+    complete: routeConfirmed.value,
+  },
+  {
+    title: "检查遗留状态",
+    detail: staleRecoveryHandled.value
+      ? "当前没有阻断设置的遗留代理状态"
+      : "检测到上次遗留的代理状态",
+    complete: staleRecoveryHandled.value,
+  },
+  {
+    title: result.value ? "中文界面已验证" : "验证中文界面",
+    detail: result.value ? "应用已使用 zh-CN 启动" : "设置完成后验证应用进程语言",
+    complete: Boolean(result.value),
+  },
+  {
+    title: networkRestored.value ? "原网络已恢复" : "恢复原网络",
+    detail: networkRestored.value
+      ? "已恢复原网络配置并关闭临时代理"
+      : result.value
+        ? "中文验证成功后，请手动恢复原网络"
+        : "完成中文设置后可恢复原网络",
+    complete: networkRestored.value,
+  },
+]);
 
 const actionMessage = computed(() => {
   if (!appInstalled.value) return "安装并打开 ChatGPT 后，哒哒助手会自动重新检测。";
@@ -77,7 +122,7 @@ const actionMessage = computed(() => {
   if (networkStatusState.value === "error") return networkStatusError.value;
   if (availabilityState.value === "error") return availabilityError.value;
   if (availabilityState.value === "unavailable") return "当前构建未配置中文路由服务。";
-  if (!appReady.value) return "请先打开 ChatGPT 或 Codex，再开始设置。";
+  if (!appReady.value) return "请先打开 ChatGPT，再开始设置。";
   if (result.value) return message.value || "中文已经生效。";
   return running.value ? message.value : "执行期间 ChatGPT 可能会短暂重启。";
 });
@@ -107,74 +152,26 @@ async function handlePrimaryAction(): Promise<void> {
       <div class="setup-app-row">
         <span class="app-symbol brand-openai"><BrandIcon brand="openai" :size="28" /></span>
         <div>
-          <strong>{{ app?.displayName ?? "ChatGPT" }}</strong>
-          <span v-if="app">版本 {{ app.version ?? "未知" }}</span>
-          <span v-else-if="loading">正在检测本机应用</span>
-          <span v-else-if="error">{{ error }}</span>
-          <span v-else>未检测到桌面应用</span>
+          <strong>ChatGPT</strong>
+          <span>{{ appMeta }}</span>
         </div>
         <span :class="['status-pill', { success: appReady }]">{{ appStatusLabel }}</span>
       </div>
 
-      <ol class="setup-steps">
-        <li data-testid="locale-step-1" :class="{ complete: appReady }">
+      <ol class="setup-steps" aria-label="中文配置步骤">
+        <li
+          v-for="(step, index) in setupSteps"
+          :key="index"
+          :data-testid="`locale-step-${index + 1}`"
+          :class="{ complete: step.complete }"
+        >
           <span class="step-index">
-            <PhCheck v-if="appReady" :size="14" weight="bold" />
-            <b v-else>1</b>
+            <PhCheck v-if="step.complete" :size="14" weight="bold" />
+            <b v-else>{{ index + 1 }}</b>
           </span>
           <div>
-            <strong>{{ appReady ? "应用已经就绪" : "打开桌面应用" }}</strong>
-            <span>{{ appReady ? "已找到正在运行的应用进程" : "需要先启动 ChatGPT 或 Codex" }}</span>
-          </div>
-        </li>
-        <li data-testid="locale-step-2" :class="{ complete: routeConfirmed }">
-          <span class="step-index">
-            <PhCheck v-if="routeConfirmed" :size="14" weight="bold" />
-            <b v-else>2</b>
-          </span>
-          <div>
-            <strong>路由确认</strong>
-            <span>{{
-              routeConfirmed ? "配置可用，执行时会再次验签" : "正在确认当前构建配置"
-            }}</span>
-          </div>
-        </li>
-        <li data-testid="locale-step-3" :class="{ complete: staleRecoveryHandled }">
-          <span class="step-index">
-            <PhCheck v-if="staleRecoveryHandled" :size="14" weight="bold" />
-            <b v-else>3</b>
-          </span>
-          <div>
-            <strong>处理旧恢复记录</strong>
-            <span>{{
-              staleRecoveryHandled ? "当前没有阻断设置的遗留代理状态" : "检测到上次遗留的代理状态"
-            }}</span>
-          </div>
-        </li>
-        <li data-testid="locale-step-4" :class="{ complete: Boolean(result) }">
-          <span class="step-index">
-            <PhCheck v-if="result" :size="14" weight="bold" />
-            <b v-else>4</b>
-          </span>
-          <div>
-            <strong>{{ result ? "中文已经生效" : "中文设置验证" }}</strong>
-            <span>{{ result ? "应用已使用 zh-CN 启动" : "设置完成后验证应用进程语言" }}</span>
-          </div>
-        </li>
-        <li data-testid="locale-step-5" :class="{ complete: networkRestored }">
-          <span class="step-index">
-            <PhCheck v-if="networkRestored" :size="14" weight="bold" />
-            <b v-else>5</b>
-          </span>
-          <div>
-            <strong>{{ networkRestored ? "网络已恢复" : "恢复原网络" }}</strong>
-            <span>{{
-              networkRestored
-                ? "已恢复原网络配置并关闭临时代理"
-                : result
-                  ? "中文验证成功后，请手动恢复原网络"
-                  : "完成中文设置后可恢复原网络"
-            }}</span>
+            <strong>{{ step.title }}</strong>
+            <span>{{ step.detail }}</span>
           </div>
         </li>
       </ol>

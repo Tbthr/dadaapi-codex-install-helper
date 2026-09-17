@@ -26,7 +26,7 @@ async function refreshOverview(): Promise<void> {
   try {
     overview.value = await getLocaleOverview();
   } catch (error) {
-    loadError.value = isCommandError(error) ? error.message : "无法检测 ChatGPT/Codex";
+    loadError.value = isCommandError(error) ? error.message : "无法检测 ChatGPT 桌面应用";
   } finally {
     loading.value = false;
   }

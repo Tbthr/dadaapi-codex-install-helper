@@ -10,7 +10,7 @@ import {
 } from "@phosphor-icons/vue";
 import { storeToRefs } from "pinia";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import brandLogo from "../assets/brand/dada-logo.svg";
+import appIcon from "../assets/brand/dada-app-icon.svg";
 import { DADA_LINKS, openExternalLink } from "../services/external-links";
 import { useActivationStore } from "../stores/activation";
 import type { LocaleOverview } from "../types/locale";
@@ -29,23 +29,54 @@ const { networkPending, recoveryRunning, result, running } = storeToRefs(activat
 const drawerOpen = ref(false);
 const drawer = ref<globalThis.HTMLElement | null>(null);
 const drawerLocked = computed(() => running.value || recoveryRunning.value);
-const trackedApps = computed(() => [
-  {
-    key: "chatGpt",
-    name: "ChatGPT",
-    app: props.overview?.apps.find((item) => item.product === "chatGpt") ?? null,
-  },
-  {
-    key: "codex",
-    name: "Codex",
-    app: props.overview?.apps.find((item) => item.product === "codex") ?? null,
-  },
-]);
+const openAiApp = computed(
+  () =>
+    props.overview?.apps.find((item) => item.product === "chatGpt" || item.product === "codex") ??
+    null,
+);
+const discoveredAppCount = computed(() => (openAiApp.value ? 1 : 0));
+const workspaceStatus = computed(() => {
+  if (props.loading) return "正在检测目标应用";
+  if (props.error) return "检测失败，请重试";
+  if (discoveredAppCount.value === 0) return "尚未找到目标应用";
+  return `${discoveredAppCount.value} 个目标应用已找到`;
+});
+const localeStatus = computed(() => {
+  if (networkPending.value) return "等待恢复原网络";
+  if (result.value || props.overview?.locale.chineseEnabled) return "中文已生效";
+  return "尚未配置";
+});
+const recoveryStatus = computed(() => {
+  if (networkPending.value === true) return "待手动恢复";
+  if (networkPending.value === false) return "网络正常";
+  return "等待检测";
+});
 const configurationLabel = computed(() => (networkPending.value ? "恢复原网络" : "配置中文"));
 const configurationSummary = computed(() => {
   if (networkPending.value) return "中文已经生效 · 等待手动恢复原网络";
   if (result.value) return "中文已经生效 · 可重新设置";
-  return "五步本地流程 · 状态可验证、网络可恢复";
+  return "本地流程 · 状态可验证、网络可恢复";
+});
+const appStatusLabel = computed(() => {
+  if (props.loading) return "检测中";
+  if (props.error) return "检测失败";
+  if (!openAiApp.value) return "未安装";
+  return openAiApp.value.running ? "运行中" : "已安装";
+});
+const appStatusDetail = computed(() => {
+  const app = openAiApp.value;
+  if (app?.version) {
+    return app.product === "codex"
+      ? `兼容旧版 Codex · 版本 ${app.version}`
+      : `ChatGPT 与 Codex 已合并 · 版本 ${app.version}`;
+  }
+  if (app?.running) {
+    return app.product === "codex" ? "旧版 Codex 正在运行" : "ChatGPT 与 Codex 正在运行";
+  }
+  if (app) {
+    return app.product === "codex" ? "已找到旧版 Codex" : "已找到 ChatGPT 桌面应用";
+  }
+  return "等待本机检测";
 });
 let returnFocus: globalThis.HTMLElement | null = null;
 
@@ -105,19 +136,6 @@ function handleDrawerKeydown(event: globalThis.KeyboardEvent): void {
   }
 }
 
-function appStatusLabel(app: (typeof trackedApps.value)[number]): string {
-  if (props.loading) return "检测中";
-  if (props.error) return "检测失败";
-  if (!app.app) return "未安装";
-  return app.app.running ? "运行中" : "已安装";
-}
-
-function appStatusDetail(app: (typeof trackedApps.value)[number]): string {
-  if (app.app?.version) return `版本 ${app.app.version}`;
-  if (app.app?.running) return "进程正在运行";
-  return app.app ? "已找到本机安装" : "等待本机检测";
-}
-
 watch(drawerOpen, async (open) => {
   if (open) {
     await nextTick();
@@ -139,50 +157,73 @@ onUnmounted(() => globalThis.document.removeEventListener("keydown", handleDrawe
         aria-label="访问哒哒 API 官网"
         @click="openExternalLink(DADA_LINKS.home)"
       >
-        <img :src="brandLogo" alt="" />
+        <img :src="appIcon" alt="" />
         <span><strong>哒哒助手</strong><small>DADA API</small></span>
       </button>
-      <div class="brand-rail-meta" aria-label="当前工作区">
-        <span>LOCAL CONFIGURATION</span>
-        <strong>本机工作台 / SIDE A</strong>
-      </div>
     </header>
 
     <main class="page home-page">
       <section class="record-sleeve" aria-labelledby="record-sleeve-title">
-        <div class="record-sleeve-art" aria-hidden="true">
-          <div class="record-disc">
-            <span>SIDE A</span>
-            <i />
+        <div class="record-workspace-panel">
+          <div class="workspace-panel-heading">
+            <span class="record-label">LOCAL WORKSPACE</span>
+            <span
+              :class="[
+                'workspace-status-mark',
+                { active: !props.loading && !props.error, error: Boolean(props.error) },
+              ]"
+            >
+              <i />
+              {{ props.loading ? "检测中" : props.error ? "需重试" : "已连接" }}
+            </span>
           </div>
-          <p>LOCAL CONFIGURATION</p>
-          <strong>01 / SIDE A</strong>
+          <div class="workspace-panel-identity">
+            <div class="workspace-panel-copy">
+              <span class="workspace-panel-label">OPENAI DESKTOP</span>
+              <strong>ChatGPT</strong>
+            </div>
+          </div>
+          <div class="workspace-panel-task">
+            <span>当前流程</span>
+            <strong>本地设置</strong>
+            <p>可验证 · 可恢复</p>
+          </div>
+          <dl class="workspace-panel-facts">
+            <div>
+              <dt>应用数量</dt>
+              <dd>{{ props.loading ? "—" : `${discoveredAppCount}/1` }}</dd>
+            </div>
+            <div>
+              <dt>网络状态</dt>
+              <dd>{{ recoveryStatus }}</dd>
+            </div>
+          </dl>
         </div>
 
         <div class="record-sleeve-main">
           <div class="record-sleeve-topline">
-            <span>哒哒助手 / 本地配置唱片</span>
-            <span>ORIGINAL SIGNAL · #12CFC3</span>
+            <span>哒哒助手 / 本地配置工作台</span>
+            <span>LOCAL-FIRST · VERIFIED &amp; RECOVERABLE</span>
           </div>
 
           <div class="record-intro">
             <div>
               <h1 id="record-sleeve-title">让好模型，更好用。</h1>
-              <p>为 ChatGPT 与 Codex 完成本地中文配置，所有步骤都能看见、验证和恢复。</p>
+              <p>为 ChatGPT 完成本地中文配置，兼容旧版 Codex。</p>
             </div>
             <span class="record-edition">DADA API<br />UTILITY EDITION</span>
           </div>
 
-          <div class="record-status-grid" aria-label="ChatGPT 与 Codex 状态">
-            <article v-for="app in trackedApps" :key="app.key" class="record-status-strip">
-              <span class="record-track-number">{{ app.key === "chatGpt" ? "01" : "02" }}</span>
+          <div class="record-status-grid" aria-label="ChatGPT 桌面应用状态">
+            <article class="record-status-strip">
+              <span class="record-track-number">OPENAI</span>
               <div>
-                <strong>{{ app.name }}</strong>
-                <span>{{ appStatusDetail(app) }}</span>
+                <strong>ChatGPT</strong>
+                <span>{{ appStatusDetail }}</span>
               </div>
-              <span :class="['record-status', { active: app.app?.running }]">
+              <span :class="['record-status', { active: openAiApp?.running }]">
                 <i />
-                {{ appStatusLabel(app) }}
+                {{ appStatusLabel }}
               </span>
             </article>
           </div>
@@ -190,7 +231,7 @@ onUnmounted(() => globalThis.document.removeEventListener("keydown", handleDrawe
           <div class="record-action-band">
             <div>
               <h2>配置中文</h2>
-              <span class="record-label">NOW PLAYING / PRIMARY TRACK</span>
+              <span class="record-label">LOCAL SETUP / VERIFIED FLOW</span>
               <p>{{ configurationSummary }}</p>
             </div>
             <button type="button" class="record-play-button" @click="openLocale()">
@@ -198,41 +239,40 @@ onUnmounted(() => globalThis.document.removeEventListener("keydown", handleDrawe
               <PhArrowUpRight :size="18" />
             </button>
           </div>
-
-          <ol class="record-step-strip" aria-label="中文配置五步流程">
-            <li
-              v-for="(step, index) in ['打开应用', '路由确认', '旧记录', '中文验证', '恢复原网络']"
-              :key="step"
-            >
-              <span>{{ String(index + 1).padStart(2, "0") }}</span>
-              <strong>{{ step }}</strong>
-            </li>
-          </ol>
         </div>
 
-        <aside class="record-track-list" aria-label="哒哒助手工作区">
-          <span class="record-label">TRACK LIST / SIDE A</span>
-          <div class="record-track-row active">
-            <span>01</span>
-            <strong>配置中文</strong>
-            <small>PRIMARY</small>
+        <aside class="record-status-rail" aria-label="当前配置状态">
+          <div class="status-rail-heading">
+            <span class="record-label">CONFIGURATION STATUS</span>
+            <span>实时</span>
           </div>
-          <div class="record-track-row">
-            <span>02</span>
-            <strong>桌面应用</strong>
-            <small>TOOLS</small>
+          <div class="status-rail-list">
+            <div class="status-rail-row">
+              <span class="status-rail-marker" :class="{ active: discoveredAppCount > 0 }" />
+              <div>
+                <strong>应用检测</strong>
+                <small>{{ workspaceStatus }}</small>
+              </div>
+            </div>
+            <div class="status-rail-row">
+              <span
+                class="status-rail-marker"
+                :class="{ active: Boolean(result) || overview?.locale.chineseEnabled }"
+              />
+              <div>
+                <strong>中文状态</strong>
+                <small>{{ localeStatus }}</small>
+              </div>
+            </div>
+            <div class="status-rail-row">
+              <span class="status-rail-marker" :class="{ active: networkPending === false }" />
+              <div>
+                <strong>网络恢复</strong>
+                <small>{{ recoveryStatus }}</small>
+              </div>
+            </div>
           </div>
-          <div class="record-track-row">
-            <span>03</span>
-            <strong>命令行工具</strong>
-            <small>CLI</small>
-          </div>
-          <div class="record-track-row">
-            <span>04</span>
-            <strong>恢复原网络</strong>
-            <small>SAFE EXIT</small>
-          </div>
-          <p class="record-track-note">青绿色只在需要你注意的状态和动作上亮起。</p>
+          <p class="record-status-note">状态会随配置进度更新。</p>
         </aside>
       </section>
 
@@ -273,7 +313,7 @@ onUnmounted(() => globalThis.document.removeEventListener("keydown", handleDrawe
             <header class="locale-drawer-header">
               <div>
                 <h2 id="locale-drawer-title">配置中文</h2>
-                <span>ChatGPT / Codex</span>
+                <span>CHATGPT DESKTOP</span>
               </div>
               <button
                 data-drawer-close
